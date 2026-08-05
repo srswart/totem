@@ -1,0 +1,12 @@
+[advisories]
+ignore = [
+    # Transitive through surrealdb-core -> jsonwebtoken -> rsa. The current
+    # workspace only exercises SurrealDB's in-memory spike and does not perform
+    # RSA private-key operations directly; no fixed upstream release is
+    # available yet, so CI should not fail on this unavoidable advisory.
+    "RUSTSEC-2023-0071",
+    # Transitive through surrealdb-core -> rust_decimal -> rkyv. SurrealDB
+    # 3.2.4 is the newest available release and still pins the affected line,
+    # so ignore until upstream can move to a patched rkyv.
+    "RUSTSEC-2026-0235",
+]
