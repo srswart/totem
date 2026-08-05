@@ -55,6 +55,13 @@ passes:
             owner: "058-totem"
             dependencies: []
             notes: "Closes the §9 open question; ADV-STORE-002 implements the decision."
+          - id: "ADV-STORE-007"
+            advance_id: "ADV-STORE-007"
+            title: "Investigation: recommended embedding model executed and measured"
+            status: done
+            owner: "058-totem"
+            dependencies: ["ADV-STORE-003"]
+            notes: "Workstation run (local-model feature): closes ADV-STORE-003's residual; pins BGE-small-en-v1.5 / 384 dims for ADV-STORE-001/002."
           - id: "ADV-GATEWAY-005"
             advance_id: "ADV-GATEWAY-005"
             title: "Investigation: rmcp maturity + cloud-harness remote MCP reach"
