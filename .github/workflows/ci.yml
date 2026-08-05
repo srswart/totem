@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+    # `advance/**` is included so an implementing run gets real CI results from
+    # its own push, before a human opens the PR. Without it, `ci:passed` is
+    # evidence an agent structurally cannot obtain. (Pattern established in
+    # 057-ohteapea, ADV-PLATFORM-004.)
+    branches: [master, 'advance/**']
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+
+jobs:
+  # The Rust workspace does not exist yet (pre-ADV-CORE scaffold). Cargo jobs
+  # key off this detection so pushes stay green until Cargo.toml lands, then
+  # activate automatically with no workflow change.
+  detect:
+    name: detect workspace
+    runs-on: ubuntu-latest
+    outputs:
+      has_cargo: ${{ steps.check.outputs.has_cargo }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        run: |
+          if [ -f Cargo.toml ]; then
+            echo "has_cargo=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_cargo=false" >> "$GITHUB_OUTPUT"
+            echo "No Cargo.toml — cargo jobs will be skipped." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  fmt:
+    name: cargo fmt --check
+    needs: detect
+    if: needs.detect.outputs.has_cargo == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # `rustup show` installs the toolchain pinned in rust-toolchain.toml if
+      # one is present and not already installed, then prints it for the log.
+      - name: Ensure toolchain is installed
+        run: rustup show
+      - run: cargo fmt --all --check
+
+  clippy:
+    name: cargo clippy -- -D warnings
+    needs: detect
+    if: needs.detect.outputs.has_cargo == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure toolchain is installed
+        run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+
+  test:
+    name: cargo test --workspace
+    needs: detect
+    if: needs.detect.outputs.has_cargo == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure toolchain is installed
+        run: rustup show
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: workspace-tests
+      - run: cargo test --workspace
+
+  audit:
+    name: cargo audit
+    needs: detect
+    if: needs.detect.outputs.has_cargo == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Installs a prebuilt cargo-audit binary rather than compiling it from
+      # source: cargo-audit's own dependency tree can require a newer rustc
+      # than a pinned toolchain, which is unrelated to our code and shouldn't
+      # gate on it.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - run: cargo audit
+
+  secrets-scan:
+    name: secrets scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
