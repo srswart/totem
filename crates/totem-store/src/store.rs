@@ -1,0 +1,157 @@
+//! The connection, its migrations, and the repositories reached through it.
+
+use chrono::{DateTime, Utc};
+use surrealdb::engine::local::{Db, Mem};
+use surrealdb::types::{Number, RecordId, Value};
+use surrealdb::{Connection, Surreal};
+
+use crate::error::{StoreError, StoreResult};
+use crate::memory::MemoryRepository;
+use crate::migrate::{AppliedMigration, MIGRATIONS};
+use crate::row;
+use crate::schema::MIGRATION_LEDGER;
+
+/// The namespace and database every Totem instance uses.
+const NAMESPACE: &str = "totem";
+const DATABASE: &str = "totem";
+
+/// A connected Totem store.
+///
+/// Per TD-011 the connection is a fully-privileged system user: a restricted
+/// SurrealDB role is not a row filter — it still reads every scope, and its
+/// writes are discarded *silently*, which no error check can detect. All
+/// authorization therefore lives in this crate, and the connection is not
+/// reachable from outside it.
+#[derive(Debug, Clone)]
+pub struct Store<C: Connection> {
+    db: Surreal<C>,
+}
+
+impl Store<Db> {
+    /// Connect a fresh embedded in-memory instance.
+    ///
+    /// This is the engine every test uses (docs/tech-direction/surrealdb.md
+    /// §4) and the one the console's live queries need (TD-009). Each call
+    /// yields an independent instance, so tests never share state.
+    pub async fn in_memory() -> StoreResult<Self> {
+        let db = Surreal::new::<Mem>(()).await?;
+        db.use_ns(NAMESPACE).use_db(DATABASE).await?;
+        Ok(Self { db })
+    }
+}
+
+impl<C: Connection> Store<C> {
+    /// Adopt an already-connected SurrealDB instance whose namespace and
+    /// database are selected.
+    pub fn from_connection(db: Surreal<C>) -> Self {
+        Self { db }
+    }
+
+    /// Apply every migration this database has not run yet, returning the
+    /// versions applied by this call.
+    ///
+    /// Safe to call on every start-up: a database already at the latest version
+    /// gets an empty result and runs no schema statements.
+    pub async fn migrate(&self) -> StoreResult<Vec<u32>> {
+        self.db.query(MIGRATION_LEDGER).await?.check()?;
+
+        let already_applied: Vec<u32> = self
+            .applied_migrations()
+            .await?
+            .into_iter()
+            .map(|migration| migration.version)
+            .collect();
+
+        let mut applied = Vec::new();
+        for migration in MIGRATIONS {
+            if already_applied.contains(&migration.version) {
+                continue;
+            }
+            self.db.query(migration.statements).await?.check()?;
+            self.db
+                .query("CREATE $id CONTENT { version: $version, name: $name, applied_at: $at }")
+                .bind((
+                    "id",
+                    RecordId::new("schema_migration", i64::from(migration.version)),
+                ))
+                .bind(("version", i64::from(migration.version)))
+                .bind(("name", migration.name.to_string()))
+                .bind(("at", row::instant(Utc::now())))
+                .await?
+                .check()?;
+            applied.push(migration.version);
+        }
+        Ok(applied)
+    }
+
+    /// The migrations this database has already run, oldest first.
+    pub async fn applied_migrations(&self) -> StoreResult<Vec<AppliedMigration>> {
+        let mut response = self
+            .db
+            .query("SELECT version, name, applied_at FROM schema_migration ORDER BY version ASC")
+            .await?
+            .check()?;
+        let rows: Value = response.take(0)?;
+        let rows = rows
+            .into_array()
+            .map_err(|_| StoreError::Row("migration ledger is not an array".to_string()))?;
+
+        let mut applied = Vec::with_capacity(rows.len());
+        for row in rows.iter() {
+            let row = row.clone().into_object().map_err(|_| {
+                StoreError::Row("migration ledger row is not an object".to_string())
+            })?;
+
+            let version = match row.get("version") {
+                Some(Value::Number(Number::Int(version))) => {
+                    u32::try_from(*version).map_err(|_| {
+                        StoreError::Row(format!("migration version out of range: {version}"))
+                    })?
+                }
+                other => {
+                    return Err(StoreError::Row(format!(
+                        "migration version is not an integer: {other:?}"
+                    )));
+                }
+            };
+            let name = match row.get("name") {
+                Some(Value::String(name)) => name.to_string(),
+                other => {
+                    return Err(StoreError::Row(format!(
+                        "migration name is not a string: {other:?}"
+                    )));
+                }
+            };
+            let applied_at = match row.get("applied_at") {
+                Some(Value::Datetime(at)) => DateTime::<Utc>::from(*at),
+                other => {
+                    return Err(StoreError::Row(format!(
+                        "migration timestamp is not a datetime: {other:?}"
+                    )));
+                }
+            };
+
+            applied.push(AppliedMigration {
+                version,
+                name,
+                applied_at,
+            });
+        }
+        Ok(applied)
+    }
+
+    /// The memory repository — the only way to read or write memory.
+    pub fn memories(&self) -> MemoryRepository<'_, C> {
+        MemoryRepository::new(&self.db)
+    }
+
+    /// The raw connection.
+    ///
+    /// Deliberately crate-private. A public accessor would let a caller write a
+    /// statement with no scope predicate, which is exactly the failure the
+    /// repository API exists to make unexpressible.
+    #[cfg(test)]
+    pub(crate) fn connection(&self) -> &Surreal<C> {
+        &self.db
+    }
+}

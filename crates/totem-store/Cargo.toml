@@ -1,0 +1,31 @@
+[package]
+name = "totem-store"
+version = "0.1.0"
+description = "SurrealDB schema, migrations, and scope-isolating repositories for Totem memory"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+default = []
+# The on-disk engine is opt-in. SurrealDB already dominates this workspace's
+# compile time (docs/tech-direction/surrealdb.md §3: 5m02s cold on the cloud
+# runner) and every test here uses the embedded `kv-mem` engine, so ephemeral
+# runners must not pay for RocksDB they never touch.
+rocksdb = ["surrealdb/kv-rocksdb"]
+
+[dependencies]
+chrono.workspace = true
+# `kv-mem` is not optional: the embedded engine is the store's test substrate
+# and the console's live-query transport (TD-009). The exact version pin lives
+# in the workspace manifest.
+surrealdb = { workspace = true, features = ["kv-mem"] }
+thiserror.workspace = true
+totem-core = { path = "../totem-core" }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true
