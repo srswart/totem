@@ -11,7 +11,7 @@ advance:
   review_time_actual_minutes: ~
   pr_links: []
   external_refs: []
-  reviewability_score: 0
+  reviewability_score: 68
   risk_flags: []
   evidence: ["profile:selected-practices", "investigation:findings", "tests:unit"]
   practices:
@@ -133,6 +133,42 @@ has no dependents.
   --workspace --all-targets -- -D warnings`, `cargo test --workspace`,
   `arrive doctor artifacts`, `arrive plan check`, `arrive check --strict`,
   `arrive score`.
+
+## Reviewability
+
+`arrive score` reports **68 [RED]** (size 43, novelty 20, risk 5) against
+`origin/master`. The change is kept whole rather than split.
+
+The `concurrency` risk flag is a **heuristic false positive**: nothing in
+this advance touches threads, `async`, or shared state. It fires on the
+words "single-threaded" and "no-Tokio" in `embed_corpus.rs`'s print string
+and `embeddings.md`'s description of the `fastembed` crate — prose *about*
+the absence of concurrency, not concurrency itself. Noted here rather than
+disputed silently, per the honesty rule on correcting factual issues found
+during implementation; no frontmatter field exists to override a scorer
+heuristic, so `risk_flags` is left empty and this note stands as the
+correction.
+
+Of 865 changed lines, only 66 are the generated `Cargo.lock` delta for one
+new pinned dependency (`ureq`) — small relative to the size score's real
+driver, which is genuinely hand-written:
+
+| File | Lines | Splittable? |
+|---|---|---|
+| `crates/totem-embedding-spike/src/lib.rs` | 254 | No — corpus, queries, provider trait, and the one executed candidate share one fixture; splitting the corpus from the candidate leaves neither reviewable alone |
+| `docs/tech-direction/embeddings.md` | 181 | No — the findings, including the confirmed environment block, are the deliverable this advance exists to produce |
+| `arrive/.../ADV-STORE-003.md` | 183 | No — this record, required by the same advance |
+| `crates/totem-embedding-spike/tests/hashing_quality.rs` | 73 | No — assertions over the shared corpus fixture |
+| `crates/totem-embedding-spike/examples/*.rs` | 103 | No — the two commands whose captured output the findings doc quotes verbatim |
+| `Cargo.toml`, `Cargo.lock` | 24 | No — one workspace-member addition, one pinned dependency |
+
+Splitting by file would land, for example, the corpus and hashing embedder
+with no test proving the vocabulary-overlap finding, or the findings
+document with no code a reviewer could run to reproduce EMB-001/EMB-002 —
+each piece reviewable in isolation but none able to answer the question
+this investigation exists to answer. A reviewer can read
+`docs/tech-direction/embeddings.md` first and treat the crate as its
+appendix, the same reading order ADV-STORE-004 recommended.
 
 ## Changes Made
 
