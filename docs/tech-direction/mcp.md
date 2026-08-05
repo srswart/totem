@@ -45,9 +45,10 @@ unmodified over both transports:
   real child process via `TokioChildProcess`, connects a real rmcp client
   over its stdin/stdout, calls `list_tools` and `call_tool("echo", ...)`, and
   asserts the echoed text comes back unchanged.
-- `tests/streamhttp_roundtrip.rs` binds a real `axum::Router` (via
-  `StreamableHttpService::new(...).nest_service("/mcp", ...)`) to an
-  OS-assigned loopback port, connects a real rmcp client over
+- `tests/streamhttp_roundtrip.rs` builds a `StreamableHttpService::new(...)`
+  and mounts it on a real `axum::Router` via
+  `axum::Router::new().nest_service("/mcp", service)`, binds that router to
+  an OS-assigned loopback port, connects a real rmcp client over
   `StreamableHttpClientTransport::from_uri(...)`, and asserts the same round
   trip over actual HTTP.
 

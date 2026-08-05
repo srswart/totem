@@ -62,5 +62,11 @@ async fn echo_tool_round_trips_over_streamable_http() {
     assert_eq!(text, Some("hello over streamable http"));
 
     client.cancel().await.expect("clean shutdown");
+
     server.abort();
+    match server.await {
+        Ok(()) => {}
+        Err(e) if e.is_cancelled() => {}
+        Err(e) => panic!("echo_streamhttp server task failed: {e}"),
+    }
 }
