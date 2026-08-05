@@ -6,20 +6,30 @@ advance:
   primary_component: "store"
   components: ["store"]
   started_at: "2026-08-05T08:59:40Z"
-  implementation_completed_at: ~
-  review_time_estimate_minutes: 30
+  implementation_completed_at: "2026-08-05T10:03:15Z"
+  review_time_estimate_minutes: 25
   review_time_actual_minutes: ~
-  pr_links: []
+  pr_links: []  # filled after PR creation
   external_refs: []
-  reviewability_score: 0
+  reviewability_score: 41
   risk_flags: ["auth"]
-  evidence: []
+  evidence: ["profile:selected-practices", "investigation:findings", "tests:integration", "automation:control-validation"]
+  practices:
+    automation_control_validation:
+      status: applied
+      rationale: "Every new assertion carries a control: wrong-password refusal vs same-connection successful signin; viewer silent-discard vs identical root CREATE persisting (read-back both ways); capability denials vs capability-free baseline passing; HTTP live refusal vs identical statement accepted over WebSocket."
+    tidy_first:
+      status: not_applicable
+      rationale: "Investigation mode; no production code touched — additions are test automation in the spike crate."
+    tdd:
+      status: not_applicable
+      rationale: "test_automation work product, not production_code. Assertions were derived from executed server behaviour (the VIEWER silent-discard finding overturned the expected-refusal assertion); no tdd:red-green is claimed."
   model_usage: []
   schema_version: 2
   mode: investigation
   facets: [software, security]
   work_products: [test_automation]
-  status: planned
+  status: complete
 ---
 
 ## Objective
@@ -41,18 +51,28 @@ forgotten.
 
 ## Outcome
 
-After this advance:
-- The parity test has actually executed against a running server, and the result
-  is recorded verbatim — either parity confirmed, or each divergence written up
-  as a new TD entry.
-- §5 of the findings document no longer reads "expected but unverified": it
-  states what was executed, against which server version, with which capability
-  flags and auth configuration.
-- The auth/capability surface is characterised — what a default `surreal start`
-  permits versus an embedded instance running with default `Capabilities` and no
-  auth — and which of those differences ADV-GATEWAY-003 must account for.
-- The residual risk recorded on ADV-STORE-001 is either retired or replaced by a
-  specific, named constraint.
+Executed 2026-08-05 against `surrealdb/surrealdb:v3.2.4` (Docker, started
+`start --user root --pass root memory`, i.e. default capability flags) on a
+developer workstation with Docker — the cloud sandbox still cannot run a server.
+
+- **H1 confirmed:** all six ADV-STORE-004 experiments pass unchanged over
+  WebSocket; the suite now also asserts the server version matches the `=3.2.4`
+  pin at run time. 5 tests, 3 consecutive clean runs.
+- **H3 refuted (the insurance paid out as "no"):** no isolation-relevant
+  divergence — the scope predicate stays inside the `KnnScan` on the server and
+  the live feed publishes nothing from rolled-back turns. **The ADV-STORE-001
+  residual risk ("parity expected but unverified") is retired.**
+- **H2 confirmed with three executed findings**, now TD-009..TD-011 in
+  [docs/tech-direction/surrealdb.md](../../../../docs/tech-direction/surrealdb.md) §5:
+  live queries refused over the HTTP transport (server text: *"Unable to
+  perform the realtime query"*); default-server capability denials for
+  scripting and network, with different refusal text than the embedded build;
+  and the sharpest one — **a VIEWER-role user's data writes are silently
+  discarded** (`CREATE` returns OK, persists nothing, no error anywhere), while
+  its DDL fails loudly and its reads span every scope. Least-privilege DB users
+  cannot be trusted with error-checked writes, and DB roles contribute nothing
+  to scope isolation — both consequences recorded for ADV-GATEWAY-003 and the
+  store invariant.
 
 ## Environment Prerequisite (why this advance is separate)
 
@@ -88,18 +108,19 @@ neither hourly cloud routine selects it and stalls. It should be moved to
 
 ## Planned Work
 
-- [ ] branch: create or confirm feature branch for this advance
-- [ ] run the existing parity test against `surreal start` 3.2.4 and record the
+- [x] branch: create or confirm feature branch for this advance
+- [x] run the existing parity test against `surreal start` 3.2.4 and record the
       outcome verbatim, including server version and capability flags
-- [ ] extend `server_parity.rs` with the surface only a server has: authenticated
+- [x] extend `server_parity.rs` with the surface only a server has: authenticated
       signin, behaviour under a least-privilege (namespace/database-scoped) user
       rather than root, and capability defaults (functions, network, scripting)
-- [ ] execute the HTTP-protocol live-query limitation that ADV-STORE-004
+- [x] execute the HTTP-protocol live-query limitation that ADV-STORE-004
       established from SDK source but never ran
-- [ ] prove sensitivity: a negative control for each new assertion
-- [ ] update `docs/tech-direction/surrealdb.md` §5 and add TD entries for any
-      divergence found
-- [ ] state plainly whether the ADV-STORE-001 residual risk is retired
+- [x] prove sensitivity: a negative control for each new assertion
+- [x] update `docs/tech-direction/surrealdb.md` §5 and add TD entries for any
+      divergence found (TD-009, TD-010, TD-011)
+- [x] state plainly whether the ADV-STORE-001 residual risk is retired — it is
+      **retired**, replaced by the three named constraints
 
 ## Bug Fixes
 
@@ -170,15 +191,27 @@ what makes the result trustworthy.
 
 ## Evidence
 
-- [ ] profile:selected-practices — investigation mode, `test_automation` work
-      product: `automation_control_validation` applies; `tdd` and `tidy_first`
-      do not. `tdd:red-green` must not be claimed.
-- [ ] investigation:findings — new/updated TD entries in
-      `docs/tech-direction/surrealdb.md`, each tied to an executed run.
-- [ ] tests:integration — the parity test executed against a real server, with
-      server version and capability flags recorded alongside the result.
-- [ ] automation:control-validation — negative control per new assertion,
-      positive control from the six existing experiments.
+- [x] profile:selected-practices — investigation mode, `test_automation` work
+      product: `automation_control_validation` applied; `tdd` and `tidy_first`
+      recorded not_applicable. No `tdd:red-green` claimed. Notably, the executed
+      behaviour overturned a written assertion: the VIEWER write test was
+      authored expecting a refusal and the server silently discarded the write
+      instead — the assertion now pins the observed semantics (TD-011).
+- [x] investigation:findings — TD-009, TD-010, TD-011 added to
+      `docs/tech-direction/surrealdb.md` §5, each tied to an executed run with
+      verbatim refusal text; §5 retitled from "partially closed" to "closed".
+- [x] tests:integration — 5 parity tests against `surrealdb/surrealdb:v3.2.4`
+      (SDK-reported build `20260803.93ab219`), server started with default
+      capability flags; 3 consecutive clean runs; full workspace suite (51
+      tests incl. the new embedded capability probe) green alongside.
+- [x] automation:control-validation — controls per assertion: wrong-password vs
+      successful signin on the same connection; viewer silent-discard vs
+      identical root CREATE persisting (existence checked by read-back both
+      times); capability denials vs capability-free baseline (`math::abs`)
+      passing; HTTP live refusal vs identical statement accepted over
+      WebSocket on the same database.
+- Not claimed: `ci:passed` — CI has no SurrealDB server; the parity result is a
+      workstation run, recorded here and in the findings.
 
 ## CI Evidence Notes
 
@@ -192,4 +225,47 @@ what makes the result trustworthy.
 
 ## Changes Made
 
-- None yet
+### 2026-08-05 - test: extend the parity harness with the server-only surface
+- crates/totem-store-spike/src/lib.rs: capability probes (`PROBE_BASELINE`,
+  `PROBE_SCRIPTING`, `PROBE_NETWORK`) and `probe_expression` returning refusal
+  text verbatim
+- crates/totem-store-spike/tests/server_parity.rs: shared `root_connection`
+  helper; run-time server-version pin assertion; four new tests — bad-credential
+  signin refusal, VIEWER-role read-parity/silent-write-discard/DDL-refusal,
+  default capability denials, HTTP-protocol live-query refusal with WebSocket
+  control — each on its own database for concurrency safety
+- crates/totem-store-spike/tests/embedded.rs: embedded half of the capability
+  comparison (probes refuse because features are compiled out)
+- crates/totem-store-spike/Cargo.toml: `server-parity` feature gains
+  `surrealdb/protocol-http` for the transport-limitation test only
+
+### 2026-08-05 - docs: close the parity question
+- docs/tech-direction/surrealdb.md: §5 rewritten as "closed (ADV-STORE-006)"
+  with the run table, H1/H2/H3 dispositions, TD-009..TD-011, and the retired
+  ADV-STORE-001 residual risk; header verdict updated
+- arrive/systems/058-totem-core/advances/ADV-STORE-006.md: completed as this file
+- arrive/implementation-plan.yaml: ADV-STORE-006 item `blocked` → `done`
+
+## Check for Understanding
+
+1. The VIEWER-role test was written expecting the server to *refuse* an
+   under-privileged `CREATE`, and the executed run showed something different.
+   What actually happens, how does the test now prove it (two directions of
+   evidence), and why does TD-011 matter to ADV-GATEWAY-003's least-privilege
+   token design?
+2. TD-009 records two different refusal texts for live queries over HTTP —
+   one from the server for a raw `LIVE SELECT`, one from the SDK's `.live()`
+   path. Why does the WebSocket negative control in
+   `live_queries_are_refused_over_the_http_protocol` first `DEFINE TABLE
+   OVERWRITE memory`, and what does the HTTP refusal firing *without* that
+   table prove about where the refusal happens?
+3. The capability probes classify `Ok`/`Err` but the network probe's target is
+   `127.0.0.1:9`. Why can `Ok`/`Err` alone not distinguish "capability denied"
+   from "capability granted but unreachable", and how do the recorded verbatim
+   texts (server vs embedded) close that gap?
+4. The parity suite now asserts `(major, minor, patch) == (3, 2, 4)` at run
+   time. What question would a green run against a different server version
+   have answered instead, and which §5 run-table row pins the build that was
+   actually tested?
+5. After this advance, what single residual risk did ADV-STORE-001 lose, and
+   which three named constraints replaced it?

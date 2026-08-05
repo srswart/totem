@@ -38,7 +38,7 @@ passes:
           - id: "ADV-STORE-006"
             advance_id: "ADV-STORE-006"
             title: "Investigation: SurrealDB server-mode parity (embedded vs surreal start)"
-            status: blocked
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-STORE-004"]
             notes: >-
