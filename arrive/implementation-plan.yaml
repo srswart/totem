@@ -51,7 +51,7 @@ passes:
           - id: "ADV-STORE-003"
             advance_id: "ADV-STORE-003"
             title: "Investigation: embedding provider + placement spike"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: []
             notes: "Closes the §9 open question; ADV-STORE-002 implements the decision."
