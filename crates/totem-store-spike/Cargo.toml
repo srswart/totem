@@ -1,0 +1,28 @@
+[package]
+name = "totem-store-spike"
+version = "0.1.0"
+description = "ADV-STORE-004 investigation spike: SurrealDB multi-model recall, ACID writes, live queries"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+# Opt-in: runs the same experiments against a real `surreal start` server.
+# Off by default so the workspace test build stays lean and never depends on a
+# server being reachable. See tests/server_parity.rs.
+server-parity = ["surrealdb/protocol-ws"]
+
+[dependencies]
+futures = "0.3.31"
+# Pinned exactly: this spike's findings (query plans, operator names, knn
+# syntax) are version-specific, and hourly cloud runs must not break because an
+# upstream release landed mid-project.
+surrealdb = { version = "=3.2.4", default-features = false, features = ["kv-mem"] }
+tokio = { version = "1.43.0", features = ["time"] }
+
+[dev-dependencies]
+tokio = { version = "1.43.0", features = ["macros", "rt-multi-thread", "time"] }
+
+[lints]
+workspace = true
