@@ -30,3 +30,4 @@ temp/
 # Rust build output
 /target/
 .fastembed_cache/
+.arrive/hook-activity.jsonl
