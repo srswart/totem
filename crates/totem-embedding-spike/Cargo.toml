@@ -8,6 +8,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+fastembed = { version = "=5.17.4", optional = true }
 # Only used by the manual network-reachability probe (examples/probe_api_reachability.rs).
 # Pinned exactly: this spike's finding about which hosts the sandbox egress proxy allows
 # is a point-in-time observation, and hourly cloud runs must not break because an upstream
@@ -16,3 +17,11 @@ ureq = { version = "=2.10.1", default-features = false, features = ["tls"] }
 
 [lints]
 workspace = true
+
+[features]
+# Opt-in: runs the recommended local pretrained model (BGE-small-en-v1.5 via
+# fastembed). Off by default: first use downloads model weights, which the
+# cloud sandbox egress policy blocks (EMB-002/EMB-003) — a default
+# `cargo test --workspace` must never attempt that download. Run locally:
+#   cargo test -p totem-embedding-spike --features local-model -- --nocapture
+local-model = ["dep:fastembed"]
