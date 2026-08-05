@@ -1,6 +1,10 @@
 [workspace]
 resolver = "3"
-members = ["crates/totem-core", "crates/totem-store-spike"]
+members = [
+    "crates/totem-core",
+    "crates/totem-store-spike",
+    "crates/totem-embedding-spike",
+]
 
 # Sibling crate slots per docs/solution-intent.md §7; each is added by the
 # advance that first needs it, rather than landing as empty scaffolding here:
