@@ -45,6 +45,7 @@
 
 #![warn(missing_docs)]
 
+mod embedding;
 mod error;
 mod memory;
 mod migrate;
@@ -52,6 +53,9 @@ mod row;
 mod schema;
 mod store;
 
+#[cfg(feature = "fastembed")]
+pub use embedding::fastembed_embedder::FastembedEmbedder;
+pub use embedding::{DeterministicEmbedder, Embedder, embed};
 pub use error::{StoreError, StoreResult};
 pub use memory::{MemoryRepository, RecallQuery};
 pub use migrate::{AppliedMigration, MIGRATIONS, Migration};
