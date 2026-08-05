@@ -37,6 +37,9 @@ pub enum StoreError {
     /// A stored row could not be read back as a domain record.
     #[error("stored row is not a readable memory record: {0}")]
     Row(String),
+    /// An [`Embedder`](crate::Embedder) could not produce a vector for the given text.
+    #[error("embedding failed: {0}")]
+    Embedding(String),
     /// SurrealDB refused the statement.
     #[error(transparent)]
     Database(#[from] surrealdb::Error),

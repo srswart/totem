@@ -12,6 +12,8 @@ use std::sync::Mutex;
 
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 
+use crate::error::{StoreError, StoreResult};
+
 use super::Embedder;
 
 /// BGE-small-en-v1.5 over ONNX, loaded once at construction.
@@ -45,13 +47,16 @@ impl Embedder for FastembedEmbedder {
         "fastembed-bge-small-en-v1.5"
     }
 
-    fn embed(&self, text: &str) -> Vec<f32> {
-        self.model
+    fn embed(&self, text: &str) -> StoreResult<Vec<f32>> {
+        let mut model = self
+            .model
             .lock()
-            .expect("no panic can poison this lock mid-embed")
+            .map_err(|_| StoreError::Embedding("embedding model lock is poisoned".to_string()))?;
+        let mut vectors = model
             .embed([text], None)
-            .expect("local inference on an in-memory model does not fail")
-            .pop()
-            .expect("one input text yields one embedding")
+            .map_err(|error| StoreError::Embedding(error.to_string()))?;
+        vectors.pop().ok_or_else(|| {
+            StoreError::Embedding("model returned no embedding for the input".to_string())
+        })
     }
 }

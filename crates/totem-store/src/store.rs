@@ -1,5 +1,7 @@
 //! The connection, its migrations, and the repositories reached through it.
 
+use std::collections::HashSet;
+
 use chrono::{DateTime, Utc};
 use surrealdb::engine::local::{Db, Mem};
 use surrealdb::types::{Number, RecordId, Value};
@@ -55,7 +57,7 @@ impl<C: Connection> Store<C> {
     pub async fn migrate(&self) -> StoreResult<Vec<u32>> {
         self.db.query(MIGRATION_LEDGER).await?.check()?;
 
-        let already_applied: Vec<u32> = self
+        let already_applied: HashSet<u32> = self
             .applied_migrations()
             .await?
             .into_iter()

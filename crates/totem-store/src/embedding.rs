@@ -37,14 +37,14 @@ pub trait Embedder: Send + Sync {
     /// A stable label for provenance and logs: which model produced this.
     fn model_name(&self) -> &'static str;
 
-    /// Embed `text`.
-    fn embed(&self, text: &str) -> Vec<f32>;
+    /// Embed `text`, or report why no vector could be produced.
+    fn embed(&self, text: &str) -> StoreResult<Vec<f32>>;
 }
 
 /// Generate an embedding for `content.body` and attach it, refusing a
 /// dimension mismatch before it can reach the store's own check on `save`.
 pub fn embed(embedder: &dyn Embedder, mut content: Content) -> StoreResult<Content> {
-    let vector = embedder.embed(&content.body);
+    let vector = embedder.embed(&content.body)?;
     if vector.len() != EMBEDDING_DIMENSIONS {
         return Err(StoreError::EmbeddingDimensions {
             expected: EMBEDDING_DIMENSIONS,
@@ -87,7 +87,7 @@ impl Embedder for DeterministicEmbedder {
         "deterministic-trigram-hash"
     }
 
-    fn embed(&self, text: &str) -> Vec<f32> {
+    fn embed(&self, text: &str) -> StoreResult<Vec<f32>> {
         let mut vector = vec![0f32; self.dims];
         let lower = text.to_lowercase();
         let chars: Vec<char> = lower.chars().collect();
@@ -102,7 +102,7 @@ impl Embedder for DeterministicEmbedder {
         }
 
         l2_normalize(&mut vector);
-        vector
+        Ok(vector)
     }
 }
 

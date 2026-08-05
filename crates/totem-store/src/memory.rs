@@ -351,12 +351,12 @@ fn readable_scopes(reader: &ScopeChain) -> Vec<String> {
 fn objects(rows: Value) -> StoreResult<Vec<Object>> {
     let rows = rows
         .into_array()
-        .map_err(|_| StoreError::Row("recall did not return an array".to_string()))?;
+        .map_err(|_| StoreError::Row("query did not return an array".to_string()))?;
     rows.iter()
         .map(|row| {
             row.clone()
                 .into_object()
-                .map_err(|_| StoreError::Row("recall row is not an object".to_string()))
+                .map_err(|_| StoreError::Row("query row is not an object".to_string()))
         })
         .collect()
 }

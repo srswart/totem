@@ -45,8 +45,12 @@ fn embedding_leaves_body_and_tags_untouched() {
 fn the_deterministic_embedder_is_deterministic() {
     let embedder = DeterministicEmbedder::new();
     assert_eq!(
-        embedder.embed("the same text twice"),
-        embedder.embed("the same text twice"),
+        embedder
+            .embed("the same text twice")
+            .expect("embed succeeds"),
+        embedder
+            .embed("the same text twice")
+            .expect("embed succeeds"),
     );
 }
 
@@ -54,8 +58,12 @@ fn the_deterministic_embedder_is_deterministic() {
 fn different_texts_produce_different_vectors() {
     let embedder = DeterministicEmbedder::new();
     assert_ne!(
-        embedder.embed("alpha concerns pnpm and javascript tooling"),
-        embedder.embed("a release train ships every other tuesday"),
+        embedder
+            .embed("alpha concerns pnpm and javascript tooling")
+            .expect("embed succeeds"),
+        embedder
+            .embed("a release train ships every other tuesday")
+            .expect("embed succeeds"),
     );
 }
 
@@ -66,8 +74,8 @@ fn embed_refuses_an_embedder_that_returns_the_wrong_dimension() {
         fn model_name(&self) -> &'static str {
             "four-dimension-test-double"
         }
-        fn embed(&self, _text: &str) -> Vec<f32> {
-            vec![0.0, 1.0, 0.0, 0.0]
+        fn embed(&self, _text: &str) -> totem_store::StoreResult<Vec<f32>> {
+            Ok(vec![0.0, 1.0, 0.0, 0.0])
         }
     }
 
@@ -110,7 +118,9 @@ async fn recall_ranks_generated_embeddings_by_similarity() {
     memories.save(&chain(ADA), &close).await.expect("write");
     memories.save(&chain(ADA), &far).await.expect("write");
 
-    let probe = embedder.embed("should javascript projects use npm or pnpm");
+    let probe = embedder
+        .embed("should javascript projects use npm or pnpm")
+        .expect("embed succeeds");
     let query = RecallQuery::new()
         .near(probe)
         .expect("the probe matches the pinned dimension")
