@@ -31,7 +31,7 @@ passes:
           - id: "ADV-STORE-004"
             advance_id: "ADV-STORE-004"
             title: "Investigation: SurrealDB multi-model one-round-trip spike"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: []
             notes: "Validates the load-bearing G2 assumption before the schema commits to it. MODEL: claude-opus-5"
