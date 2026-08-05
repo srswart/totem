@@ -24,9 +24,16 @@ publish = false
 
 [workspace.dependencies]
 chrono = { version = "0.4.39", default-features = false, features = ["clock", "serde", "std"] }
+futures = "0.3.31"
 serde = { version = "1.0.217", features = ["derive"] }
 serde_json = "1.0.135"
+# Pinned exactly, workspace-wide: the ADV-STORE-004/006 findings the store is
+# built on (knn syntax, query plans, event semantics) are version-specific, and
+# a second literal pin in a sibling crate is how the two silently drift apart.
+# Engine features are chosen per crate; nothing here enables one by default.
+surrealdb = { version = "=3.2.4", default-features = false }
 thiserror = "2.0.11"
+tokio = { version = "1.43.0" }
 uuid = { version = "1.11.1", features = ["serde", "v4"] }
 
 [workspace.lints.rust]

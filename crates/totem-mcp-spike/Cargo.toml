@@ -30,7 +30,7 @@ rmcp = { version = "=3.1.0", features = [
 axum = "0.8"
 serde = { workspace = true }
 serde_json = { workspace = true }
-tokio = { version = "1.43.0", features = [
+tokio = { workspace = true, features = [
     "rt-multi-thread",
     "macros",
     "net",
@@ -40,7 +40,7 @@ tokio = { version = "1.43.0", features = [
 anyhow = "1.0"
 
 [dev-dependencies]
-tokio = { version = "1.43.0", features = ["rt-multi-thread", "macros", "net", "io-std", "process", "time"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-std", "process", "time"] }
 
 [lints]
 workspace = true
