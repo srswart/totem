@@ -45,19 +45,35 @@ fn scope_serialises_as_its_wire_form() {
 }
 
 #[test]
-fn scope_rejects_malformed_wire_forms() {
+fn scope_rejects_unknown_prefixes() {
     assert!(matches!(
         "tenant:ada".parse::<Scope>(),
         Err(ScopeParseError::UnknownPrefix(_))
     ));
     assert!(matches!(
-        "actor".parse::<Scope>(),
+        "tenant".parse::<Scope>(),
         Err(ScopeParseError::UnknownPrefix(_))
     ));
-    assert!(matches!(
-        "actor:".parse::<Scope>(),
-        Err(ScopeParseError::Id(_))
-    ));
+}
+
+#[test]
+fn a_known_prefix_without_an_identifier_reports_the_missing_identifier() {
+    // "actor" and "actor:" are the same mistake — a scope naming no owner —
+    // and must not be reported as an unknown prefix, which "actor" is not.
+    for wire in ["actor", "actor:", "project", "project:", "team", "team:"] {
+        assert!(
+            matches!(wire.parse::<Scope>(), Err(ScopeParseError::Id(_))),
+            "{wire:?} should report a missing identifier"
+        );
+    }
+}
+
+#[test]
+fn platform_is_the_only_unqualified_scope() {
+    assert_eq!(
+        "platform".parse::<Scope>().expect("parses"),
+        Scope::Platform
+    );
     assert!(matches!(
         "platform:everyone".parse::<Scope>(),
         Err(ScopeParseError::UnexpectedId)
@@ -150,6 +166,22 @@ fn every_chain_ends_at_the_platform_scope() {
     ] {
         assert_eq!(chain.scopes().last(), Some(&Scope::Platform));
     }
+}
+
+#[test]
+fn team_precedence_does_not_depend_on_the_order_memberships_arrive_in() {
+    // Position in the chain is precedence, so the same actor with the same
+    // memberships must resolve to the same chain however the membership list
+    // was assembled — a store query returning teams in a different order must
+    // not change which team's version of a fact wins.
+    let ordered = ScopeChain::resolve(&actor("ada"), None, &[team("alpha"), team("beta")]);
+    let reversed = ScopeChain::resolve(&actor("ada"), None, &[team("beta"), team("alpha")]);
+
+    assert_eq!(ordered, reversed);
+    assert!(
+        ordered.precedence_of(&Scope::Team(team("alpha")))
+            < ordered.precedence_of(&Scope::Team(team("beta")))
+    );
 }
 
 #[test]

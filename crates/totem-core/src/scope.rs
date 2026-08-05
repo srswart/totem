@@ -80,14 +80,21 @@ impl FromStr for Scope {
     type Err = ScopeParseError;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        match value.split_once(':') {
-            Some(("actor", id)) => Ok(Scope::Actor(ActorId::new(id)?)),
-            Some(("project", id)) => Ok(Scope::Project(RepoId::new(id)?)),
-            Some(("team", id)) => Ok(Scope::Team(TeamId::new(id)?)),
-            Some(("platform", _)) => Err(ScopeParseError::UnexpectedId),
-            Some((prefix, _)) => Err(ScopeParseError::UnknownPrefix(prefix.to_string())),
-            None if value == "platform" => Ok(Scope::Platform),
-            None => Err(ScopeParseError::UnknownPrefix(value.to_string())),
+        // A known prefix with no identifier ("actor") is the same mistake as an
+        // empty one ("actor:") — a scope naming no owner — so both report the
+        // missing identifier. Only an unrecognised prefix is `UnknownPrefix`.
+        let (prefix, id) = match value.split_once(':') {
+            Some((prefix, id)) => (prefix, Some(id)),
+            None => (value, None),
+        };
+
+        match (prefix, id) {
+            ("actor", id) => Ok(Scope::Actor(ActorId::new(id.unwrap_or_default())?)),
+            ("project", id) => Ok(Scope::Project(RepoId::new(id.unwrap_or_default())?)),
+            ("team", id) => Ok(Scope::Team(TeamId::new(id.unwrap_or_default())?)),
+            ("platform", None) => Ok(Scope::Platform),
+            ("platform", Some(_)) => Err(ScopeParseError::UnexpectedId),
+            (prefix, _) => Err(ScopeParseError::UnknownPrefix(prefix.to_string())),
         }
     }
 }
@@ -121,18 +128,26 @@ impl ScopeChain {
     /// they are working in (if any), each team they belong to, then platform.
     ///
     /// The actor's own id is the only `actor` scope that can enter the chain.
+    ///
+    /// Team ids are sorted and deduplicated, so precedence within the team tier
+    /// does not depend on the order memberships happened to arrive in. The same
+    /// actor with the same memberships always resolves to the same chain, and
+    /// therefore to the same merged view.
     pub fn resolve(actor: &ActorId, project: Option<&RepoId>, teams: &[TeamId]) -> Self {
-        let mut scopes = Vec::with_capacity(teams.len() + 3);
+        let mut sorted_teams: Vec<&TeamId> = teams.iter().collect();
+        sorted_teams.sort();
+        sorted_teams.dedup();
+
+        let mut scopes = Vec::with_capacity(sorted_teams.len() + 2);
         scopes.push(Scope::Actor(actor.clone()));
         if let Some(project) = project {
             scopes.push(Scope::Project(project.clone()));
         }
-        for team in teams {
-            let scope = Scope::Team(team.clone());
-            if !scopes.contains(&scope) {
-                scopes.push(scope);
-            }
-        }
+        scopes.extend(
+            sorted_teams
+                .into_iter()
+                .map(|team| Scope::Team(team.clone())),
+        );
         scopes.push(Scope::Platform);
         Self { scopes }
     }

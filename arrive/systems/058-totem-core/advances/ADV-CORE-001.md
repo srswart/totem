@@ -69,7 +69,14 @@ and the audit log.
 
 ## Bug Fixes
 
-- [ ] None yet
+- [x] `Scope::from_str` reported a bare known prefix (`"actor"`) as
+      `ScopeParseError::UnknownPrefix`, contradicting that variant's documented
+      meaning. It now reports the missing identifier, so `"actor"` and
+      `"actor:"` behave alike. Found in review on PR #1.
+- [x] `ScopeChain::resolve` preserved the caller's team slice order, and chain
+      position is precedence — so identical memberships supplied in a different
+      order produced a different merged view. Team ids are now sorted and
+      deduplicated. Found in review on PR #1.
 
 ## Risk + Rollback
 
@@ -120,7 +127,7 @@ Frontmatter `risk_flags` records the two flags that are real
 - [x] tdd:red-green — the `test:` commit was verified RED before implementation:
       `cargo test --workspace` failed with `E0432: unresolved imports` naming all
       25 domain types. The `feat:` commit turned it green.
-- [x] tests:unit — 41 tests pass (15 lib unit + 25 integration + 1 doctest):
+- [x] tests:unit — 43 tests pass (15 lib unit + 27 integration + 1 doctest):
       `cargo test --workspace`.
 - Mutation check (beyond the required evidence): the two security-relevant
   invariants were re-verified by deliberately breaking the implementation.
@@ -192,32 +199,57 @@ Frontmatter `risk_flags` records the two flags that are real
   load-bearing rules, a compiling doctest, `#![warn(missing_docs)]`, and the
   public re-exports.
 
+### 2026-08-05 - fix: Scope parse errors and deterministic team precedence
+Both defects were found by review on PR #1 and fixed test-first; the two new
+tests were confirmed failing against the old implementation before the change.
+- crates/totem-core/src/scope.rs: `FromStr` no longer reports a bare known
+  prefix (`"actor"`) as `UnknownPrefix`. It splits prefix from identifier
+  first, so `"actor"` and `"actor:"` both report the missing identifier via
+  `ScopeParseError::Id`, and only an unrecognised prefix is `UnknownPrefix` —
+  matching that variant's documented meaning.
+- crates/totem-core/src/scope.rs: `ScopeChain::resolve` now sorts and
+  deduplicates team ids instead of preserving the caller's slice order. Chain
+  position is precedence, so caller-supplied ordering meant two callers with
+  identical memberships could see different team precedence — for example a
+  store query returning memberships in an unstable order would silently change
+  which team's version of a fact wins.
+- crates/totem-core/tests/scope_isolation.rs: split the malformed-wire-form
+  test into `scope_rejects_unknown_prefixes`,
+  `a_known_prefix_without_an_identifier_reports_the_missing_identifier`, and
+  `platform_is_the_only_unqualified_scope`; added
+  `team_precedence_does_not_depend_on_the_order_memberships_arrive_in`.
+  Suite is now 43 tests.
+
 ## Check for Understanding
 
 1. `ScopeChain::resolve()` in `crates/totem-core/src/scope.rs` is the only way
    to build a chain, and its `scopes` field is private. What would be lost if
    `ScopeChain` instead exposed a public `from_scopes(Vec<Scope>)` constructor,
    and which test in `tests/scope_isolation.rs` would stop being meaningful?
-2. `Scope` serialises as `actor:ada` rather than as a tagged struct. Given
-   `FromStr` in `scope.rs` splits on the first `:`, what happens to a repo id
-   that itself contains a colon, and why does `ActorId::new` rejecting untrimmed
-   values matter for isolation rather than merely for tidiness?
-3. `MemoryRecord::revise()` refuses append-only categories, but `content` is a
+2. `ScopeChain::resolve()` sorts and deduplicates team ids rather than keeping
+   the caller's order. Explain the concrete failure that ordering by arrival
+   allowed, given that chain position is precedence — and say why the same
+   argument does not apply to the actor/project/team/platform tiers themselves.
+3. `Scope::from_str` distinguishes `ScopeParseError::UnknownPrefix` from
+   `ScopeParseError::Id`. Which of `"actor"`, `"actor:"`, `"tenant"`, and
+   `"platform:everyone"` produces which error, and why is `"actor"` *not* an
+   unknown prefix?
+4. `MemoryRecord::revise()` refuses append-only categories, but `content` is a
    public field on the struct. Where does that leave the append-only invariant,
    and which layer is stated in `crates/totem-core/src/lib.rs` as the place that
    actually enforces it?
-4. `MemoryCategory::lifecycle()` in `category.rs` gives Episodic
+5. `MemoryCategory::lifecycle()` in `category.rs` gives Episodic
    `decays: false` and `injection_priority: 10`, while Instructions gets
    `decays: false` and `100`. Explain why the audit substrate is both
    non-decaying and lowest-priority for injection.
-5. `Provenance` implements neither `Default` nor an empty builder. Name the
+6. `Provenance` implements neither `Default` nor an empty builder. Name the
    specific auditability property (see docs/project-brief.md, G3) this protects,
    and say whether `MemoryRecord::new()` could satisfy it if `provenance` were
    an `Option`.
-6. `Governance::initial()` sets `ReviewState::Pending` for Instructions and
+7. `Governance::initial()` sets `ReviewState::Pending` for Instructions and
    Uncertainty but `NotRequired` for Knowledge. Which field of
    `CategoryLifecycle` drives that, and what does it imply for the promotion
    engine that `ADV-CORE-003` will build on top?
-7. The `## Reviewability` section argues this Red-scoring advance should not be
+8. The `## Reviewability` section argues this Red-scoring advance should not be
    split. Which single file would you split out first if you disagreed, and what
    would break in `crates/totem-core/src/record.rs` if you did?
