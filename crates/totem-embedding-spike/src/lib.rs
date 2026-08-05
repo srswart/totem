@@ -138,8 +138,11 @@ pub struct HashingEmbedder {
 }
 
 impl HashingEmbedder {
+    /// `dims` is clamped to at least 1 here, not in `embed`, so the stored
+    /// field always matches the length of every vector this embedder
+    /// produces.
     pub fn new(dims: usize) -> Self {
-        Self { dims }
+        Self { dims: dims.max(1) }
     }
 }
 
@@ -149,7 +152,7 @@ impl EmbeddingProvider for HashingEmbedder {
     }
 
     fn embed(&self, text: &str) -> Vec<f32> {
-        let mut vector = vec![0f32; self.dims.max(1)];
+        let mut vector = vec![0f32; self.dims];
         let lower = text.to_lowercase();
         let chars: Vec<char> = lower.chars().collect();
 
@@ -195,7 +198,17 @@ fn l2_normalize(vector: &mut [f32]) {
 /// Cosine similarity. Both inputs are expected L2-normalized (as
 /// `HashingEmbedder::embed` produces), in which case this is a plain dot
 /// product.
+///
+/// `zip` would otherwise silently truncate to the shorter vector on a
+/// dimension mismatch and return a score that looks valid but isn't.
 pub fn cosine(a: &[f32], b: &[f32]) -> f32 {
+    debug_assert_eq!(
+        a.len(),
+        b.len(),
+        "cosine similarity between vectors of different dimensionality ({} vs {}) is meaningless",
+        a.len(),
+        b.len()
+    );
     a.iter().zip(b).map(|(x, y)| x * y).sum()
 }
 

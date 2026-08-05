@@ -2,8 +2,8 @@
 
 **Status:** Findings accepted, partially closed · **Date:** 2026-08-05 ·
 **Advance:** ADV-STORE-003 · **Companion:**
-[solution-intent.md](../solution-intent.md) §2.1, §9 · implemented by
-`ADV-STORE-002`
+[solution-intent.md](../solution-intent.md) §2.1, §9 · to be implemented by
+`ADV-STORE-002` (currently `status: planned`)
 
 Solution Intent §9 leaves two open questions for every Totem memory record's
 `embedding` field: which **provider** produces it (local model vs. API), and

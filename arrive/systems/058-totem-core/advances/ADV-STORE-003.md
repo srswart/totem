@@ -214,6 +214,24 @@ appendix, the same reading order ADV-STORE-004 recommended.
   evidence, practice dispositions, refreshed CFU
 - arrive/implementation-plan.yaml: plan item ADV-STORE-003 set to done
 
+### 2026-08-05 - fix: address PR #5 review comments from Copilot
+
+Three points raised on PR #5, all accepted:
+
+- docs/tech-direction/embeddings.md: the header claimed "implemented by
+  `ADV-STORE-002`" while that advance is still `status: planned` —
+  misleading present tense. Reworded to "to be implemented by
+  `ADV-STORE-002` (currently `status: planned`)".
+- crates/totem-embedding-spike/src/lib.rs: `HashingEmbedder::embed` clamped
+  `self.dims.max(1)` at call time, so `new(0)` produced 1-dimensional
+  vectors while the stored `dims` field stayed `0` — the field and the
+  actual output could disagree. Moved the clamp into `new`, so `dims`
+  always matches every vector `embed` produces.
+- crates/totem-embedding-spike/src/lib.rs: `cosine` used `Iterator::zip`,
+  which silently truncates to the shorter of two mismatched-length vectors
+  and returns a similarity score with no signal that anything was wrong.
+  Added a `debug_assert_eq!` on the two lengths.
+
 ## Check for Understanding
 
 1. `HashingEmbedder` ranks the paraphrased query
