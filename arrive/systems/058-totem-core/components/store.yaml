@@ -20,3 +20,4 @@ invariants:
   - "Scope isolation is enforced at the store layer — an invariant, not an application-layer courtesy"
   - "Episodic records are append-only; never edited or deleted"
   - "Every write carries provenance (author, harness, session, turn, derived_from)"
+  - "The store connects to SurrealDB as a fully-privileged system user and enforces all authorization itself; restricted DB roles are never used (TD-011: their writes are silently discarded, and roles are not row filters)"

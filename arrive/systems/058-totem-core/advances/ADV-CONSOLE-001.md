@@ -35,7 +35,9 @@ After this advance:
 - A developer can open the console, see the landscape of enrolled repos, and
   browse memories by scope and category — the first "humans observe" surface (G5).
 - Landscape changes (e.g. an advance status flip after sync) appear without a
-  manual refresh via live-query updates.
+  manual refresh via live-query updates. (TD-009: live queries exist only on
+  embedded/WebSocket SurrealDB connections — the gateway holds one; the
+  console consumes gateway events, it does not open an HTTP DB connection.)
 
 ## Planned Implementation Tasks
 

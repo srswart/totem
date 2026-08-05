@@ -40,6 +40,7 @@ Read in this order:
 - `arrive/agent-rules/advance-writing.md`, `dev-practices.md`, `reviewability.md`, `advance-profiles.md`
 - `docs/project-brief.md` and `docs/solution-intent.md` — the source requirements
 - `docs/arrive-decomposition-gaps.md` — decomposition rationale, known gaps, and advance sequencing
+- `docs/tech-direction/` — executed findings and pinned decisions (SurrealDB constraints TD-001..TD-011; embedding pin EMB-001..EMB-004). These are binding on store/gateway/console advances — an implementation that contradicts a TD/EMB entry is wrong even if its tests pass
 
 ## Step 4 — Pick the next advance
 

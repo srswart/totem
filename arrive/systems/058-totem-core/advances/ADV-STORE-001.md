@@ -42,12 +42,31 @@ After this advance:
   another actor's memories; episodic records reject updates/deletes; writes
   without provenance are rejected.
 
+## Constraints from completed investigations (binding)
+
+Read [docs/tech-direction/surrealdb.md](../../../../docs/tech-direction/surrealdb.md)
+§4 before writing any schema — its constraints (TD-002 knn syntax with EXPLAIN
+assertions, TD-004 datetime binding with a regression test, TD-005, TD-008) are
+requirements of this advance, not background. Additionally:
+
+- **Vector index pin:** `DIMENSION 384 DIST COSINE` — derived from the
+  measured embedding decision in
+  [docs/tech-direction/embeddings.md](../../../../docs/tech-direction/embeddings.md)
+  (EMB-004: BGE-small-en-v1.5 via fastembed). The embedding *pipeline* lands in
+  ADV-STORE-002; the schema fixes the dimension now so no index migration is
+  needed between the two.
+- **Connection identity (TD-011):** the store connects as a fully-privileged
+  system user and enforces ALL authorization itself. Restricted DB roles are
+  unusable — their data writes are silently discarded, and roles are not row
+  filters. This is now a component invariant on `store`.
+
 ## Planned Implementation Tasks
 
 - [ ] branch: create or confirm feature branch for this advance
 - [ ] tidy: preparatory refactoring (no behavior change)
 - [ ] test: scope-isolation, append-only-episodic, and provenance-required tests (red first)
-- [ ] feat: schema + migrations + repositories to pass tests
+- [ ] test: TD-004 regression (string-bound cutoff must be impossible to express) and TD-002 EXPLAIN assertion
+- [ ] feat: schema (HNSW DIMENSION 384 DIST COSINE) + migrations + repositories to pass tests
 
 ## Bug Fixes
 
