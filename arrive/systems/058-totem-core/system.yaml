@@ -3,7 +3,6 @@ system:
   name: "058 Totem Core"
   description: "Totem service + console: typed agent memory, scoped sharing, ARRIVE landscape mirror, audit/metering/value loop (see docs/project-brief.md and docs/solution-intent.md)"
   roots:
-    - "src/**"
     - "crates/**"
   default_branch: master
 
