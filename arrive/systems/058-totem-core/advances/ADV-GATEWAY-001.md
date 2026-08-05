@@ -38,6 +38,10 @@ After this advance:
   endpoint, in which session) — verifiable by an audit query.
 - The gateway stays thin over the core API (mitigation for the "standard
   drift" risk in the brief).
+- **Connection constraint (TD-009, executed):** the gateway's own SurrealDB
+  connection must be embedded or WebSocket — never the HTTP protocol, which
+  refuses live queries; the console's live feeds depend on this. See
+  docs/tech-direction/surrealdb.md §5.
 
 ## Planned Implementation Tasks
 

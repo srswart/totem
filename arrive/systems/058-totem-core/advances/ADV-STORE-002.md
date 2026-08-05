@@ -26,9 +26,23 @@ advance:
 
 **Gap-fill** (see docs/arrive-decomposition-gaps.md): the record shape includes
 an `embedding` vector and recall ranking depends on vector search, but no
-roadmap advance produces embeddings. Implement embedding generation and the
-SurrealDB vector index per the provider/placement decision from the
-ADV-STORE-003 investigation.
+roadmap advance produces embeddings. Implement embedding generation per the
+**measured** decision in
+[docs/tech-direction/embeddings.md](../../../../docs/tech-direction/embeddings.md)
+(ADV-STORE-003 + ADV-STORE-007 / EMB-004): **BGE-small-en-v1.5 via `fastembed`,
+384 dimensions, embedded synchronously at gateway-write time**; the curator
+owns re-embedding on model-version change. The HNSW index (DIMENSION 384) is
+ADV-STORE-001's; this advance fills it.
+
+**Environment constraint (EMB-002/EMB-003, binding on the implementing
+agent):** the cloud sandbox cannot download model weights. Structure the work
+as: an `Embedder` trait in production code; sandbox tests run against a
+deterministic test embedder (the spike's hashing shape is fine for tests);
+real `fastembed` inference behind an off-by-default cargo feature verified on
+a workstation (the ADV-STORE-006/007 split). Load the model once at service
+startup — cold construction is ~276 s (download) vs ~124 ms warm; a sandboxed
+deployment must bake the weights into its image. Do not mark the model-backed
+path as sandbox-verified — say plainly which half ran where.
 
 ## Behavioral Change
 

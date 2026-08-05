@@ -2,6 +2,13 @@
 //! candidates for Totem memory records. Not production code — no dependent
 //! crate should import this one. See
 //! `docs/tech-direction/embeddings.md` for the findings this spike produced.
+//!
+//! ADV-STORE-007 adds the candidate ADV-STORE-003 could not run — the
+//! recommended local pretrained model — behind the opt-in `local-model`
+//! feature (see `local_model` and `tests/local_model_quality.rs`).
+
+#[cfg(feature = "local-model")]
+pub mod local_model;
 
 /// One memory-sized text from the toy corpus, tagged with the category it
 /// would carry as a real Totem record (Solution Intent §2.1).
@@ -186,7 +193,7 @@ fn fnv1a(s: &str) -> u64 {
     hash
 }
 
-fn l2_normalize(vector: &mut [f32]) {
+pub(crate) fn l2_normalize(vector: &mut [f32]) {
     let norm = vector.iter().map(|x| x * x).sum::<f32>().sqrt();
     if norm > 0.0 {
         for x in vector.iter_mut() {

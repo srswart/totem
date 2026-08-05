@@ -1,7 +1,7 @@
 # Tech Direction: Embedding provider + placement
 
-**Status:** Findings accepted, partially closed · **Date:** 2026-08-05 ·
-**Advance:** ADV-STORE-003 · **Companion:**
+**Status:** Findings accepted, closed (EMB-004, ADV-STORE-007) · **Date:** 2026-08-05 ·
+**Advances:** ADV-STORE-003, ADV-STORE-007 · **Companion:**
 [solution-intent.md](../solution-intent.md) §2.1, §9 · to be implemented by
 `ADV-STORE-002` (currently `status: planned`)
 
@@ -11,13 +11,22 @@ where **placement** happens (`totem-gateway` on write vs. `totem-curator` in a
 batch job). This document records what a spike could and could not measure in
 this environment, and the recommendation ADV-STORE-002 should implement.
 
-**Verdict: recommend a local model, embedded synchronously at gateway-write
-time, API-based embedding as an explicit non-default opt-in — but the
-recommendation rests on published specs and one real local baseline, not on
-a head-to-head quality measurement, because this environment's egress policy
-blocks every embedding API host tested (EMB-002).** That gap is real and
-should be closed in an environment that can reach those hosts before
-ADV-STORE-002 finalizes the choice.
+**Verdict: a local model — `fastembed` with BGE-small-en-v1.5, 384
+dimensions — embedded synchronously at gateway-write time; API-based
+embedding stays an explicit non-default opt-in.** ADV-STORE-003 recommended
+this shape on published specs alone (the sandbox egress policy blocks the
+model download, EMB-002/EMB-003); **ADV-STORE-007 has since executed the
+recommended model on a workstation and measured it (EMB-004)**: it ranks all
+five labeled queries first — including the paraphrase the lexical baseline
+misses — at ~5 ms per embedding. The decision ADV-STORE-002 implements is
+now measured, not argued. The API candidates remain unmeasured, accepted:
+they were already disfavored on the privacy ground alone (§4), so no
+API-side measurement is planned.
+
+**Pinned for downstream advances:** model `BGE-small-en-v1.5` via
+`fastembed` (`=5.17.4` in the spike), **384 dimensions, cosine distance** —
+ADV-STORE-001's HNSW index derives `DIMENSION 384` from this pin; a model
+change re-opens both the pin and every stored vector (curator re-embeds).
 
 ## 1. What was run
 
@@ -109,6 +118,32 @@ one-time model download, or a container image that bakes the model weights
 in ahead of time — the same shape of fix ADV-STORE-006 identified for
 SurrealDB server-mode parity.
 
+### EMB-004 — The recommended model, executed: BGE-small-en-v1.5 ranks every labeled query first, including the paraphrase, at ~5 ms per call. *(confirmed, by execution — ADV-STORE-007)*
+
+Run on a developer workstation (Docker-capable host with hub access — the
+same environment split ADV-STORE-006 used), behind the spike's opt-in
+`local-model` feature, against the identical corpus, labeled queries, and
+harness as EMB-001:
+
+- **Retrieval:** 5/5 queries rank their expected record first — including
+  `"How do we keep private data out of shared scopes?"`, the paraphrased
+  query the hashing baseline ranks second (EMB-001). Sensitivity control in
+  the same test run: the hashing baseline still fails that query under the
+  identical harness, so the comparison retains its discriminating case.
+- **Dimensionality:** asserted 384 at run time; ADV-STORE-001's index pin is
+  derived from this assertion, not from documentation.
+- **Latency:** mean ~4.8–5.0 ms per embedding across the corpus
+  (single-threaded CPU ONNX, Apple-silicon workstation, debug build) — well
+  inside a synchronous gateway-write budget. Model construction: ~276 s on a
+  cold cache (one-time weight download) vs ~124 ms warm; services must load
+  once at startup, never per request, and a cold cache needs hub access
+  (in a sandboxed deployment: bake the weights into the image).
+- Two consecutive runs reproduce the ranking and latency.
+
+One caveat carried honestly: the corpus is 10 records and 5 queries — a
+calibration fixture, not a benchmark. Corpus-scale retrieval quality remains
+ADV-STORE-005's question.
+
 ## 3. Comparing the three candidates against the stated criteria
 
 | Criterion | Local hashing trick (measured) | Local pretrained model (not executed, EMB-003) | API-based (not executed, EMB-002) |
@@ -152,11 +187,11 @@ instead own **re-embedding**: a batch job that runs when the model version
 changes, since every stored vector must stay comparable to the model that
 produced it.
 
-**Residual risk, carried to ADV-STORE-002:** the quality and latency columns
-for both unmeasured candidates in §3 are unverified. ADV-STORE-002 should
-either run the equivalent of this spike's harness against `fastembed` in an
-environment that can download its model, or explicitly accept the risk and
-say so, rather than treating this recommendation as a measured comparison.
+**Residual risk: resolved for the recommended candidate.** ADV-STORE-007 ran
+this spike's harness against `fastembed`/BGE-small-en-v1.5 (EMB-004): quality
+and latency for the recommended candidate are now measured. The API
+candidates' columns remain unverified — accepted, since the privacy ground
+(§4) disfavors them regardless of their quality.
 
 ## 5. What this spike deliberately did not answer
 
