@@ -49,6 +49,12 @@ Select the FIRST advance in plan order where BOTH are true:
 - its `status` is `planned`
 - every id in its `dependencies` has status `done` in the plan
 
+**Model gate.** Two routines run this protocol on different models; your routine prompt states which model you are. A plan item whose `notes` contain `MODEL: claude-opus-5` is Opus-only; every other item is Sonnet-only. If the selected advance is not designated for your model, STOP and report exactly:
+
+  MODEL-GATED: <ADV-ID> is designated for <model>. Waiting for that routine. No work done this run.
+
+Like the merge gate, this is a correct no-op, not a failure. Do not skip ahead to a later advance that matches your model — plan order is strict.
+
 If no advance qualifies, STOP and report why (all done, or everything blocked). Do not invent work. If the plan file is unexpectedly missing, STOP and report that instead of improvising an order.
 
 ## Step 5 — Implement it

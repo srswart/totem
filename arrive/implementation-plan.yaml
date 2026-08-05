@@ -5,7 +5,7 @@ schema_version: 1
 
 metadata:
   created_at: "2026-08-05T05:40:54Z"
-  updated_at: "2026-08-05T05:40:54Z"
+  updated_at: "2026-08-05T05:56:00Z"
   generated_by: "arrive template render --kind implementation-plan"
 
 passes:
@@ -23,7 +23,7 @@ passes:
             status: planned
             owner: "058-totem"
             dependencies: []
-            notes: "Everything else builds on the workspace and domain types."
+            notes: "Everything else builds on the workspace and domain types. MODEL: claude-opus-5"
       - id: "phase-002"
         title: "Investigations (experiments before the implementations they de-risk)"
         order: 2
@@ -34,7 +34,7 @@ passes:
             status: planned
             owner: "058-totem"
             dependencies: []
-            notes: "Validates the load-bearing G2 assumption before the schema commits to it."
+            notes: "Validates the load-bearing G2 assumption before the schema commits to it. MODEL: claude-opus-5"
           - id: "ADV-STORE-003"
             advance_id: "ADV-STORE-003"
             title: "Investigation: embedding provider + placement spike"
@@ -64,7 +64,7 @@ passes:
             status: planned
             owner: "058-totem"
             dependencies: ["ADV-CORE-001", "ADV-STORE-004"]
-            notes: "Security-critical: scope isolation enforced at the store layer."
+            notes: "Security-critical: scope isolation enforced at the store layer. MODEL: claude-opus-5"
           - id: "ADV-STORE-002"
             advance_id: "ADV-STORE-002"
             title: "Embedding pipeline + vector index"
@@ -165,21 +165,21 @@ passes:
             status: planned
             owner: "058-totem"
             dependencies: ["ADV-GATEWAY-002"]
-            notes: "Security-critical: least-privilege tokens bound to repo + scope."
+            notes: "Security-critical: least-privilege tokens bound to repo + scope. MODEL: claude-opus-5"
           - id: "ADV-CORE-003"
             advance_id: "ADV-CORE-003"
             title: "Scope promotion policy engine"
             status: planned
             owner: "058-totem"
             dependencies: ["ADV-STORE-001"]
-            notes: "Security-critical: the one sanctioned path across scope boundaries."
+            notes: "Security-critical: the one sanctioned path across scope boundaries. MODEL: claude-opus-5"
           - id: "ADV-CURATOR-001"
             advance_id: "ADV-CURATOR-001"
             title: "First curator job (dedupe) with supersede/rollback"
             status: planned
             owner: "058-totem"
             dependencies: ["ADV-STORE-002", "ADV-CORE-002"]
-            notes: "Establishes the supersede-never-delete curator framework."
+            notes: "Establishes the supersede-never-delete curator framework. MODEL: claude-opus-5"
           - id: "ADV-CONSOLE-002"
             advance_id: "ADV-CONSOLE-002"
             title: "Audit trails, Uncertainty queue, promotion approvals"
@@ -220,7 +220,7 @@ passes:
             status: planned
             owner: "058-totem"
             dependencies: ["ADV-GATEWAY-003", "ADV-CORE-003", "ADV-STORE-005"]
-            notes: "Should gate store/gateway promotion from incubating to candidate."
+            notes: "Should gate store/gateway promotion from incubating to candidate. MODEL: claude-opus-5"
           - id: "ADV-CORE-005"
             advance_id: "ADV-CORE-005"
             title: "Quality evaluation: recall relevance + ranking behavior"
