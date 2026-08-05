@@ -146,6 +146,24 @@ sentinel arrives — anything the aborted turn emitted would have to appear befo
 it. Deterministic under load, and the same technique is worth reusing wherever
 the console asserts on live feeds.
 
+### TD-008 — Live notifications are not ordered by statement within a transaction. *(constraint)*
+
+The committed turn creates `memory:decision` and then updates `memory:mine_rule`.
+The feed delivers both, but **not reliably in that order**: repeated runs of the
+same test produced `[Create, Update]` and `[Update, Create]` on the same engine
+with the same data, roughly one run in four. Only the sentinel — a separate,
+later commit — holds a guaranteed position.
+
+This surfaced as a flaky assertion, and the first instinct (widen a timeout) would
+have hidden it. The spike's assertion is now deliberately order-insensitive
+within the transaction and order-sensitive only across commits.
+
+**Consequence for the console and any curator that consumes the feed:** do not
+reconstruct causal order from notification arrival order. Order by a field the
+records carry (`created_at`, or an episodic sequence), or treat a transaction's
+notifications as an unordered set. A "latest write wins" reducer driven by feed
+order will be wrong roughly a quarter of the time on multi-write turns.
+
 ## 3. Cost note
 
 A cold build of the spike crate (dev profile, `kv-mem` only, no RocksDB) took

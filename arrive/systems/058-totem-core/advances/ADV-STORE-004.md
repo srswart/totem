@@ -48,13 +48,13 @@ carrying a graph traversal, a resolved record link, a temporal cutoff and a scop
 filter; a turn's three writes commit or abort as one transaction; live queries
 fire on the embedded engine and stay silent for rolled-back writes.
 
-The spike also turned up four version-specific constraints that ADV-STORE-001
-must honour to keep the assumption true — the two knn syntaxes are not
-interchangeable (only `<|K,EF|>` uses the vector index), scope and temporal
-predicates *are* pushed into the index scan, a temporal cutoff bound as a string
-silently filters nothing, and `vector::distance::cosine` is not callable in
-3.2.4. These are written up as TD-002 through TD-006 with the observed query
-plans and error text.
+The spike also turned up five constraints that later advances must honour to keep
+the assumption true — the two knn syntaxes are not interchangeable (only
+`<|K,EF|>` uses the vector index), scope and temporal predicates *are* pushed
+into the index scan, a temporal cutoff bound as a string silently filters
+nothing, `vector::distance::cosine` is not callable in 3.2.4, and live
+notifications are **not ordered by statement within a transaction**. These are
+written up as TD-002 through TD-008 with the observed query plans and error text.
 
 Engine parity is **partially closed** — see Risk + Rollback.
 
@@ -94,9 +94,14 @@ Engine parity is **partially closed** — see Risk + Rollback.
 - Risk (open): HNSW recall under a *selective* scope filter on a realistic
   corpus is unmeasured — the toy table has five rows. Deferred to ADV-STORE-005.
 - Risk flag `concurrency`: the live-query experiment reads an async notification
-  stream. The first version drained until quiet and passed alone but failed
-  under concurrent test load; it now waits for a committed sentinel record, so
-  the assertion no longer depends on a timeout.
+  stream, and took two corrections to become sound. It first drained until quiet
+  — passing alone, failing under concurrent test load — and now waits for a
+  committed sentinel record, so the assertion no longer depends on a timeout. It
+  then flaked roughly one run in four on notification *order*, which turned out
+  to be the engine's behaviour rather than the test's: intra-transaction
+  notifications are unordered (TD-008). The assertion is now order-insensitive
+  within a transaction, and 15 consecutive runs are clean. Widening a timeout
+  would have hidden a finding the console depends on.
 - Rollback: findings only. `crates/totem-store-spike` is an isolated workspace
   member with no dependents; deleting it and its workspace entry removes the
   whole change. `totem-store` derives its own schema rather than importing this
@@ -107,7 +112,7 @@ Engine parity is **partially closed** — see Risk + Rollback.
 - [x] profile:selected-practices — investigation mode, empty `work_products`;
       `tidy_first` and `tdd` recorded `not_applicable` with rationale above. No
       `tdd:red-green` claimed.
-- [x] investigation:findings — docs/tech-direction/surrealdb.md, TD-001…TD-007,
+- [x] investigation:findings — docs/tech-direction/surrealdb.md, TD-001…TD-008,
       each tied to an executed experiment or an explicitly-labelled source read.
 - [x] tests:integration — `cargo test --workspace`: 50 tests pass, of which 6 are
       the spike's experiments against the embedded `kv-mem` engine.
@@ -115,7 +120,9 @@ Engine parity is **partially closed** — see Risk + Rollback.
   - removing `scope IN $scopes` from the recall statement fails 4 of the 6
     experiments, including the isolation assertion;
   - making the deliberately-failing transaction valid fails both the atomicity
-    and the live-feed assertions.
+    and the live-feed assertions (re-checked after the assertion was loosened
+    for TD-008, so the looser form still bites).
+- Stability: 15 consecutive runs of the spike suite pass after the TD-008 fix.
 - Not claimed: `ci:passed` — no pipeline result was observed for this branch.
 - Not claimed: any performance number. Timings in the findings come from a
   five-row table and are not a workload model.
@@ -131,17 +138,19 @@ Engine parity is **partially closed** — see Risk + Rollback.
 ## Reviewability
 
 `arrive score` reports **83 [RED]** (size 58, novelty 20, risk 5). The change is
-kept whole rather than split, because 4,708 of its 5,319 changed lines are the
+kept whole rather than split, because 4,708 of its ~5,545 changed lines are the
 regenerated `Cargo.lock` for a single pinned dependency — the entire SurrealDB
-tree arriving at once. The hand-written surface is ~830 lines:
+tree arriving at once. The hand-written surface is ~1,080 lines, over half of it
+prose:
 
 | File | Lines | Splittable? |
 |---|---|---|
 | `Cargo.lock` | 4,708 | No — generated, one dependency |
 | `crates/totem-store-spike/src/lib.rs` | 366 | No — the five experiments share one schema and seed |
-| `docs/tech-direction/surrealdb.md` | 222 | No — the findings are the deliverable |
-| `crates/totem-store-spike/tests/*.rs` | 200 | No — assertions over that shared fixture |
-| `Cargo.toml` × 2, `examples/plan.rs` | 41 | No |
+| `docs/tech-direction/surrealdb.md` | 240 | No — the findings are the deliverable |
+| `arrive/.../ADV-STORE-004.md` | 204 | No — this record |
+| `crates/totem-store-spike/tests/*.rs` | 228 | No — assertions over that shared fixture |
+| `Cargo.toml` × 2, `examples/plan.rs`, plan | 42 | No |
 
 Splitting by experiment would land a schema with no assertions, then assertions
 with no findings — each reviewable in isolation but none of them able to answer
@@ -175,6 +184,16 @@ review beyond confirming the pin is `=3.2.4`.
   handed to ADV-STORE-001, and the parity section stating plainly what was
   executed versus read from source
 
+### 2026-08-05 - fix: record TD-008 and stop asserting live-feed order
+- crates/totem-store-spike/tests/embedded.rs: the live-feed assertion flaked one
+  run in four on notification order; loosened to be order-insensitive within a
+  transaction while still requiring both writes, the sentinel last, and no
+  rolled-back record
+- crates/totem-store-spike/tests/server_parity.rs: same loosening, so parity is
+  compared against the behaviour that actually holds
+- docs/tech-direction/surrealdb.md: added TD-008 — intra-transaction live
+  notifications are unordered; consumers must order by a field the records carry
+
 ### 2026-08-05 - docs: complete ADV-STORE-004
 - arrive/systems/058-totem-core/advances/ADV-STORE-004.md: status complete,
   evidence, practice dispositions, Reviewability justification, refreshed CFU
@@ -200,10 +219,14 @@ review beyond confirming the pin is `=3.2.4`.
    rather than draining the stream until quiet. What failure did the drain-until-
    quiet version have, and why is the sentinel version not merely a longer
    timeout?
-6. The advance claims `investigation:findings` and `tests:integration` but not
+6. The live-feed assertion in `tests/embedded.rs` checks that both writes are
+   present but not the order they arrive in, while requiring the sentinel to be
+   last. Why is that not a weakened test — and what would a console reducer
+   driven by feed order get wrong (TD-008)?
+7. The advance claims `investigation:findings` and `tests:integration` but not
    `tdd:red-green`. Point to the frontmatter fields that make that the correct
    claim, and say what stands in for TDD's red phase here.
-7. `tests/server_parity.rs` compiles but has never run. What exactly is still
+8. `tests/server_parity.rs` compiles but has never run. What exactly is still
    unverified about server mode, what argument does the findings document give
    for expecting parity anyway, and which later advance is most exposed if that
    argument is wrong?

@@ -103,18 +103,35 @@ async fn live_queries_fire_on_the_embedded_engine_for_committed_writes_only()
 
     let seen = verify_live_query(&db).await?;
 
-    // One CREATE (the decision) and one UPDATE (the entity counter) from the
-    // committed turn, then the sentinel. The rolled-back turn wrote a memory in
-    // the same scope between them and must contribute nothing.
-    let actions: Vec<Action> = seen.iter().map(|(action, _)| *action).collect();
-    assert_eq!(
-        actions,
-        vec![Action::Create, Action::Update, Action::Create],
-        "live feed did not match the committed writes: {seen:?}"
-    );
+    // Exactly three notifications: one CREATE (the decision) and one UPDATE (the
+    // entity counter) from the committed turn, then the sentinel that bounds the
+    // read. The rolled-back turn wrote a memory in the same scope between them
+    // and must contribute nothing.
+    assert_eq!(seen.len(), 3, "unexpected live feed contents: {seen:?}");
     assert!(
         !seen.iter().any(|(_, id)| id.contains("orphan")),
         "a rolled-back write was published to the live feed: {seen:?}"
+    );
+
+    // Deliberately order-insensitive for the two writes inside the transaction:
+    // SurrealDB does not deliver intra-transaction notifications in statement
+    // order, and both orders were observed on kv-mem (see TD-008). Only the
+    // sentinel's position is guaranteed, because it is a separate later commit.
+    let (sentinel, turn) = seen.split_last().expect("three notifications");
+    assert_eq!(
+        (sentinel.0, sentinel.1.contains("sentinel")),
+        (Action::Create, true),
+        "sentinel was not the last notification: {seen:?}"
+    );
+    assert!(
+        turn.iter()
+            .any(|(action, id)| *action == Action::Create && id.contains("decision")),
+        "committed CREATE missing from the live feed: {seen:?}"
+    );
+    assert!(
+        turn.iter()
+            .any(|(action, id)| *action == Action::Update && id.contains("mine_rule")),
+        "committed UPDATE missing from the live feed: {seen:?}"
     );
     Ok(())
 }

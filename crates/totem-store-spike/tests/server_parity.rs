@@ -63,11 +63,22 @@ async fn server_mode_matches_the_embedded_engine() -> surrealdb::Result<()> {
         "server did not push the scope predicate into the index scan: {plan}"
     );
 
+    // Same shape as the embedded assertion, and order-insensitive within the
+    // transaction for the same reason (TD-008).
     let seen = verify_live_query(&db).await?;
-    let actions: Vec<Action> = seen.iter().map(|(action, _)| *action).collect();
     assert_eq!(
-        actions,
-        vec![Action::Create, Action::Update, Action::Create],
+        seen.len(),
+        3,
+        "live feed over WebSocket differs from the embedded engine: {seen:?}"
+    );
+    assert!(
+        !seen.iter().any(|(_, id)| id.contains("orphan")),
+        "server published a rolled-back write to the live feed: {seen:?}"
+    );
+    let counts = |action: Action| seen.iter().filter(|(a, _)| *a == action).count();
+    assert_eq!(
+        (counts(Action::Create), counts(Action::Update)),
+        (2, 1),
         "live feed over WebSocket differs from the embedded engine: {seen:?}"
     );
 
