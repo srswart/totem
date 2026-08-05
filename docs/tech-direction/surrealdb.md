@@ -237,6 +237,14 @@ TOTEM_SPIKE_SURREAL_URL=ws://127.0.0.1:8000 \
 Until someone runs that, treat server-mode parity as *expected but unverified*,
 and carry it as a residual risk on ADV-STORE-001.
 
+Closing it is tracked as its own advance, **ADV-STORE-006**, rather than left as
+a loose end inside ADV-STORE-001. Its plan item is `blocked` on environment, not
+on work: the harness already exists, and what is missing is a host that can reach
+a `surreal` server. That advance also picks up the two facts established here
+from SDK source but never executed — the HTTP-protocol live-query limitation, and
+the auth/capability defaults that genuinely differ between an embedded instance
+and a server.
+
 ## 6. What this spike deliberately did not answer
 
 - Recall quality of HNSW under selective scope filters at realistic corpus size

@@ -35,6 +35,19 @@ passes:
             owner: "058-totem"
             dependencies: []
             notes: "Validates the load-bearing G2 assumption before the schema commits to it. MODEL: claude-opus-5"
+          - id: "ADV-STORE-006"
+            advance_id: "ADV-STORE-006"
+            title: "Investigation: SurrealDB server-mode parity (embedded vs surreal start)"
+            status: blocked
+            owner: "058-totem"
+            dependencies: ["ADV-STORE-004"]
+            notes: >-
+              Closes the one question ADV-STORE-004 could not answer.
+              BLOCKED on environment, not on work: needs a running surreal server, and the
+              cloud sandbox's egress proxy refuses download/install.surrealdb.com, so neither
+              hourly routine can run it. Move to planned only when running it on a host with
+              the binary or a container runtime. Does not block ADV-STORE-001 — the residual
+              parity risk stays recorded there and on ADV-GATEWAY-003 until this runs.
           - id: "ADV-STORE-003"
             advance_id: "ADV-STORE-003"
             title: "Investigation: embedding provider + placement spike"

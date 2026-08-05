@@ -46,6 +46,7 @@ now first-class, with proper outcome profiles:
 |---|---|---|
 | `ADV-STORE-003` | Embedding provider + placement spike (§9 open question) | ADV-STORE-002 |
 | `ADV-STORE-004` | SurrealDB multi-model one-round-trip + ACID + live-query spike — validates the load-bearing assumption behind G2 and the turn model (§1) | ADV-STORE-001 |
+| `ADV-STORE-006` | SurrealDB server-mode parity — executes the parity harness ADV-STORE-004 could only compile, plus the auth/capability surface an embedded engine does not have. Plan item is `blocked` on environment: no `surreal` server is reachable from the cloud sandbox | ADV-STORE-001 (retires a residual risk), ADV-GATEWAY-003 |
 | `ADV-GATEWAY-005` | `rmcp` maturity + per-harness remote-MCP capability matrix (§7, §9) | ADV-GATEWAY-002/003 |
 | `ADV-CORE-004` | Value-attribution proxy experiment (§9; named key risk) | ADV-CORE-002 |
 
