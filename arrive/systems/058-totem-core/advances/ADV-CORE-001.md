@@ -16,6 +16,10 @@ advance:
   evidence: []
   # Populated by `arrive usage import` / the LiteLLM callback — leave empty when authoring.
   model_usage: []
+  schema_version: 2
+  mode: implementation
+  facets: [software]
+  work_products: [production_code]
   status: planned
 ---
 

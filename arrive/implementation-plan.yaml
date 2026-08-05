@@ -1,0 +1,237 @@
+# ARRIVE Implementation Plan (optional)
+# This file is intentionally repository-scoped and human-editable.
+# Sequencing rationale: docs/arrive-decomposition-gaps.md ("Suggested sequencing note").
+schema_version: 1
+
+metadata:
+  created_at: "2026-08-05T05:40:54Z"
+  updated_at: "2026-08-05T05:40:54Z"
+  generated_by: "arrive template render --kind implementation-plan"
+
+passes:
+  - id: "pass-001"
+    title: "Pass 1: De-risk and scaffold"
+    order: 1
+    phases:
+      - id: "phase-001"
+        title: "Workspace scaffold"
+        order: 1
+        items:
+          - id: "ADV-CORE-001"
+            advance_id: "ADV-CORE-001"
+            title: "Workspace scaffold + domain types (memory categories, scopes, provenance)"
+            status: planned
+            owner: "058-totem"
+            dependencies: []
+            notes: "Everything else builds on the workspace and domain types."
+      - id: "phase-002"
+        title: "Investigations (experiments before the implementations they de-risk)"
+        order: 2
+        items:
+          - id: "ADV-STORE-004"
+            advance_id: "ADV-STORE-004"
+            title: "Investigation: SurrealDB multi-model one-round-trip spike"
+            status: planned
+            owner: "058-totem"
+            dependencies: []
+            notes: "Validates the load-bearing G2 assumption before the schema commits to it."
+          - id: "ADV-STORE-003"
+            advance_id: "ADV-STORE-003"
+            title: "Investigation: embedding provider + placement spike"
+            status: planned
+            owner: "058-totem"
+            dependencies: []
+            notes: "Closes the §9 open question; ADV-STORE-002 implements the decision."
+          - id: "ADV-GATEWAY-005"
+            advance_id: "ADV-GATEWAY-005"
+            title: "Investigation: rmcp maturity + cloud-harness remote MCP reach"
+            status: planned
+            owner: "058-totem"
+            dependencies: []
+            notes: "Produces the per-harness capability matrix for ADV-GATEWAY-002/003."
+
+  - id: "pass-002"
+    title: "Pass 2: Data foundation"
+    order: 2
+    phases:
+      - id: "phase-003"
+        title: "Store"
+        order: 1
+        items:
+          - id: "ADV-STORE-001"
+            advance_id: "ADV-STORE-001"
+            title: "SurrealDB schema + repositories + scope-isolation tests"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-CORE-001", "ADV-STORE-004"]
+            notes: "Security-critical: scope isolation enforced at the store layer."
+          - id: "ADV-STORE-002"
+            advance_id: "ADV-STORE-002"
+            title: "Embedding pipeline + vector index"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-STORE-001", "ADV-STORE-003"]
+            notes: "Implements the provider/placement decision from ADV-STORE-003."
+
+  - id: "pass-003"
+    title: "Pass 3: Agent and landscape surfaces"
+    order: 3
+    phases:
+      - id: "phase-004"
+        title: "Gateway"
+        order: 1
+        items:
+          - id: "ADV-GATEWAY-001"
+            advance_id: "ADV-GATEWAY-001"
+            title: "Axum REST API: recall/save with provenance + access log"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-STORE-001", "ADV-STORE-002"]
+            notes: "Access log starts here; every later surface routes through the same core API."
+          - id: "ADV-GATEWAY-002"
+            advance_id: "ADV-GATEWAY-002"
+            title: "MCP server (stdio) exposing recall/save/landscape"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-GATEWAY-001", "ADV-GATEWAY-005"]
+            notes: "First harness-facing surface (G1 for desktop agents)."
+      - id: "phase-005"
+        title: "Landscape + enrollment + first console"
+        order: 2
+        items:
+          - id: "ADV-ARRIVE-SYNC-001"
+            advance_id: "ADV-ARRIVE-SYNC-001"
+            title: "Ingest this repo's own /arrive/ into the landscape graph (dogfood)"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-STORE-001"]
+            notes: "Dogfood first; totem_landscape becomes real here."
+          - id: "ADV-CLI-001"
+            advance_id: "ADV-CLI-001"
+            title: "totem CLI: enroll, sync hook install, actor credentials"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-ARRIVE-SYNC-001", "ADV-GATEWAY-001"]
+            notes: "Enroll wraps registration + ingestion + hook install."
+          - id: "ADV-CONSOLE-001"
+            advance_id: "ADV-CONSOLE-001"
+            title: "Landscape dashboard + memory browser (read-only)"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-GATEWAY-001", "ADV-ARRIVE-SYNC-001"]
+            notes: "First 'humans observe' surface; read-only."
+
+  - id: "pass-004"
+    title: "Pass 4: Value loop"
+    order: 4
+    phases:
+      - id: "phase-006"
+        title: "Metering, scoring, feedback"
+        order: 1
+        items:
+          - id: "ADV-CORE-004"
+            advance_id: "ADV-CORE-004"
+            title: "Investigation: value-attribution proxy experiment"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-GATEWAY-002"]
+            notes: "Needs real recall/save traffic shapes to construct sample sessions; picks the v1 signal set."
+          - id: "ADV-CORE-002"
+            advance_id: "ADV-CORE-002"
+            title: "Metering + value/currency scoring in retrieval ranking"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-CORE-004", "ADV-STORE-002"]
+            notes: "Ranking = relevance × value × currency, weighted per category."
+          - id: "ADV-GATEWAY-004"
+            advance_id: "ADV-GATEWAY-004"
+            title: "MCP tools: feedback, contest, advance_status/advance_log"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-GATEWAY-002", "ADV-CORE-002"]
+            notes: "totem_feedback feeds the value loop; totem_contest is the Uncertainty write path."
+
+  - id: "pass-005"
+    title: "Pass 5: Cloud access and governance"
+    order: 5
+    phases:
+      - id: "phase-007"
+        title: "Auth, promotion, curation, governance console"
+        order: 1
+        items:
+          - id: "ADV-GATEWAY-003"
+            advance_id: "ADV-GATEWAY-003"
+            title: "Streamable-HTTP MCP + auth for cloud agents"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-GATEWAY-002"]
+            notes: "Security-critical: least-privilege tokens bound to repo + scope."
+          - id: "ADV-CORE-003"
+            advance_id: "ADV-CORE-003"
+            title: "Scope promotion policy engine"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-STORE-001"]
+            notes: "Security-critical: the one sanctioned path across scope boundaries."
+          - id: "ADV-CURATOR-001"
+            advance_id: "ADV-CURATOR-001"
+            title: "First curator job (dedupe) with supersede/rollback"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-STORE-002", "ADV-CORE-002"]
+            notes: "Establishes the supersede-never-delete curator framework."
+          - id: "ADV-CONSOLE-002"
+            advance_id: "ADV-CONSOLE-002"
+            title: "Audit trails, Uncertainty queue, promotion approvals"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-CONSOLE-001", "ADV-CORE-003", "ADV-GATEWAY-004"]
+            notes: "Approval UI fronts the promotion engine; Uncertainty queue needs the contest path."
+
+  - id: "pass-006"
+    title: "Pass 6: Evaluation and hardening"
+    order: 6
+    phases:
+      - id: "phase-008"
+        title: "Enablement (evaluation tooling first)"
+        order: 1
+        items:
+          - id: "ADV-STORE-005"
+            advance_id: "ADV-STORE-005"
+            title: "Enablement: synthetic memory corpus (test data for evaluations)"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-STORE-002"]
+            notes: "Golden queries + leak-bait fixtures; deterministic seed/reset."
+          - id: "ADV-GATEWAY-008"
+            advance_id: "ADV-GATEWAY-008"
+            title: "Enablement: evaluation harness (workload driver + recall-quality scorer)"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-GATEWAY-002", "ADV-STORE-005"]
+            notes: "Proven with negative/positive control runs before any evaluation uses it."
+      - id: "phase-009"
+        title: "Evaluations (quality, security, performance)"
+        order: 2
+        items:
+          - id: "ADV-GATEWAY-006"
+            advance_id: "ADV-GATEWAY-006"
+            title: "Security evaluation: scope isolation, auth, promotion boundaries"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-GATEWAY-003", "ADV-CORE-003", "ADV-STORE-005"]
+            notes: "Should gate store/gateway promotion from incubating to candidate."
+          - id: "ADV-CORE-005"
+            advance_id: "ADV-CORE-005"
+            title: "Quality evaluation: recall relevance + ranking behavior"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-CORE-002", "ADV-GATEWAY-008"]
+            notes: "Value loop on/off comparison against the golden corpus."
+          - id: "ADV-GATEWAY-007"
+            advance_id: "ADV-GATEWAY-007"
+            title: "Performance evaluation: time-to-context + recall latency under load"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-GATEWAY-008"]
+            notes: "First run becomes the standing baseline for later comparisons."

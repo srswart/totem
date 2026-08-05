@@ -15,6 +15,10 @@ advance:
   risk_flags: ["public_api", "new_dependency"]
   evidence: []
   model_usage: []
+  schema_version: 2
+  mode: implementation
+  facets: [software]
+  work_products: [production_code]
   status: planned
 ---
 

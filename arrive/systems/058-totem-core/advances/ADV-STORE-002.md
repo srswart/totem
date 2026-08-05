@@ -15,6 +15,10 @@ advance:
   risk_flags: ["new_dependency"]
   evidence: []
   model_usage: []
+  schema_version: 2
+  mode: implementation
+  facets: [software]
+  work_products: [production_code]
   status: planned
 ---
 
@@ -22,24 +26,21 @@ advance:
 
 **Gap-fill** (see docs/arrive-decomposition-gaps.md): the record shape includes
 an `embedding` vector and recall ranking depends on vector search, but no
-roadmap advance produces embeddings. Decide the embedding provider (local
-model vs. API — open question, Solution Intent §9) and where embedding happens
-(gateway on write vs. curator batch), then implement generation and the
-SurrealDB vector index.
+roadmap advance produces embeddings. Implement embedding generation and the
+SurrealDB vector index per the provider/placement decision from the
+ADV-STORE-003 investigation.
 
 ## Behavioral Change
 
 After this advance:
-- Saved memories get an embedding (synchronously or via a backfill worker —
-  decided here) and `totem_recall` performs real vector similarity search
-  combined with graph traversal in one SurrealQL round trip.
-- The provider decision and its trade-offs are recorded (candidate for a
-  docs/tech-direction/ entry).
+- Saved memories get an embedding (synchronously or via a backfill worker,
+  per ADV-STORE-003's placement decision) and `totem_recall` performs real
+  vector similarity search combined with graph traversal in one SurrealQL
+  round trip.
 
 ## Planned Implementation Tasks
 
 - [ ] branch: create or confirm feature branch for this advance
-- [ ] decide: embedding provider + placement; record the decision
 - [ ] tidy: preparatory refactoring (no behavior change)
 - [ ] test: embedding-attachment and similarity-retrieval tests (red first)
 - [ ] feat: embedding generation + vector index + recall integration
