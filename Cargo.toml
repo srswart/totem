@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "crates/totem-core",
+    "crates/totem-store",
     "crates/totem-store-spike",
     "crates/totem-embedding-spike",
     "crates/totem-mcp-spike",
@@ -9,7 +10,6 @@ members = [
 
 # Sibling crate slots per docs/solution-intent.md §7; each is added by the
 # advance that first needs it, rather than landing as empty scaffolding here:
-#   crates/totem-store        ADV-STORE-001
 #   crates/totem-gateway      ADV-GATEWAY-001
 #   crates/totem-arrive-sync  ADV-ARRIVE-SYNC-001
 #   crates/totem-curator      ADV-CURATOR-001
