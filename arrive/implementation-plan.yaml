@@ -88,7 +88,7 @@ passes:
           - id: "ADV-STORE-002"
             advance_id: "ADV-STORE-002"
             title: "Embedding pipeline + vector index"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-STORE-001", "ADV-STORE-003"]
             notes: "Implements the provider/placement decision from ADV-STORE-003."
