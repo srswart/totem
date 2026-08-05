@@ -11,8 +11,10 @@
 //!   cargo test -p totem-store-spike --features server-parity --test server_parity
 //! ```
 //!
-//! With the feature off this file compiles to nothing; with the feature on but
-//! no URL set, the test reports the skip rather than passing silently.
+//! With the feature off this file compiles to nothing, so a default
+//! `cargo test --workspace` can never wait on a server. With the feature on,
+//! the run has explicitly asked for parity, so a missing URL **fails** — a green
+//! parity test that checked nothing would be worse than no parity test.
 #![cfg(feature = "server-parity")]
 
 use surrealdb::Surreal;
@@ -28,10 +30,15 @@ use totem_store_spike::{
 /// the WebSocket protocol. Divergence here is the finding, not a flake.
 #[tokio::test(flavor = "multi_thread")]
 async fn server_mode_matches_the_embedded_engine() -> surrealdb::Result<()> {
-    let Ok(url) = std::env::var("TOTEM_SPIKE_SURREAL_URL") else {
-        eprintln!("SKIPPED: set TOTEM_SPIKE_SURREAL_URL to a ws:// endpoint to run parity checks");
-        return Ok(());
-    };
+    // Enabling `server-parity` is the opt-in; there is no second opt-in. Failing
+    // here rather than returning Ok keeps `cargo test` from reporting a pass for
+    // parity checks that never ran (stderr is captured by default, so a printed
+    // skip notice would not be seen).
+    let url = std::env::var("TOTEM_SPIKE_SURREAL_URL").expect(
+        "the `server-parity` feature is enabled but TOTEM_SPIKE_SURREAL_URL is unset; \
+         start a server (`surreal start --user root --pass root memory`) and point this \
+         at it (e.g. ws://127.0.0.1:8000), or run without --features server-parity",
+    );
     let url = url.trim_start_matches("ws://").to_string();
 
     let db = Surreal::new::<Ws>(url).await?;

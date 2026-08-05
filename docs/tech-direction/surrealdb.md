@@ -12,8 +12,9 @@ spike actually observed, and the constraints that observation places on the
 store.
 
 **Verdict: confirmed, with four version-specific constraints** (TD-002, TD-004,
-TD-005, TD-006) that the store must honour to keep it true, and one parity
-question that could not be closed in this environment (§5).
+TD-005, TD-008) that the store and console must honour to keep it true, and one
+parity question that could not be closed in this environment (§5). The remaining
+findings (TD-001, TD-003, TD-006, TD-007) are confirmations, not constraints.
 
 ## 1. What was run
 
@@ -43,15 +44,18 @@ query is needed. The recall statement lives in `RECALL_QUERY`
 The fallback contemplated in ADV-STORE-004 — two coordinated queries — is **not
 needed**, and its cost is not incurred.
 
-### TD-002 — `<|K,EF|>` uses the vector index; `<|K,DIST|>` does not. *(constraint)*
+### TD-002 — `<|K,EF|>` uses the vector index; `<|K,COSINE|>` does not. *(constraint)*
 
-The two knn forms are not interchangeable, and the difference is invisible in the
-results:
+The second argument decides which of two different operators runs. A **number**
+is an HNSW `efSearch` parameter; a **distance name** (`COSINE`, `EUCLIDEAN`, …)
+selects brute-force top-K. The two forms are not interchangeable, and the
+difference is invisible in the results:
 
 - `embedding <|3,40|> $probe` → plan operator `KnnScan`, `index: mem_embedding`,
   `ef: 40`. The HNSW index does the work.
 - `embedding <|3,COSINE|> $probe` → plan operators `TableScan` → `KnnTopK`. A
-  full scan with brute-force top-K, **even though the HNSW index exists**.
+  full scan with brute-force top-K, **even though the HNSW index exists**. Any
+  distance name behaves this way; `COSINE` is what the spike measured.
 
 Both return correct rows on a five-row table, so a test that only checks results
 cannot tell them apart. `crates/totem-store-spike/tests/embedded.rs::scope_predicate_is_pushed_into_the_index_scan`
@@ -218,9 +222,11 @@ than the 5-minute client build.
 
 **How to close it:** `crates/totem-store-spike/tests/server_parity.rs` re-runs
 every experiment above over WebSocket against a real server. It is behind the
-`server-parity` feature and skips unless `TOTEM_SPIKE_SURREAL_URL` is set, so it
-can never hang a sandboxed run. It compiles, but **has never been executed
-against a server**. On any machine with the binary:
+off-by-default `server-parity` feature, so a plain `cargo test --workspace` can
+never wait on a server; with the feature on it fails fast if
+`TOTEM_SPIKE_SURREAL_URL` is unset, because a green parity test that checked
+nothing would be worse than no parity test. It compiles, but **has never been
+executed against a server**. On any machine with the binary:
 
 ```sh
 surreal start --user root --pass root memory &

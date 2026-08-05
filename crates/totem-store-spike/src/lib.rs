@@ -324,13 +324,21 @@ pub async fn verify_live_query<C: Connection>(
             .await
             .expect("live feed went quiet before the sentinel arrived")
             .expect("live feed closed before the sentinel arrived")?;
+        // Panic rather than default to an empty id: the caller uses these ids to
+        // assert that a rolled-back record *never* appeared, and `"".contains(..)`
+        // would make that assertion pass vacuously.
         let id = notification
             .data
             .clone()
             .into_object()
             .ok()
             .and_then(|row| row.get("id").map(|id| format!("{id:?}")))
-            .unwrap_or_default();
+            .unwrap_or_else(|| {
+                panic!(
+                    "live notification carried no `id`; cannot tell which record it was: {:?}",
+                    notification.data
+                )
+            });
         let is_sentinel = id.contains("sentinel");
         seen.push((notification.action, id));
         if is_sentinel {

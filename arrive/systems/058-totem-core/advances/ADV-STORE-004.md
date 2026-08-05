@@ -48,13 +48,15 @@ carrying a graph traversal, a resolved record link, a temporal cutoff and a scop
 filter; a turn's three writes commit or abort as one transaction; live queries
 fire on the embedded engine and stay silent for rolled-back writes.
 
-The spike also turned up five constraints that later advances must honour to keep
-the assumption true — the two knn syntaxes are not interchangeable (only
-`<|K,EF|>` uses the vector index), scope and temporal predicates *are* pushed
-into the index scan, a temporal cutoff bound as a string silently filters
-nothing, `vector::distance::cosine` is not callable in 3.2.4, and live
-notifications are **not ordered by statement within a transaction**. These are
-written up as TD-002 through TD-008 with the observed query plans and error text.
+The spike also turned up four constraints that later advances must honour to keep
+the assumption true: the two knn syntaxes are not interchangeable — only
+`<|K,EF|>` uses the vector index (TD-002); a temporal cutoff bound as a string
+silently filters nothing (TD-004); `vector::distance::cosine` is not callable in
+3.2.4 (TD-005); and live notifications are **not ordered by statement within a
+transaction** (TD-008). Alongside them sit three confirmations — the round trip
+itself (TD-001), predicates being pushed into the index scan (TD-003), and
+transaction atomicity (TD-006/TD-007) — all written up with the observed query
+plans and error text.
 
 Engine parity is **partially closed** — see Risk + Rollback.
 
@@ -137,7 +139,9 @@ Engine parity is **partially closed** — see Risk + Rollback.
 
 ## Reviewability
 
-`arrive score` reports **83 [RED]** (size 58, novelty 20, risk 5). The change is
+`arrive score` reports **83 [RED]** (size 58, novelty 20, risk 5) measured
+against `origin/master`. Re-running it later on the branch scores only the delta
+since the last push, which is not the figure below. The change is
 kept whole rather than split, because 4,708 of its ~5,545 changed lines are the
 regenerated `Cargo.lock` for a single pinned dependency — the entire SurrealDB
 tree arriving at once. The hand-written surface is ~1,080 lines, over half of it
@@ -173,8 +177,8 @@ review beyond confirming the pin is `=3.2.4`.
 - crates/totem-store-spike/tests/embedded.rs: the six assertions against the
   embedded `kv-mem` engine; each test builds its own instance and seeds itself
 - crates/totem-store-spike/tests/server_parity.rs: the same experiments over
-  WebSocket, behind the `server-parity` feature, skipping unless
-  `TOTEM_SPIKE_SURREAL_URL` is set so it can never hang a sandboxed run
+  WebSocket, behind the off-by-default `server-parity` feature so a default
+  workspace test run can never wait on a server
 - crates/totem-store-spike/examples/plan.rs: prints the `EXPLAIN FULL` plan
   quoted in the findings, so a reviewer can regenerate it
 
@@ -198,6 +202,25 @@ review beyond confirming the pin is `=3.2.4`.
 - arrive/systems/058-totem-core/advances/ADV-STORE-004.md: status complete,
   evidence, practice dispositions, Reviewability justification, refreshed CFU
 - arrive/implementation-plan.yaml: plan item ADV-STORE-004 set to done
+
+### 2026-08-05 - fix: address PR review on the spike's soundness
+
+Three points raised by an automated reviewer on PR #2, all accepted:
+
+- crates/totem-store-spike/src/lib.rs: `verify_live_query` defaulted a missing
+  notification `id` to an empty string, which would have made the "no
+  rolled-back write reached the feed" assertion pass vacuously. It now panics
+  with the offending payload — the whole point of that assertion is proving an
+  absence, so a silent fallback defeated it.
+- crates/totem-store-spike/tests/server_parity.rs: with `server-parity` enabled
+  but no `TOTEM_SPIKE_SURREAL_URL`, the test returned `Ok(())` after printing a
+  skip notice that `cargo test` captures — so parity could report a pass having
+  checked nothing. Enabling the feature is the opt-in; a missing URL now fails
+  fast with the command needed to fix it.
+- docs/tech-direction/surrealdb.md: TD-002's heading said `<|K,DIST|>` while its
+  body measured `<|K,COSINE|>`. Restated so the rule (a number is HNSW `ef`, a
+  distance name is brute force) is unambiguous, and corrected the verdict line,
+  which listed TD-006 among the constraints and omitted TD-008.
 
 ## Check for Understanding
 
@@ -223,10 +246,14 @@ review beyond confirming the pin is `=3.2.4`.
    present but not the order they arrive in, while requiring the sentinel to be
    last. Why is that not a weakened test — and what would a console reducer
    driven by feed order get wrong (TD-008)?
-7. The advance claims `investigation:findings` and `tests:integration` but not
+7. `verify_live_query` panics when a notification carries no `id`, and
+   `server_parity` panics when its URL is unset — in both cases where an earlier
+   version returned quietly. What do those two failures have in common, and what
+   would each have concealed?
+8. The advance claims `investigation:findings` and `tests:integration` but not
    `tdd:red-green`. Point to the frontmatter fields that make that the correct
    claim, and say what stands in for TDD's red phase here.
-8. `tests/server_parity.rs` compiles but has never run. What exactly is still
+9. `tests/server_parity.rs` compiles but has never run. What exactly is still
    unverified about server mode, what argument does the findings document give
    for expecting parity anyway, and which later advance is most exposed if that
    argument is wrong?
