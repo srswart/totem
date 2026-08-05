@@ -101,6 +101,13 @@ reserved here so they can be created when ready.
    or pending deserve entries: SurrealDB choice (made, §7), embedding provider
    (pending, ADV-STORE-002), deployment topology (pending), value-attribution
    depth (pending, ADV-CORE-002).
+7. **Does Totem actually help?** A paired twin-project experiment (with/without
+   Totem) measuring token cost and outcome quality is designed and deferred
+   until Totem is usable end-to-end — see
+   [totem-effectiveness-evaluation.md](totem-effectiveness-evaluation.md).
+   Registers later as an enablement advance (twin-project harness with planted
+   memory-stress events) plus an evaluation advance (blinded paired
+   comparison); pairs with ADV-CORE-004.
 
 ## Explicitly deferred — not gaps
 
