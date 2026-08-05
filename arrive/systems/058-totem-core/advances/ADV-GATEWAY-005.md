@@ -11,8 +11,8 @@ advance:
   review_time_actual_minutes: ~
   pr_links: []
   external_refs: []
-  reviewability_score: 0
-  risk_flags: []
+  reviewability_score: 77
+  risk_flags: ["concurrency"]
   evidence: ["profile:selected-practices", "investigation:findings", "tests:integration"]
   practices:
     tidy_first:
@@ -224,6 +224,32 @@ MCP-001, or code with no record of what was found. As with
 ADV-STORE-003/004, a reviewer can read `docs/tech-direction/mcp.md` first
 and treat `crates/totem-mcp-spike` as its appendix.
 
+## Changes Made (continued)
+
+### 2026-08-05 - fix: address PR #6 review comments from Copilot
+
+Three points raised on PR #6, all accepted:
+
+- `docs/tech-direction/mcp.md`: the MCP-001 bullet read as if `nest_service`
+  chains onto `StreamableHttpService::new(...)` itself. Reworded — the spike
+  code calls `axum::Router::new().nest_service("/mcp", service)`;
+  `StreamableHttpService` is what gets mounted, not what does the mounting.
+- `crates/totem-mcp-spike/tests/streamhttp_roundtrip.rs`: the spawned axum
+  server task (`tokio::spawn`) was aborted at the end but the resulting
+  `JoinHandle` was never awaited, so a real panic or error from
+  `axum::serve(...)` occurring before the abort would have been silently
+  dropped along with the handle. Now awaits the handle after `abort()` and
+  panics on anything that isn't a plain `is_cancelled()` result.
+- `arrive/systems/058-totem-core/advances/ADV-GATEWAY-005.md` frontmatter:
+  `reviewability_score` and `risk_flags` were left at their template
+  defaults (`0`, `[]`) even though the `## Reviewability` section already
+  documented the real `arrive score` result (77 RED, `concurrency` flag).
+  Frontmatter now matches: `reviewability_score: 77`, `risk_flags:
+  ["concurrency"]` — the score as measured when this advance was completed,
+  not re-measured after this smaller follow-up fix (whose own incremental
+  diff scores 2 GREEN against the prior push, a different, narrower
+  measurement than "the advance's" score).
+
 ## Check for Understanding
 
 1. `tests/streamhttp_roundtrip.rs` binds `127.0.0.1:0` and reads back the
@@ -261,3 +287,13 @@ and treat `crates/totem-mcp-spike` as its appendix.
    whose row this advance leaves marked "unverified" rather than
    "documented" or "self-observed," and what advance is asked to close that
    gap.
+8. After the PR #6 review fix, `tests/streamhttp_roundtrip.rs` awaits the
+   spawned server's `JoinHandle` after calling `abort()` instead of dropping
+   it. What specific failure mode does this close, and why does the fix
+   check `e.is_cancelled()` rather than treating every `Err` from that await
+   as a test failure?
+9. `reviewability_score: 77` in the frontmatter was set to match the score
+   already documented in `## Reviewability`, not re-measured after the
+   follow-up `fix:` commit (whose own diff separately scores 2 GREEN). What
+   is the difference in what those two numbers actually measure, and why
+   does the frontmatter carry the first one rather than the second?
