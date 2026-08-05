@@ -1,12 +1,122 @@
 //! The SurrealDB schema and the constants downstream advances are pinned to.
+//!
+//! Every constraint here derives from an executed finding, not a preference:
+//! see `docs/tech-direction/surrealdb.md` (TD-002..TD-011) and
+//! `docs/tech-direction/embeddings.md` (EMB-004).
 
 /// The vector dimension every stored embedding must have.
 ///
 /// Fixed now, before any embedding exists, so that ADV-STORE-002's pipeline
 /// lands against an index it does not have to migrate: EMB-004 measured
 /// BGE-small-en-v1.5 at 384 dimensions with cosine distance
-/// (docs/tech-direction/embeddings.md).
+/// (docs/tech-direction/embeddings.md). Changing it re-opens every stored
+/// vector, so it is asserted against the live index definition in this module's
+/// tests.
 pub const EMBEDDING_DIMENSIONS: usize = 384;
+
+/// The ledger of applied migrations.
+///
+/// Defined outside the migration list because it must exist before the list can
+/// be consulted, and it is therefore the one piece of DDL that runs on every
+/// connection.
+pub(crate) const MIGRATION_LEDGER: &str = r#"
+DEFINE TABLE IF NOT EXISTS schema_migration SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS version ON schema_migration TYPE int;
+DEFINE FIELD IF NOT EXISTS name ON schema_migration TYPE string;
+DEFINE FIELD IF NOT EXISTS applied_at ON schema_migration TYPE datetime;
+"#;
+
+/// Migration 1 — typed memory, the landscape graph, and the invariants.
+///
+/// Three things here are enforcement rather than description:
+///
+/// - `provenance` and its members are required, so an unattributable row is
+///   refused by the database rather than by a code path someone can forget.
+/// - `embedding` is `array<float, 384>`, so a wrong-dimension vector is refused
+///   before it can corrupt the HNSW index.
+/// - the two `EVENT`s refuse `UPDATE` and `DELETE` on episodic rows. This is
+///   deliberately stricter than "the repository refuses to revise": it also
+///   binds curator jobs, backfills, and future statements written inside this
+///   crate.
+///
+/// Note what the append-only event costs: an episodic row cannot be touched at
+/// all, so per-record retrieval counters are impossible on episodic memory.
+/// Metering episodic reads belongs in the access log (ADV-GATEWAY-001), not in
+/// `economics.use_count`.
+///
+/// No index is defined on `scope`. The scope predicate is pushed into the
+/// `KnnScan` as it stands (TD-003), and a second candidate index is exactly the
+/// kind of change that makes the planner choose a different operator — which
+/// would silently retire the plan assertion in this module's sibling tests.
+/// Revisit under ADV-GATEWAY-007, with the plan assertion updated in the same
+/// change.
+pub(crate) const MEMORY_SCHEMA_V1: &str = r#"
+DEFINE TABLE memory SCHEMAFULL;
+
+DEFINE FIELD category ON memory TYPE string
+    ASSERT $value IN ['episodic', 'identity', 'knowledge', 'context', 'instructions', 'uncertainty'];
+DEFINE FIELD scope ON memory TYPE string ASSERT $value != '';
+DEFINE FIELD subject ON memory
+    TYPE option<record<repo | system | component | advance | actor | memory>>;
+DEFINE FIELD body ON memory TYPE string;
+DEFINE FIELD embedding ON memory TYPE option<array<float, 384>>;
+DEFINE FIELD tags ON memory TYPE array<string> DEFAULT [];
+
+DEFINE FIELD provenance ON memory TYPE object;
+DEFINE FIELD provenance.author_kind ON memory TYPE string
+    ASSERT $value IN ['human', 'agent', 'curator'];
+DEFINE FIELD provenance.author ON memory TYPE string ASSERT $value != '';
+DEFINE FIELD provenance.harness ON memory TYPE string ASSERT $value != '';
+DEFINE FIELD provenance.session ON memory TYPE string ASSERT $value != '';
+DEFINE FIELD provenance.turn ON memory TYPE option<int>;
+DEFINE FIELD provenance.created_at ON memory TYPE datetime;
+DEFINE FIELD provenance.derived_from ON memory TYPE array<record<memory>> DEFAULT [];
+
+DEFINE FIELD economics ON memory TYPE object;
+DEFINE FIELD economics.use_count ON memory TYPE int DEFAULT 0;
+DEFINE FIELD economics.last_used_at ON memory TYPE option<datetime>;
+DEFINE FIELD economics.value_score ON memory TYPE float DEFAULT 1.0;
+DEFINE FIELD economics.currency ON memory TYPE float DEFAULT 1.0;
+
+DEFINE FIELD governance ON memory TYPE object;
+DEFINE FIELD governance.status ON memory TYPE string
+    ASSERT $value IN ['active', 'contested', 'retired'];
+DEFINE FIELD governance.review ON memory TYPE string
+    ASSERT $value IN ['not_required', 'pending', 'approved', 'rejected'];
+
+DEFINE INDEX memory_embedding ON memory FIELDS embedding HNSW DIMENSION 384 DIST COSINE;
+
+DEFINE EVENT memory_episodic_no_update ON TABLE memory
+    WHEN $event = 'UPDATE' AND $before.category = 'episodic'
+    THEN { THROW 'episodic memory is append-only and cannot be updated'; };
+DEFINE EVENT memory_episodic_no_delete ON TABLE memory
+    WHEN $event = 'DELETE' AND $before.category = 'episodic'
+    THEN { THROW 'episodic memory is append-only and cannot be deleted'; };
+
+DEFINE TABLE repo SCHEMAFULL;
+DEFINE FIELD name ON repo TYPE string;
+
+DEFINE TABLE system SCHEMAFULL;
+DEFINE FIELD name ON system TYPE string;
+DEFINE FIELD repo ON system TYPE option<record<repo>>;
+
+DEFINE TABLE component SCHEMAFULL;
+DEFINE FIELD name ON component TYPE string;
+DEFINE FIELD stage ON component TYPE option<string>;
+DEFINE FIELD system ON component TYPE option<record<system>>;
+
+DEFINE TABLE advance SCHEMAFULL;
+DEFINE FIELD title ON advance TYPE string;
+DEFINE FIELD status ON advance TYPE option<string>;
+DEFINE FIELD system ON advance TYPE option<record<system>>;
+
+DEFINE TABLE actor SCHEMAFULL;
+DEFINE FIELD name ON actor TYPE string;
+
+DEFINE TABLE impacts SCHEMALESS TYPE RELATION IN advance OUT component;
+DEFINE TABLE depends_on SCHEMALESS TYPE RELATION IN component OUT component;
+DEFINE TABLE owned_by SCHEMALESS TYPE RELATION IN component OUT actor;
+"#;
 
 #[cfg(test)]
 mod tests {
@@ -133,7 +243,11 @@ mod tests {
         let store = migrated().await;
         store
             .connection()
-            .query(EPISODE.replace("memory:episode", "memory:note").replace("'episodic'", "'knowledge'"))
+            .query(
+                EPISODE
+                    .replace("memory:episode", "memory:note")
+                    .replace("'episodic'", "'knowledge'"),
+            )
             .await
             .expect("sent")
             .check()

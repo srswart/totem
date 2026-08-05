@@ -249,7 +249,10 @@ async fn the_scope_predicate_is_generated_by_the_store_and_reaches_the_index_sca
         .explain_recall(&chain(ADA), &query)
         .await
         .expect("explain succeeds");
-    assert!(plan.contains("KnnScan"), "plan did not use the index: {plan}");
+    assert!(
+        plan.contains("KnnScan"),
+        "plan did not use the index: {plan}"
+    );
     assert!(
         plan.contains(&format!("actor:{ADA}")) && plan.contains(&format!("project:{REPO}")),
         "the reader's chain is missing from the plan predicate: {plan}",

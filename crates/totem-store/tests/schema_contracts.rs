@@ -178,7 +178,10 @@ async fn recall_without_a_probe_still_returns_records_that_have_no_embedding() {
         .recall(&chain(ADA), &RecallQuery::new())
         .await
         .expect("recall succeeds");
-    assert_eq!(sorted_bodies(&recalled), vec!["no embedding yet".to_string()]);
+    assert_eq!(
+        sorted_bodies(&recalled),
+        vec!["no embedding yet".to_string()]
+    );
 }
 
 #[tokio::test]

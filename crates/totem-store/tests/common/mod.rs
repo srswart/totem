@@ -4,6 +4,11 @@
 //! (docs/tech-direction/surrealdb.md §4): nothing here assumes a running
 //! `surreal` server, a port, or a container.
 
+// Each integration test binary compiles this module separately and uses a
+// different slice of it, so anything one binary does not call is "dead" from
+// that binary's point of view.
+#![allow(dead_code)]
+
 use chrono::{DateTime, Utc};
 use surrealdb::engine::local::Db;
 use totem_core::{
