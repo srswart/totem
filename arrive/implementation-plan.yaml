@@ -58,7 +58,7 @@ passes:
           - id: "ADV-GATEWAY-005"
             advance_id: "ADV-GATEWAY-005"
             title: "Investigation: rmcp maturity + cloud-harness remote MCP reach"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: []
             notes: "Produces the per-harness capability matrix for ADV-GATEWAY-002/003."

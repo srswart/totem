@@ -4,6 +4,7 @@ members = [
     "crates/totem-core",
     "crates/totem-store-spike",
     "crates/totem-embedding-spike",
+    "crates/totem-mcp-spike",
 ]
 
 # Sibling crate slots per docs/solution-intent.md §7; each is added by the
