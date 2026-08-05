@@ -11,7 +11,7 @@ advance:
   review_time_actual_minutes: ~
   pr_links: []
   external_refs: []
-  reviewability_score: 88
+  reviewability_score: 89
   risk_flags: ["new_dependency", "public_api"]
   evidence: ["tidy:preparatory", "tdd:red-green", "tests:unit"]
   # Populated by `arrive usage import` / the LiteLLM callback — leave empty when authoring.
@@ -93,14 +93,19 @@ and the audit log.
 
 ## Reviewability
 
-`arrive score` reports **88 (Red)**. The work was **not** split, for these
-reasons:
+`arrive score --base origin/master` reports **89 (Red)** (88 before the
+review-round fixes). The work was **not** split, for these reasons:
 
-- The score is dominated by Size (63 of 88) on a **1,904-line** diff of which
+- The score is dominated by Size (64 of 89) on a ~1,950-line diff of which
   **445 lines are a generated `Cargo.lock`** and 56 more are manifests and
   `.gitignore` — roughly a quarter of the diff is not hand-reviewed code. The
-  hand-written surface is ~677 lines of `src` (of which ~200 are doc comments)
-  and 393 lines of tests.
+  hand-written surface is ~690 lines of `src` (of which ~200 are doc comments)
+  and ~420 lines of tests.
+
+  Note that a bare `arrive score` returns 0 once the branch is pushed: with an
+  upstream set it scores unpushed work only. The meaningful figure for review
+  is the one against the base branch, so `--base origin/master` is what the
+  frontmatter records.
 - Novelty (20) is unavoidable: this is the first code in the repository, so
   every file is new by definition. No scaffold advance can score Green.
 - The five modules are **mutually dependent**: `record.rs` cannot compile
