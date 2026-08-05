@@ -10,8 +10,8 @@ any advance, and what was done about each gap.
 ## What was generated
 
 - **System** `058-totem-core` — roots widened to include `crates/**` for the
-  intended workspace layout (Solution Intent §7); `src/**` retained until the
-  workspace lands.
+  intended workspace layout (Solution Intent §7). The placeholder `src/**` root
+  was dropped in ADV-CORE-001 when the workspace landed.
 - **Components** (all `incubating`, per §8): `core`, `store`, `gateway`,
   `arrive-sync`, `curator`, `console`, `cli` — with the key invariants from §8
   recorded on `store`, `curator`, `gateway`, plus the mirror-only invariant on

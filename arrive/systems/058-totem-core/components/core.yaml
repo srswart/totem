@@ -10,7 +10,6 @@ component:
 selectors:
   paths:
     - "crates/totem-core/**"
-    - "src/**"
   build_modules: []
   tags: []
   contracts: []
