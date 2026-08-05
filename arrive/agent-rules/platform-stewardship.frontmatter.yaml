@@ -1,0 +1,5 @@
+cursor:
+  description: "Behavioral rules for stewarding a Platform ARRIVE repository"
+  always_apply: true
+claude:
+  description: "Behavioral rules for stewarding a Platform ARRIVE repository"

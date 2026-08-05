@@ -1,0 +1,78 @@
+# ARRIVE Adoption Intelligence — encoded goals for how ARRIVE should be applied.
+#
+# Read by the deterministic AdoptionSnapshot compute (ADV-INSIGHT-002) to render
+# per-team and fleet verdicts. See docs/tech-direction/arrive-adoption-intelligence.md.
+#
+# Hard rules:
+#   - Team/repo-aggregate only — NEVER per-developer (TD-INSIGHT-002, CORE-DATA-001).
+#   - Signals derive from committed ARRIVE artifacts; no new developer data entry.
+#   - This is a shared journey: goals are health signals, not a leaderboard.
+schema_version: 1
+
+metadata:
+  owner: arrive-insight
+  description: "Measurable adoption & fit goals for the ARRIVE rollout."
+  framing: "Shared journey — health signals, not ranking or per-developer metrics."
+
+presentation:
+  ranking: false
+  per_developer: false
+  aggregate_only: true
+
+# verdict bands are direction-aware:
+#   higher_is_better (default): >= healthy_min -> healthy; >= watch_min -> watch; else at_risk
+#   lower_is_better:            <= healthy_max -> healthy; <= watch_max -> watch; else at_risk
+goals:
+  - id: reviewable-changes
+    title: "Changes stay reviewable"
+    signal: advance.reviewability_distribution
+    description: "Share of advances scoring Green at completion."
+    unit: percent_green
+    direction: higher_is_better
+    thresholds: { healthy_min: 70, watch_min: 50 }
+
+  - id: governance-not-bypassed
+    title: "Governance is followed, not bypassed"
+    signal: advance.coverage_and_waivers
+    description: "Share of merged changes carrying an advance; waiver/override frequency."
+    unit: percent_with_advance
+    direction: higher_is_better
+    thresholds: { healthy_min: 80, watch_min: 60 }
+
+  - id: arrive-not-a-tax
+    title: "ARRIVE is not a tax"
+    signal: friction.rate_and_cost
+    description: "Open friction per active advance, weighted by time_lost_minutes; watch tooling/spec-gap spikes."
+    unit: open_friction_per_advance
+    direction: lower_is_better
+    thresholds: { healthy_max: 0.3, watch_max: 0.7 }
+    optional: true   # degrades gracefully until friction logging is implemented (TD-INSIGHT-007)
+
+  - id: change-understood
+    title: "Teams understand their changes"
+    signal: advance.cfu_completion_resident
+    description: "Check-for-Understanding completion on resident-impacting advances."
+    unit: percent_complete
+    direction: higher_is_better
+    thresholds: { healthy_min: 80, watch_min: 60 }
+
+  - id: flow-not-stalls
+    title: "Work flows; stalls are visible"
+    signal: advance.cycle_time_and_blocked
+    description: "Median advance cycle time; count of open blocker friction."
+    unit: days_median
+    direction: lower_is_better
+    thresholds: { healthy_max: 5, watch_max: 10 }
+
+  - id: rules-in-force
+    title: "Org rules are in force and fresh"
+    signal: rules.lock_freshness_and_attestation
+    description: "Rules lock present; agent-render fresh; attestation pass rate (from RulesStatusJsonV1)."
+    unit: percent_passing
+    direction: higher_is_better
+    thresholds: { healthy_min: 90, watch_min: 75 }
+
+# First-contact markers — most perishable signal; capture from day one.
+onboarding:
+  time_to_first_advance_days: { healthy_max: 3, watch_max: 7 }
+  time_to_first_attestation_days: { healthy_max: 7, watch_max: 14 }

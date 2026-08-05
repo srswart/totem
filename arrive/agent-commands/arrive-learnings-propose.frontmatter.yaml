@@ -1,0 +1,4 @@
+cursor:
+  description: "Draft a learnings-ledger entry and add it on confirm"
+claude:
+  description: "Draft a learnings-ledger entry and add it on confirm"

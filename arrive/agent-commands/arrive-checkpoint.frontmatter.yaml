@@ -1,0 +1,4 @@
+cursor:
+  description: "Analyze changes and suggest split points for reviewability"
+claude:
+  description: "Analyze changes and suggest split points for reviewability"

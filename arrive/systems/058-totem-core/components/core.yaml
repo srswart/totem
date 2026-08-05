@@ -1,0 +1,22 @@
+component:
+  id: core
+  name: "Totem Core Domain"
+  type: library
+  owners:
+    - team: 058-totem
+  stage: incubating
+  description: "Domain model: typed memory categories, scopes, provenance, value/currency ledger, retrieval ranking"
+
+selectors:
+  paths:
+    - "crates/totem-core/**"
+    - "src/**"
+  build_modules: []
+  tags: []
+  contracts: []
+
+interfaces: []
+
+invariants:
+  - "Memory records are exactly one of six categories (Episodic, Identity, Knowledge, Context, Instructions, Uncertainty); category determines lifecycle and retrieval weight"
+  - "Scope (actor/project/team/platform) is a required first-class field on every memory"

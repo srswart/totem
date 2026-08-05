@@ -1,0 +1,4 @@
+cursor:
+  description: "Show current change impact and reviewability score"
+claude:
+  description: "Show current change impact and reviewability score"

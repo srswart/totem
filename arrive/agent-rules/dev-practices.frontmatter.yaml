@@ -1,0 +1,12 @@
+cursor:
+  description: "Development practices: Tidy First and Test-Driven Development"
+  globs:
+    - "core/**"
+    - "cli/**"
+    - "hooks/**"
+    - "**/*.rs"
+    - "**/*.ts"
+    - "**/*.py"
+    - "**/*.go"
+claude:
+  description: "Development practices: Tidy First and Test-Driven Development"

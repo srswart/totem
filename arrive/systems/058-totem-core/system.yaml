@@ -1,0 +1,33 @@
+system:
+  id: 058-totem-core
+  name: "058 Totem Core"
+  description: "Totem service + console: typed agent memory, scoped sharing, ARRIVE landscape mirror, audit/metering/value loop (see docs/project-brief.md and docs/solution-intent.md)"
+  roots:
+    - "src/**"
+    - "crates/**"
+  default_branch: master
+
+policies:
+  advance_required_on_pr: true
+  resident_gates:
+    require_owner_approval: true
+    require_invariant_impact_statement: true
+    require_rollback_plan: true
+    require_evidence_links: true
+
+reviewability:
+  thresholds:
+    green: 30
+    yellow: 60
+  scoring_rules_version: 1
+
+# Optional promotion defaults for incubating -> candidate.
+# Component-level `promotion.candidate.*` overrides these values.
+promotion:
+  candidate:
+    required_check_ids:
+      - unit_tests
+      - unit_test_coverage
+      - lint
+      - security_scan
+    require_ci_artifact: false

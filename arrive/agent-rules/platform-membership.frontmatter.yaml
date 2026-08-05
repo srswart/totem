@@ -1,0 +1,5 @@
+cursor:
+  description: "Behavioral rules for working in a Platform ARRIVE member repo"
+  always_apply: true
+claude:
+  description: "Behavioral rules for working in a Platform ARRIVE member repo"

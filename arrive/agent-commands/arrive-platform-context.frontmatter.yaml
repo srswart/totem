@@ -1,0 +1,4 @@
+cursor:
+  description: "Gather platform context relevant to the current task (member repos)"
+claude:
+  description: "Gather platform context relevant to the current task (member repos)"

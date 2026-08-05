@@ -1,0 +1,269 @@
+# Evidence pipelines scaffold (ARRIVE-managed).
+# NOT executed by default — arrive loads cosign-verified rulesets/core/evidence-pipelines.yaml.
+# Set ARRIVE_EVIDENCE_TRUST_REPO=1 to run this repo-local file (trusted repos only).
+#
+# Execution model (H-1 / ADV-CLI-069): each check runs as an explicit argument
+# vector (`argv`) with NO shell. The first element is the program; the rest are
+# literal arguments. `{module}` is substituted as a single argv element, so shell
+# metacharacters in a module name can never break out into a command.
+#
+# Checks that need shell logic invoke an interpreter explicitly and pass `{module}`
+# as a positional parameter ($1) rather than interpolating it into the script:
+#   argv: ["sh", "-c", "... \"$1\" ...", "sh", "{module}"]
+# This keeps the module value out of the shell parser entirely.
+#
+# Legacy `command:` strings are still accepted (whitespace-split + run without a
+# shell) for backward compatibility, but `argv` is preferred — migrate to it.
+pipelines:
+  - technology: rust
+    checks:
+      # Component-scoped checks (module-level)
+      - id: unit_tests
+        order: 10
+        technology: rust
+        scope: module
+        argv: ["cargo", "test", "-p", "{module}"]
+        system_advisory_ok: true
+        thresholds:
+          require_exit_code: 0
+
+      - id: unit_test_coverage
+        order: 20
+        technology: rust
+        scope: module
+        argv: ["cargo", "llvm-cov", "-p", "{module}", "--summary-only"]
+        system_advisory_ok: true
+        thresholds:
+          min_line_coverage_pct: 70
+
+      - id: lint
+        order: 30
+        technology: rust
+        scope: module
+        argv: ["cargo", "clippy", "-p", "{module}"]
+        system_advisory_ok: true
+        thresholds:
+          require_exit_code: 0
+
+      # Security scan is typically workspace-wide for Rust; we still record it.
+      - id: security_scan
+        order: 40
+        technology: rust
+        scope: workspace
+        argv: ["cargo", "audit", "--json"]
+        system_advisory_ok: true
+        thresholds:
+          max_high: 0
+          max_critical: 0
+
+  - technology: rust-no-unit
+    checks:
+      - id: lint
+        order: 30
+        technology: rust
+        scope: module
+        argv: ["cargo", "clippy", "-p", "{module}"]
+        system_advisory_ok: true
+        thresholds:
+          require_exit_code: 0
+
+      # Security scan is typically workspace-wide for Rust; we still record it.
+      - id: security_scan
+        order: 40
+        technology: rust
+        scope: workspace
+        argv: ["cargo", "audit", "--json"]
+        system_advisory_ok: true
+        thresholds:
+          max_high: 0
+          max_critical: 0
+
+  - technology: typescript
+    checks:
+      # Component-scoped checks for Node/TypeScript packages (module is a package directory path).
+      - id: unit_tests
+        order: 10
+        technology: typescript
+        scope: module
+        argv: ["npm", "--prefix", "{module}", "test"]
+        system_advisory_ok: true
+        thresholds:
+          require_exit_code: 0
+
+      - id: unit_test_coverage
+        order: 20
+        technology: typescript
+        scope: module
+        # Expect the underlying test runner to print a coverage summary that includes a Lines %.
+        argv: ["npm", "--prefix", "{module}", "test", "--", "--coverage"]
+        system_advisory_ok: true
+        thresholds:
+          min_line_coverage_pct: 70
+
+      - id: lint
+        order: 30
+        technology: typescript
+        scope: module
+        argv: ["npm", "--prefix", "{module}", "run", "lint"]
+        system_advisory_ok: true
+        thresholds:
+          require_exit_code: 0
+
+      - id: security_scan
+        order: 40
+        technology: typescript
+        scope: module
+        argv: ["npm", "--prefix", "{module}", "audit", "--json"]
+        system_advisory_ok: true
+        thresholds:
+          max_high: 0
+          max_critical: 0
+
+  - technology: node
+    checks:
+      - id: lint
+        order: 30
+        technology: node
+        scope: module
+        argv: ["npm", "--prefix", "{module}", "run", "lint"]
+        system_advisory_ok: true
+        thresholds:
+          require_exit_code: 0
+
+      - id: security_scan
+        order: 40
+        technology: node
+        scope: module
+        argv: ["npm", "--prefix", "{module}", "audit", "--json"]
+        system_advisory_ok: true
+        thresholds:
+          max_high: 0
+          max_critical: 0
+
+  - technology: react
+    checks:
+      - id: unit_tests
+        order: 10
+        technology: react
+        scope: module
+        argv: ["npm", "--prefix", "{module}", "test"]
+        system_advisory_ok: true
+        thresholds:
+          require_exit_code: 0
+
+      - id: unit_test_coverage
+        order: 20
+        technology: react
+        scope: module
+        argv: ["npm", "--prefix", "{module}", "test", "--", "--coverage"]
+        system_advisory_ok: true
+        thresholds:
+          min_line_coverage_pct: 70
+
+      - id: lint
+        order: 30
+        technology: react
+        scope: module
+        argv: ["npm", "--prefix", "{module}", "run", "lint"]
+        system_advisory_ok: true
+        thresholds:
+          require_exit_code: 0
+
+      - id: security_scan
+        order: 40
+        technology: react
+        scope: module
+        argv: ["npm", "--prefix", "{module}", "audit", "--json"]
+        system_advisory_ok: true
+        thresholds:
+          max_high: 0
+          max_critical: 0
+
+  - technology: java
+    checks:
+      # {module} is passed to `sh` as $1 (never interpolated into the script).
+      - id: unit_tests
+        order: 10
+        technology: java
+        scope: module
+        argv:
+          - sh
+          - -c
+          - 'if [ -f "$1/pom.xml" ]; then mvn -f "$1/pom.xml" -q test; elif [ -f "$1/build.gradle" ] || [ -f "$1/build.gradle.kts" ]; then ./gradlew -p "$1" test; else echo "no pom.xml or build.gradle in $1" >&2; exit 1; fi'
+          - sh
+          - "{module}"
+        system_advisory_ok: true
+        thresholds:
+          require_exit_code: 0
+
+      - id: lint
+        order: 20
+        technology: java
+        scope: module
+        argv:
+          - sh
+          - -c
+          - 'if [ -f "$1/pom.xml" ]; then mvn -f "$1/pom.xml" -q checkstyle:check; elif [ -f "$1/build.gradle" ] || [ -f "$1/build.gradle.kts" ]; then ./gradlew -p "$1" checkstyleMain; else echo "no pom.xml or build.gradle in $1" >&2; exit 1; fi'
+          - sh
+          - "{module}"
+        system_advisory_ok: true
+        thresholds:
+          require_exit_code: 0
+
+      - id: security_scan
+        order: 30
+        technology: java
+        scope: module
+        argv:
+          - sh
+          - -c
+          - 'tmpd=$(mktemp -d); dependency-check --format JSON --scan "$1" --out "$tmpd" >/dev/null && cat "$tmpd"/dependency-check-report.json'
+          - sh
+          - "{module}"
+        system_advisory_ok: true
+        thresholds:
+          max_high: 0
+          max_critical: 0
+
+  - technology: python
+    checks:
+      - id: unit_tests
+        order: 10
+        technology: python
+        scope: module
+        argv:
+          - sh
+          - -c
+          - 'if [ -f "$1/pyproject.toml" ] || [ -f "$1/pytest.ini" ]; then python -m pytest "$1"; else python -m pytest; fi'
+          - sh
+          - "{module}"
+        system_advisory_ok: true
+        thresholds:
+          require_exit_code: 0
+
+      - id: lint
+        order: 20
+        technology: python
+        scope: module
+        argv: ["ruff", "check", "{module}"]
+        system_advisory_ok: true
+        thresholds:
+          require_exit_code: 0
+
+      - id: security_scan
+        order: 30
+        technology: python
+        scope: module
+        argv:
+          - sh
+          - -c
+          - 'if [ -f "$1/requirements.txt" ]; then pip-audit -r "$1/requirements.txt" --format json; elif [ -f "$1/pyproject.toml" ]; then pip-audit --path "$1" --format json; else pip-audit --format json; fi'
+          - sh
+          - "{module}"
+        system_advisory_ok: true
+        thresholds:
+          max_high: 0
+          max_critical: 0
+
+  - technology: manual
+    checks: []

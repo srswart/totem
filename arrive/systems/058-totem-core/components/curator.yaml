@@ -1,0 +1,20 @@
+component:
+  id: curator
+  name: "Totem Curator"
+  type: service
+  owners:
+    - team: 058-totem
+  stage: incubating
+  description: "AI curation jobs against the core API: dedupe, consolidation, decay processing, contradiction detection (auto-filing Uncertainty records)"
+
+selectors:
+  paths:
+    - "crates/totem-curator/**"
+  build_modules: []
+  tags: []
+  contracts: []
+
+interfaces: []
+
+invariants:
+  - "Curation never deletes — originals are superseded, every action is logged and reversible from the console"

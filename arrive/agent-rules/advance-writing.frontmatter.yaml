@@ -1,0 +1,6 @@
+cursor:
+  description: "Rules for writing Advance outcome records"
+  globs:
+    - "arrive/systems/**/advances/**"
+claude:
+  description: "Rules for writing Advance outcome records"

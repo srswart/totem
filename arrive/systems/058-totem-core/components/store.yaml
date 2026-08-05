@@ -1,0 +1,22 @@
+component:
+  id: store
+  name: "Totem Store"
+  type: data-contract
+  owners:
+    - team: 058-totem
+  stage: incubating
+  description: "SurrealDB schema, migrations, repositories, scope invariants, embedding/vector index"
+
+selectors:
+  paths:
+    - "crates/totem-store/**"
+  build_modules: []
+  tags: []
+  contracts: []
+
+interfaces: []
+
+invariants:
+  - "Scope isolation is enforced at the store layer — an invariant, not an application-layer courtesy"
+  - "Episodic records are append-only; never edited or deleted"
+  - "Every write carries provenance (author, harness, session, turn, derived_from)"

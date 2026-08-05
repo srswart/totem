@@ -1,0 +1,109 @@
+# ARRIVE Checkpoint
+
+Analyze current changes and recommend how to split them for better reviewability.
+
+## Instructions
+
+1. **Get current status and score**:
+
+```bash
+arrive status --verbose
+arrive score
+arrive external-systems check
+```
+
+2. **Analyze the changes** for natural split points:
+
+   **By Component**:
+   - Group files by component
+   - Each component could be a separate commit/PR
+
+   **By Change Type** (respect Advance work products):
+   - Tidying changes (refactoring, renames) — when `production_code` applies
+   - Test additions / control validation — match automation vs unit-test work
+   - Feature implementation
+   - Configuration changes
+
+   **By Risk Level**:
+   - Low-risk changes (tests, docs, internal)
+   - Medium-risk changes (new features)
+   - High-risk changes (auth, data, migrations)
+
+   **By Public Surface**:
+   - Internal-only changes
+   - API/interface changes
+   - User-facing changes
+
+   **By External Traceability**:
+   - Keep stable `system + id + relation` references with the Advance/plan item they explain
+   - Do not stage credentials, provider payloads, or copied result evidence as reference metadata
+   - Preserve `pr_links`; references and evidence remain separate
+
+3. **Calculate split impact**:
+   - Estimate score for each proposed split
+   - Estimate review time for each proposed split
+   - Ensure each split is independently reviewable
+
+4. **Recommend a checkpoint strategy**:
+   - Which files to stage first
+   - Suggested commit message
+   - Order of remaining commits
+   - How to update `review_time_estimate_minutes` in the active Advance
+
+## Split Decision Guidelines
+
+| Current Score | Recommendation |
+|---------------|----------------|
+| Green (≤30) | Proceed normally, optional checkpoint |
+| Yellow (31-60) | Strongly consider splitting |
+| Red (>60) | Must split before proceeding |
+
+## Expected Output Format
+
+```
+🔀 Checkpoint Analysis
+
+Current Score: XX [LEVEL]
+Files Changed: N
+Components: [list]
+
+Recommended Splits:
+
+Split 1: "tidy: Extract helper functions"
+├─ Files: file1.rs, file2.rs
+├─ Est. Score: 12 [GREEN]
+└─ Type: Preparatory refactoring
+
+Split 2: "test: Add validation tests"
+├─ Files: test_validation.rs
+├─ Est. Score: 8 [GREEN]
+└─ Type: Test coverage
+
+Split 3: "feat: Implement validation"
+├─ Files: validation.rs, mod.rs
+├─ Est. Score: 15 [GREEN]
+└─ Type: Feature
+
+Staging Commands:
+# For Split 1:
+git add file1.rs file2.rs
+git commit -m "tidy: Extract helper functions"
+
+# For Split 2:
+git add test_validation.rs
+git commit -m "test: Add validation tests"
+
+# For Split 3:
+git add validation.rs mod.rs
+git commit -m "feat: Implement validation"
+
+💡 Each split is independently reviewable. Prefer tidy→test→feat for `production_code`; use profile-appropriate sequencing for automation, test-data, or performance work (`arrive-advance-profiles.mdc`).
+```
+
+## If Changes Can't Be Split
+
+If the change is inherently atomic:
+- Document why it can't be split in the advance
+- Ensure extra evidence is provided
+- Flag for careful review
+- Record estimated vs actual review time in advance frontmatter after review completes

@@ -1,0 +1,17 @@
+# ARRIVE model pricing snapshot (USD per 1M tokens). Used by `arrive usage cost`.
+# Tokens are stored raw on advances; cost is computed at view time against this file.
+#
+# ARRIVE-managed: `arrive upgrade` refreshes this file to the current kit snapshot.
+# Do NOT hand-edit for custom rates — pass `arrive usage cost --pricing <file>` instead.
+effective_from: 2026-04-01
+models:
+  claude-sonnet-4-7:
+    input_per_1m: 3.00,
+    output_per_1m: 15.00
+    cache_read_per_1m: 0.30
+    cache_creation_per_1m: 3.75
+  claude-opus-4-8:
+    input_per_1m: 15.00
+    output_per_1m: 75.00
+    cache_read_per_1m: 1.50
+    cache_creation_per_1m: 18.75

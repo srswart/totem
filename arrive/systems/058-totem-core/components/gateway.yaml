@@ -1,0 +1,23 @@
+component:
+  id: gateway
+  name: "Totem Gateway"
+  type: service
+  owners:
+    - team: 058-totem
+  stage: incubating
+  description: "MCP server (stdio + streamable HTTP) and Axum REST API, auth, enrollment endpoints"
+
+selectors:
+  paths:
+    - "crates/totem-gateway/**"
+  build_modules: []
+  tags: []
+  contracts: []
+
+interfaces:
+  - "MCP tools: totem_recall, totem_save, totem_landscape, totem_advance_status, totem_advance_log, totem_feedback, totem_contest"
+  - "REST/JSON API (Axum): memory ops + admin/governance endpoints; SurrealDB live queries feed console updates"
+
+invariants:
+  - "Cloud credentials are least-privilege: tokens bound to repo + scope"
+  - "Every read and write appends to the access log (who, what, when, via which tool, in which session)"

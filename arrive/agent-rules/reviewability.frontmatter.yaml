@@ -1,0 +1,11 @@
+cursor:
+  description: "Rules for maintaining reviewable code changes"
+  globs:
+    - "core/**"
+    - "cli/**"
+    - "hooks/**"
+    - "*.rs"
+    - "*.ts"
+    - "*.py"
+claude:
+  description: "Rules for maintaining reviewable code changes"

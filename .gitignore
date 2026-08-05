@@ -1,0 +1,28 @@
+# OS
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+
+# Editors / IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Claude Code local settings (user-specific, not shared)
+.claude/settings.local.json
+
+# ARRIVE local working state
+.arrive/work-context.json
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Logs and temp files
+*.log
+tmp/
+temp/

@@ -1,0 +1,5 @@
+cursor:
+  description: "Capture model/token usage for the advance you worked on"
+  always_apply: true
+claude:
+  description: "Capture model/token usage for the advance you worked on"

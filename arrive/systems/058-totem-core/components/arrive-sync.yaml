@@ -1,0 +1,21 @@
+component:
+  id: arrive-sync
+  name: "Totem ARRIVE Sync"
+  type: service
+  owners:
+    - team: 058-totem
+  stage: incubating
+  description: "Ingestion of enrolled repos' /arrive/ artifacts into the landscape graph (repo -> system -> component, advances, edges), with sync provenance"
+
+selectors:
+  paths:
+    - "crates/totem-arrive-sync/**"
+  build_modules: []
+  tags: []
+  contracts: []
+
+interfaces: []
+
+invariants:
+  - "/arrive/ in each enrolled repo stays authoritative; Totem mirrors and indexes, never writes back"
+  - "Every ingestion records sync provenance"

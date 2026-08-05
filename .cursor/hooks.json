@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "hooks": {
+    "afterFileEdit": [
+      {
+        "command": ".cursor/hooks/arrive_after_edit.sh",
+        "description": "Update ARRIVE reviewability score after file edits"
+      }
+    ],
+    "beforeShellExecution": [
+      {
+        "command": ".cursor/hooks/arrive_before_shell.sh",
+        "description": "Validate commands and check for Advance existence"
+      }
+    ],
+    "stop": [
+      {
+        "command": ".cursor/hooks/arrive_on_stop.sh",
+        "description": "Snapshot session to Advance with Changes Made log"
+      }
+    ]
+  }
+}

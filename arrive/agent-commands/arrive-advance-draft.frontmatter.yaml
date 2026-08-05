@@ -1,0 +1,4 @@
+cursor:
+  description: "Draft or update an Advance file for current changes"
+claude:
+  description: "Draft or update an Advance file for current changes"

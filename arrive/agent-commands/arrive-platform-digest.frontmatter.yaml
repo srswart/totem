@@ -1,0 +1,4 @@
+cursor:
+  description: "Synthesize a cluster change narrative from dispatches (platform repos)"
+claude:
+  description: "Synthesize a cluster change narrative from dispatches (platform repos)"

@@ -1,0 +1,5 @@
+cursor:
+  description: "ARRIVE core governance rules - always applied"
+  always_apply: true
+claude:
+  description: "ARRIVE core governance rules - always applied"

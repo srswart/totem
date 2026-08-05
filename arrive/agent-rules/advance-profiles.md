@@ -1,0 +1,55 @@
+# Advance Outcome Profiles
+
+Identify **mode**, **facets**, and **work products** before applying practices or evidence claims. Universal Advance rules stay in `arrive-advance-writing.mdc`; software TDD/Tidy detail stays in `arrive-dev-practices.mdc`.
+
+## Profile axes
+
+| Axis | Values | Purpose |
+|------|--------|---------|
+| `mode` | `implementation`, `evaluation`, `investigation`, `enablement` | What kind of outcome the Advance records |
+| `facets` | e.g. `software`, `quality`, `performance`, `security` | Engineering lens (may combine) |
+| `work_products` | e.g. `production_code`, `test_automation`, `test_data`, `performance_harness` | What was actually produced |
+
+Legacy v1 advances without v2 metadata infer `implementation + software + production_code` for guidance only — do **not** persist inferred defaults when rendering or enriching.
+
+## Practice applicability (work-product driven)
+
+Resolve practices from **work products**, not a blind union of facet rules:
+
+| Work product | Required practices |
+|--------------|-------------------|
+| `production_code` | `tidy_first`, `tdd` |
+| `test_automation` | `automation_control_validation` (not TDD) |
+| `test_data` | `test_data_provenance` |
+| `performance_harness` | `performance_measurement_integrity` |
+
+Evaluation mode adds `quality_protocol` (quality facet), `performance_protocol` (performance facet), or `security_protocol` (security facet).
+
+Record each practice under `advance.practices` with status:
+
+- **`applied`** — honestly performed; cite evidence in the Advance body.
+- **`not_applicable`** — requires a short rationale (e.g. no production code touched).
+- **`waived`** — requires approver + expiry when mandatory practice is intentionally skipped.
+
+Do not claim `tdd:red-green` for automation-only, test-data-only, or performance-harness work.
+
+## Profile-specific body sections
+
+Use `arrive template render --kind advance --mode … --facet … --work-product … --json` (or `arrive advance enrich --preview`) so section headings match the profile. Key prompts:
+
+**Quality evaluation** — risks, scope/method, coverage, findings/disposition, residual risk.
+
+**Test automation implementation** — trace → design → prepare → automate → prove sensitivity (negative control) → prove correctness (positive control) → stabilize → operationalize; document oracle, ownership, and repeatability.
+
+**Test data enablement** — required scenarios, provenance/privacy/residency, setup/reset/cleanup, retention, ownership. Use synthetic data only.
+
+**Performance evaluation** — hypothesis, workload model, environment, measures/thresholds, baseline/comparison, findings/limitations. Missing workload or environment provenance makes performance evidence **indeterminate**, not pass.
+
+**Security evaluation or investigation** — scope/boundaries, threat model or risk hypothesis, controls exercised and test method (SAST/SCA, review, pentest, threat modeling as applicable), findings with severity and disposition, remediation/residual risk. Do not claim `tdd:red-green` or pass/fail from a tool run alone without scope, method, and finding disposition documented in the Advance body. Align control claims with binding org rules (e.g. SEC-092/093, dep-vuln gates) as evidence references, not as substitute for findings narrative.
+
+## Agent workflow
+
+1. Read authored `mode`, `facets`, `work_products` from the Advance frontmatter (or infer legacy defaults for reading only).
+2. Select applicable practices and honest evidence tokens — never software-only defaults on non-production work.
+3. Draft/checkpoint/absorb using profile-appropriate section prompts above.
+4. When scoring reviewability, profile-aware practice credit applies only to practices required for declared work products.

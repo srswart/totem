@@ -1,0 +1,26 @@
+# Active-repo registry for Adoption Intelligence repo-pull ingest (TD-INSIGHT-008).
+#
+# Lists repos under fleet analysis. The ingester performs read-only fetch of each
+# repo's default branch and runs `arrive insight snapshot` compute per repo.
+#
+#   arrive insight ingest --json
+#
+# Secrets are NOT stored here — configure read-only credentials via git credential
+# helpers or CI secrets at runtime. Repos are analyzed only when listed and reachable.
+schema_version: 1
+
+# Suggested cron interval (hours). The CLI does not daemonize; schedule externally.
+schedule_hours: 4
+
+repos: []
+# Example entries (uncomment and edit for your fleet):
+#   - id: arrive-again
+#     local_path: .
+#     default_branch: master
+#   - id: team-alpha-app
+#     fetch_url: https://gitlab.example.com/group/team-alpha-app.git
+#     default_branch: master
+#     org:
+#       portfolio: Platform
+#       pillar: Engineering
+#       team: Alpha

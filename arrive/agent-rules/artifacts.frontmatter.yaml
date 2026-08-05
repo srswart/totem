@@ -1,0 +1,6 @@
+cursor:
+  description: "Rules for ARRIVE metadata artifacts"
+  globs:
+    - "arrive/**"
+claude:
+  description: "Rules for ARRIVE metadata artifacts"

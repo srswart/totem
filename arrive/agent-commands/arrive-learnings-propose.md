@@ -1,0 +1,39 @@
+# Propose a Learning
+
+Draft a learnings-ledger entry from the current session context and add it **only on the user's confirmation**.
+
+## Steps
+
+1. Identify the **reusable** takeaway from the recent work (a gotcha, workaround, pattern, integration quirk, or performance note). If it is specific to the current advance, prefer the Friction Log; use a learning for cross-advance, reusable knowledge.
+2. Draft an entry with these fields:
+   - **Category**: one of `Pattern | Gotcha | Performance | Integration | Workaround`
+   - **Title**: short and specific
+   - **Discovered by**: your tool/agent name or the developer
+   - **Confidence**: `High | Medium | Low`
+   - **Evidence**: link to the advance / PR / test that demonstrates it (**required unless** Confidence is `Low`)
+   - **Files**: relevant paths or globs
+   - **Body**: 1–4 sentences — what to know and why it matters
+   - **See also**: related tech-direction / advance / learning (optional)
+3. Present the draft and ask the user to choose: **(A) accept**, **(B) edit**, or **(C) skip**.
+4. On accept, persist deterministically (the CLI does no model work):
+
+```bash
+arrive learnings add \
+  --category <Category> \
+  --title "<Title>" \
+  --by "<who>" \
+  --confidence <High|Medium|Low> \
+  --evidence "<link>" \
+  --files "<paths>" \
+  --body "<1-4 sentences>" \
+  --see-also "<ref>"   # optional
+  # --system <system-id>   # optional: write to a system's ledger instead of repo-wide
+```
+
+5. Optionally refresh the always-apply consume rule so future sessions see it:
+
+```bash
+arrive learnings index
+```
+
+**Do not** run `arrive learnings add` without explicit user confirmation.

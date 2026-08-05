@@ -1,0 +1,19 @@
+component:
+  id: cli
+  name: "Totem CLI"
+  type: library
+  owners:
+    - team: 058-totem
+  stage: incubating
+  description: "totem CLI: repo enrollment (register + initial ARRIVE ingestion + sync hook install), actor credential setup, local admin"
+
+selectors:
+  paths:
+    - "crates/totem-cli/**"
+  build_modules: []
+  tags: []
+  contracts: []
+
+interfaces: []
+
+invariants: []

@@ -1,0 +1,19 @@
+component:
+  id: console
+  name: "Totem Console"
+  type: ui-area
+  owners:
+    - team: 058-totem
+  stage: incubating
+  description: "Dioxus frontend: landscape dashboard, memory browser, audit trail viewer, Uncertainty queue, promotion approvals, value/usage reports"
+
+selectors:
+  paths:
+    - "crates/totem-console/**"
+  build_modules: []
+  tags: []
+  contracts: []
+
+interfaces: []
+
+invariants: []

@@ -1,0 +1,7 @@
+cursor:
+  description: "Advance outcome profiles: mode, facets, work products, and practice applicability"
+  globs:
+    - "arrive/systems/**/advances/**"
+    - "samples/advance-evolution/**"
+claude:
+  description: "Advance outcome profiles: mode, facets, work products, and practice applicability"

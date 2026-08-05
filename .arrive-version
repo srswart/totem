@@ -1,0 +1,108 @@
+# .arrive-version - DO NOT EDIT
+# Tracks ARRIVE template compatibility and install/upgrade provenance
+marker_version: 3
+template_version: 0.1.23
+template_fingerprint: 6847af57517e1161
+minimum_cli_version: 0.1.9
+capabilities:
+- advance-lossless-roundtrip
+- advance-profiles-v2
+- external-traceability-v1
+- governance-presets-v1
+governance_preset: full
+initialized_at: 2026-08-05T04:18:19.072624+00:00
+initialized_cli_version: 0.2.0
+generated_hashes:
+  .claude/commands/arrive-absorb.md: 3552c7d64fe0c8d5
+  .claude/commands/arrive-advance-draft.md: 95396dd11f9280c1
+  .claude/commands/arrive-cfu.md: 89f44de3b59d9582
+  .claude/commands/arrive-checkpoint.md: f2d3c6b3dda5bbf6
+  .claude/commands/arrive-log.md: 4217a33659bee476
+  .claude/commands/arrive-resident-check.md: d681583a1f024da0
+  .claude/commands/arrive-start.md: f2046ec2508cee01
+  .claude/commands/arrive-status.md: 2d84677028b6c01a
+  .claude/settings.json: 20417fcd13d199b7
+  .claude/skills/arrive-advance-profiles/SKILL.md: c6d00adc15ab8de9
+  .claude/skills/arrive-advance-writing/SKILL.md: c865fc3237b7c138
+  .claude/skills/arrive-artifacts/SKILL.md: 505c2fa7c4ea5319
+  .claude/skills/arrive-dev-practices/SKILL.md: e7bc358597dfe87b
+  .claude/skills/arrive-reviewability/SKILL.md: 0ee64f73bdbcfb02
+  .claude/skills/arrive-usage-tracking/SKILL.md: 2611bff8d2bd3a19
+  .cursor/commands/arrive-absorb.md: 3552c7d64fe0c8d5
+  .cursor/commands/arrive-advance-draft.md: 95396dd11f9280c1
+  .cursor/commands/arrive-cfu.md: 89f44de3b59d9582
+  .cursor/commands/arrive-checkpoint.md: f2d3c6b3dda5bbf6
+  .cursor/commands/arrive-log.md: 4217a33659bee476
+  .cursor/commands/arrive-resident-check.md: d681583a1f024da0
+  .cursor/commands/arrive-start.md: f2046ec2508cee01
+  .cursor/commands/arrive-status.md: 2d84677028b6c01a
+  .cursor/hooks.json: 51ec10ab3423dd80
+  .cursor/hooks/arrive_after_edit.sh: 3980f972a9b8af42
+  .cursor/hooks/arrive_before_shell.sh: 86b4d7f97aa0769a
+  .cursor/hooks/arrive_on_stop.sh: 7ba8b6725806f4de
+  .cursor/hooks/lib/common.sh: f0927dfb3715c639
+  .cursor/rules/arrive-advance-writing.mdc: cbbea39956518d1e
+  .cursor/rules/arrive-artifacts.mdc: 7f0910c850b01455
+  .cursor/rules/arrive-core.mdc: 14efef2d34ea8642
+  .cursor/rules/arrive-dev-practices.mdc: 22503418388858b7
+  .cursor/rules/arrive-reviewability.mdc: f55c82743547a077
+  .cursor/rules/arrive-usage-tracking.mdc: 4e46460825d7df62
+  CLAUDE.md: e3b0941583c462b1
+  arrive/agent-commands/arrive-absorb.frontmatter.yaml: 413717cc1b343c99
+  arrive/agent-commands/arrive-absorb.md: 9b24c4db2c7f813f
+  arrive/agent-commands/arrive-advance-draft.frontmatter.yaml: 757a5ecf0954504b
+  arrive/agent-commands/arrive-advance-draft.md: 35c3dcf722fb3dc3
+  arrive/agent-commands/arrive-cfu.frontmatter.yaml: 8e6fede7cc2241ad
+  arrive/agent-commands/arrive-cfu.md: d0266b2434bd51e1
+  arrive/agent-commands/arrive-checkpoint.frontmatter.yaml: 32d9b6992e56c38d
+  arrive/agent-commands/arrive-checkpoint.md: 4edbba85a55e8627
+  arrive/agent-commands/arrive-contract-impact.frontmatter.yaml: 7013cd50b1f3c691
+  arrive/agent-commands/arrive-contract-impact.md: 3bf143ef08fb0e70
+  arrive/agent-commands/arrive-learnings-propose.frontmatter.yaml: ccf9df79451d9579
+  arrive/agent-commands/arrive-learnings-propose.md: 30aaaab497b7eb55
+  arrive/agent-commands/arrive-log.frontmatter.yaml: 06578cd683eeae1d
+  arrive/agent-commands/arrive-log.md: 5b2326ad777821bd
+  arrive/agent-commands/arrive-platform-context.frontmatter.yaml: 1bf41cc6d4cacd69
+  arrive/agent-commands/arrive-platform-context.md: 148870f82d1fe2a7
+  arrive/agent-commands/arrive-platform-digest.frontmatter.yaml: c1727367cc83518d
+  arrive/agent-commands/arrive-platform-digest.md: 0e58a79f54f23668
+  arrive/agent-commands/arrive-platform-publish.frontmatter.yaml: f467f18033cdce23
+  arrive/agent-commands/arrive-platform-publish.md: 0330e73dcea45f20
+  arrive/agent-commands/arrive-resident-check.frontmatter.yaml: a1e87ba92e151c9b
+  arrive/agent-commands/arrive-resident-check.md: 3428fb40b26894c9
+  arrive/agent-commands/arrive-start.frontmatter.yaml: 6f0d31f84bf5baa5
+  arrive/agent-commands/arrive-start.md: b2b16634d5eac5ad
+  arrive/agent-commands/arrive-status.frontmatter.yaml: 0fff69fa6df28441
+  arrive/agent-commands/arrive-status.md: 2d942af97b652cba
+  arrive/agent-rules/advance-profiles.frontmatter.yaml: 7a4a328a7b6de831
+  arrive/agent-rules/advance-profiles.md: c116ead4318488a7
+  arrive/agent-rules/advance-writing.frontmatter.yaml: d960a41f1a089bcf
+  arrive/agent-rules/advance-writing.md: 1903b59b8f7bc121
+  arrive/agent-rules/artifacts.frontmatter.yaml: eaf213df3aafb08f
+  arrive/agent-rules/artifacts.md: ca0f3458e3605b1f
+  arrive/agent-rules/core.frontmatter.yaml: 3f20b4b8ba5d4c4d
+  arrive/agent-rules/core.md: 6f373cf927a30974
+  arrive/agent-rules/dev-practices.frontmatter.yaml: fc6ccbc96d6c4280
+  arrive/agent-rules/dev-practices.md: 61ffd07cf878a834
+  arrive/agent-rules/learnings-capture.frontmatter.yaml: 3ba7488e9c263aed
+  arrive/agent-rules/learnings-capture.md: 824b26f9b0e3eabe
+  arrive/agent-rules/platform-membership.frontmatter.yaml: a48366181dc0f7f1
+  arrive/agent-rules/platform-membership.md: 8584ae99d41e873b
+  arrive/agent-rules/platform-stewardship.frontmatter.yaml: dea68a4de31d618d
+  arrive/agent-rules/platform-stewardship.md: 75b7a557b9729867
+  arrive/agent-rules/reviewability.frontmatter.yaml: 5b402d9d6afeffcd
+  arrive/agent-rules/reviewability.md: 5f618184a2707466
+  arrive/agent-rules/usage-tracking.frontmatter.yaml: fdb12e0c8b267f95
+  arrive/agent-rules/usage-tracking.md: 5d10fb4f142f9080
+  arrive/evidence/pipelines.yaml: 769582bc81bce83b
+  arrive/insight/active-repos.yaml: 46260c0c59cc4929
+  arrive/insight/adoption-goals.yaml: 2568069a9f98290a
+  arrive/model-pricing.yaml: 6182901ca6676fe2
+  arrive/registry.yaml: 269f16d3e174ac6f
+  arrive/systems/058-totem-core/advances/.gitkeep: 027f48e769fa9a9d
+  arrive/systems/058-totem-core/advances/ADV-COMPONENT-001.md: 4dc16c78105e8920
+  arrive/systems/058-totem-core/components/core.yaml: a32bffb1186a247d
+  arrive/systems/058-totem-core/system.yaml: 3584a0b63560e3c0
+  hooks/platform/arrive-platform-freshness.sh: 376576f7884c5283
+  hooks/platform/arrive-platform-pre-commit.sh: de659e82979cd09d
+  hooks/platform/install.sh: 834ad16ff5c4254c

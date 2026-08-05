@@ -1,0 +1,4 @@
+cursor:
+  description: "Assess platform-contract impact of the current change (member repos)"
+claude:
+  description: "Assess platform-contract impact of the current change (member repos)"

@@ -1,0 +1,4 @@
+cursor:
+  description: "Generate Check for Understanding questions for reviewers"
+claude:
+  description: "Generate Check for Understanding questions for reviewers"

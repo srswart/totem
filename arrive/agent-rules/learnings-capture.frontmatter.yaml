@@ -1,0 +1,5 @@
+cursor:
+  description: "Capture reusable learnings at the moment of discovery"
+  always_apply: true
+claude:
+  description: "Capture reusable learnings at the moment of discovery"
