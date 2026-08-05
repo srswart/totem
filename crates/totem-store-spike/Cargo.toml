@@ -10,8 +10,10 @@ publish.workspace = true
 [features]
 # Opt-in: runs the same experiments against a real `surreal start` server.
 # Off by default so the workspace test build stays lean and never depends on a
-# server being reachable. See tests/server_parity.rs.
-server-parity = ["surrealdb/protocol-ws"]
+# server being reachable. See tests/server_parity.rs. `protocol-http` is here
+# solely so the ADV-STORE-006 test can prove the HTTP transport rejects live
+# queries; nothing else may use it.
+server-parity = ["surrealdb/protocol-ws", "surrealdb/protocol-http"]
 
 [dependencies]
 futures = "0.3.31"

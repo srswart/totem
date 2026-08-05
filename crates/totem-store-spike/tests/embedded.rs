@@ -6,8 +6,9 @@ use surrealdb::Surreal;
 use surrealdb::engine::local::{Db, Mem};
 use surrealdb::types::Action;
 use totem_store_spike::{
-    explain_scoped_knn, install_toy_dataset, recall_bodies_with_string_cutoff, verify_live_query,
-    verify_one_round_trip, verify_transaction_atomicity,
+    PROBE_BASELINE, PROBE_NETWORK, PROBE_SCRIPTING, explain_scoped_knn, install_toy_dataset,
+    probe_expression, recall_bodies_with_string_cutoff, verify_live_query, verify_one_round_trip,
+    verify_transaction_atomicity,
 };
 
 async fn seeded() -> surrealdb::Result<Surreal<Db>> {
@@ -85,6 +86,31 @@ async fn scope_predicate_is_pushed_into_the_index_scan() -> surrealdb::Result<()
         plan.contains("\"operator\": String(\"KnnScan\")") && plan.contains("scope INSIDE"),
         "scope predicate was not pushed into the index scan: {plan}"
     );
+    Ok(())
+}
+
+/// The embedded half of the ADV-STORE-006 capability comparison: this build
+/// compiles SurrealDB without the `scripting` and `http` features, so both
+/// probes must refuse — the refusal text is recorded in
+/// `docs/tech-direction/surrealdb.md` §5 next to the server's. The baseline
+/// probe is the positive control proving the harness can report `Ok` at all.
+#[tokio::test]
+async fn capability_probes_refuse_on_the_embedded_engine() -> surrealdb::Result<()> {
+    let db = seeded().await?;
+
+    assert_eq!(
+        probe_expression(&db, PROBE_BASELINE).await,
+        Ok(()),
+        "capability-free baseline failed; probe harness is broken"
+    );
+    let scripting = probe_expression(&db, PROBE_SCRIPTING)
+        .await
+        .expect_err("embedded build without the `scripting` feature ran a script");
+    let network = probe_expression(&db, PROBE_NETWORK)
+        .await
+        .expect_err("embedded build without the `http` feature made a network call");
+    println!("embedded scripting refusal: {scripting}");
+    println!("embedded network refusal: {network}");
     Ok(())
 }
 

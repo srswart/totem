@@ -12,9 +12,11 @@ spike actually observed, and the constraints that observation places on the
 store.
 
 **Verdict: confirmed, with four version-specific constraints** (TD-002, TD-004,
-TD-005, TD-008) that the store and console must honour to keep it true, and one
-parity question that could not be closed in this environment (§5). The remaining
-findings (TD-001, TD-003, TD-006, TD-007) are confirmations, not constraints.
+TD-005, TD-008) that the store and console must honour to keep it true. The
+parity question §5 originally left open has since been **closed by ADV-STORE-006**,
+which executed the check against a real server and added three server-side
+constraints (TD-009, TD-010, TD-011). The remaining findings (TD-001, TD-003,
+TD-006, TD-007) are confirmations, not constraints.
 
 ## 1. What was run
 
@@ -193,57 +195,76 @@ cost on every cold ephemeral runner from ADV-STORE-001 onward.
    fallback is to over-fetch (`K' >> K`) and re-filter in the same statement,
    with a documented recall budget — not to filter above the store.
 
-## 5. Engine parity — partially closed
+## 5. Engine parity — closed (ADV-STORE-006)
 
 The advance asked whether every capability behaves the same on the embedded
-engine (what all tests use) as on server mode (what production will use).
+engine (what all tests use) as on server mode (what production will use), and
+whether the auth/capability defaults that genuinely differ change any behaviour
+Totem depends on. ADV-STORE-004 could not execute this in the cloud sandbox;
+**ADV-STORE-006 executed it on 2026-08-05** on a developer workstation.
 
-**Verified by execution:** nothing on the server. **No `surreal` server could be
-run in this environment** — the agent sandbox's egress proxy refuses
-`download.surrealdb.com` and `install.surrealdb.com` (`CONNECT tunnel failed,
-response 403`), and the GitHub releases API is not enabled for that repository in
-this session. Building the server from source was not attempted; it is far larger
-than the 5-minute client build.
+| | |
+|---|---|
+| Server | `surrealdb/surrealdb:v3.2.4` Docker image — SDK-reported `Version { major: 3, minor: 2, patch: 4, build: "20260803.93ab219" }` |
+| Started | `start --user root --pass root memory` — no capability flags, i.e. server defaults |
+| Client | the same pinned `=3.2.4` SDK over WebSocket; `protocol-http` added only for the transport-limitation test |
+| Run | `TOTEM_SPIKE_SURREAL_URL=ws://127.0.0.1:8000 cargo test -p totem-store-spike --features server-parity` — 5 tests, 3 consecutive clean runs |
 
-**Established from the SDK source, not executed:**
+**H1 confirmed — query semantics are identical.** All six ADV-STORE-004
+experiments pass unchanged over WebSocket: the one-round-trip recall returns the
+same bodies in the same rank order, `EXPLAIN FULL` shows the `KnnScan` still
+carrying `scope INSIDE`, transactions commit/abort as a unit, and the live feed
+publishes only committed writes — order-insensitive within a transaction,
+exactly as TD-008 describes. The parity test now asserts the server version
+matches the `=3.2.4` pin at run time, so a mismatched server fails loudly
+instead of answering a different question.
 
-- Live queries are **not supported over the HTTP remote protocol** — the HTTP
-  engine returns *"The protocol or storage engine does not support live queries
-  on this architecture"*. Embedded and WebSocket only. This is a real constraint
-  on the gateway/console design, not a nuance.
-- `engine::local` executes queries through `surrealdb_core::kvs::Datastore` —
-  the same datastore `surreal start` wraps. The query engine, planner, and
-  transaction semantics are shared code; what differs between embedded and
-  server is transport, authentication, and capability defaults (an embedded
-  instance runs with default `Capabilities` and no auth; a server applies its own
-  flags). So parity of *query semantics* is architecturally expected, while
-  parity of *auth and capability behaviour* is exactly what a server run would
-  need to check — and is most relevant to ADV-GATEWAY-003.
+**H2 confirmed — auth and capability defaults differ, and are now executed
+rather than argued:**
 
-**How to close it:** `crates/totem-store-spike/tests/server_parity.rs` re-runs
-every experiment above over WebSocket against a real server. It is behind the
-off-by-default `server-parity` feature, so a plain `cargo test --workspace` can
-never wait on a server; with the feature on it fails fast if
-`TOTEM_SPIKE_SURREAL_URL` is unset, because a green parity test that checked
-nothing would be worse than no parity test. It compiles, but **has never been
-executed against a server**. On any machine with the binary:
+- **TD-009 — live queries are refused over the HTTP protocol (executed).** The
+  raw `LIVE SELECT` is refused by the server with *"Unable to perform the
+  realtime query"*; the SDK's `.live()` path refuses client-side with *"The
+  protocol or storage engine does not support live queries on this
+  architecture"*. The identical statement on the identical database succeeds
+  over WebSocket. Constraint 6 in §4 stands, now on executed evidence.
+- **TD-010 — a default server denies scripting and outbound network even for
+  root.** Server refusals, verbatim: *"Scripting functions are not allowed"* and
+  *"Access to network target '127.0.0.1:9' is not allowed"*. The embedded build
+  refuses the same probes for a different reason — the features are compiled
+  out: *"Problem with embedded script function. Embedded functions are not
+  enabled."* and *"Remote HTTP request functions are not enabled"*. Same
+  effective posture (denied by default), different mechanism and different
+  error text — nothing may match on refusal wording.
+- **TD-011 — an under-privileged system user's data writes vanish silently.** A
+  `VIEWER`-role database user runs the full recall surface identically to root,
+  and gets a loud *"IAM error: Not enough permissions to perform this action"*
+  for DDL — but its `CREATE` returns **OK with an empty result and persists
+  nothing**. Error-checking alone cannot detect a write dropped by
+  authorization. The same viewer also reads **every scope** in the database:
+  server roles are read/write/config tiers, not row filters. Two consequences:
+  scope isolation must be enforced by the store's own predicates and tests,
+  never delegated to DB roles (the store invariant, reconfirmed from the other
+  side); and if the gateway ever runs under a restricted DB user
+  (ADV-GATEWAY-003), it must verify writes by read-back or run as a user whose
+  writes cannot be silently filtered.
 
-```sh
-surreal start --user root --pass root memory &
-TOTEM_SPIKE_SURREAL_URL=ws://127.0.0.1:8000 \
-  cargo test -p totem-store-spike --features server-parity --test server_parity
-```
+Bad root credentials are refused at signin time — *"There was a problem with
+authentication"* — with a positive control proving the same connection then
+signs in with correct credentials.
 
-Until someone runs that, treat server-mode parity as *expected but unverified*,
-and carry it as a residual risk on ADV-STORE-001.
+**H3 refuted — no isolation-relevant divergence.** The scope predicate stays
+inside the `KnnScan` on the server, and the live feed publishes nothing from
+rolled-back turns. **The residual risk recorded on ADV-STORE-001 ("server-mode
+parity expected but unverified") is retired**, replaced by the three named
+constraints above.
 
-Closing it is tracked as its own advance, **ADV-STORE-006**, rather than left as
-a loose end inside ADV-STORE-001. Its plan item is `blocked` on environment, not
-on work: the harness already exists, and what is missing is a host that can reach
-a `surreal` server. That advance also picks up the two facts established here
-from SDK source but never executed — the HTTP-protocol live-query limitation, and
-the auth/capability defaults that genuinely differ between an embedded instance
-and a server.
+Environment note, still true: the cloud agent sandbox cannot run a server — its
+egress proxy refuses `download.surrealdb.com` and `install.surrealdb.com`
+(`CONNECT tunnel failed, response 403`), and the published `surrealdb` crate is
+client-only. The parity suite therefore stays opt-in behind the `server-parity`
+feature, fails fast when `TOTEM_SPIKE_SURREAL_URL` is unset, and CI must not
+claim it. Re-run it whenever the pinned SurrealDB version changes.
 
 ## 6. What this spike deliberately did not answer
 

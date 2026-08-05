@@ -347,6 +347,35 @@ pub async fn verify_live_query<C: Connection>(
     }
 }
 
+/// Capability probes — the same three expressions, classifiable on any engine.
+///
+/// `math::abs` is the positive control: it is capability-free, so a probe
+/// harness that cannot return `Ok` for it is broken, and the `Err`s it reports
+/// for the other two would be meaningless. The scripting and network probes
+/// exercise the two capability surfaces that differ most between an embedded
+/// instance (features compiled out) and a `surreal start` server (denied by
+/// default, enabled by flags).
+pub const PROBE_BASELINE: &str = "RETURN math::abs(-1)";
+pub const PROBE_SCRIPTING: &str = "RETURN function() { return 1; }";
+/// Port 9 (discard) on loopback: if the capability were *granted*, the request
+/// would still fail — but with a transport error, not a capability refusal.
+/// `Ok`/`Err` alone therefore cannot classify this probe; the recorded error
+/// text is the finding, which is why [`probe_expression`] returns it verbatim.
+pub const PROBE_NETWORK: &str = "RETURN http::get('http://127.0.0.1:9/')";
+
+/// Run a possibly-capability-gated expression. `Ok(())` means the engine
+/// executed it; `Err(text)` carries the engine's refusal verbatim so the
+/// caller can assert on it and the findings can quote it.
+pub async fn probe_expression<C: Connection>(db: &Surreal<C>, expr: &str) -> Result<(), String> {
+    match db.query(expr).await {
+        Ok(response) => match response.check() {
+            Ok(_) => Ok(()),
+            Err(e) => Err(e.to_string()),
+        },
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 fn field_string(row: &Object, key: &str) -> String {
     row.get(key)
         .and_then(|v| v.clone().into_string().ok())
