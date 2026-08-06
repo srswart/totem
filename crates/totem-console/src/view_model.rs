@@ -174,7 +174,7 @@ pub fn parse_uncertainty_queue(body: &str) -> Result<Vec<MemoryRecord>, ViewMode
 /// `POST /audit/:id`'s response body: one memory's full audit trail
 /// (ADV-CONSOLE-002) — its provenance (via [`MemoryRecord::provenance`]),
 /// access history, curator lineage, and promotion history.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct AuditTrailViewModel {
     /// The record itself.
     pub record: MemoryRecord,
