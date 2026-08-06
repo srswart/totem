@@ -6,6 +6,13 @@
 //! "every read and write is logged" claim, and the embedding-on-write
 //! placement decision, hold identically no matter which surface a caller
 //! used ([`crate::router`]'s doc comment).
+//!
+//! Every operation takes the [`Caller`] making it, and authorizes the identity
+//! that call asserts before touching the store (ADV-GATEWAY-003). That is why
+//! it is a parameter rather than something a surface looks up for itself: a
+//! new handler or a new MCP tool cannot reach these functions without saying
+//! who is calling, so "this surface forgot to check the credential" is not a
+//! mistake that compiles.
 
 use chrono::{DateTime, Utc};
 use totem_core::{
@@ -15,6 +22,7 @@ use totem_core::{
 };
 use totem_store::{AdvanceView, RecallQuery};
 
+use crate::auth::Caller;
 use crate::error::GatewayError;
 use crate::state::AppState;
 
@@ -77,8 +85,12 @@ pub struct RecallInput {
 pub async fn save(
     state: &AppState,
     input: SaveInput,
+    caller: &Caller,
     endpoint: &str,
 ) -> Result<MemoryId, GatewayError> {
+    caller.authorize_identity(input.author.actor(), input.project.as_ref(), &input.teams)?;
+    caller.authorize_scope(&input.scope)?;
+
     let writer = ScopeChain::resolve(input.author.actor(), input.project.as_ref(), &input.teams);
 
     let content = Content::new(input.body).with_tags(input.tags);
@@ -125,8 +137,11 @@ pub async fn save(
 pub async fn recall(
     state: &AppState,
     input: RecallInput,
+    caller: &Caller,
     endpoint: &str,
 ) -> Result<Vec<MemoryRecord>, GatewayError> {
+    caller.authorize_identity(&input.actor, input.project.as_ref(), &input.teams)?;
+
     let reader = ScopeChain::resolve(&input.actor, input.project.as_ref(), &input.teams);
 
     let mut query = RecallQuery::new();
@@ -193,8 +208,11 @@ pub struct FeedbackInput {
 pub async fn feedback(
     state: &AppState,
     input: FeedbackInput,
+    caller: &Caller,
     endpoint: &str,
 ) -> Result<MemoryRecord, GatewayError> {
+    caller.authorize_identity(&input.actor, input.project.as_ref(), &input.teams)?;
+
     let chain = ScopeChain::resolve(&input.actor, input.project.as_ref(), &input.teams);
     let record = state
         .store
@@ -262,8 +280,15 @@ pub struct ContestInput {
 pub async fn contest(
     state: &AppState,
     input: ContestInput,
+    caller: &Caller,
     endpoint: &str,
 ) -> Result<MemoryId, GatewayError> {
+    // Authorized before the visibility probe below, not only inside the `save`
+    // it delegates to: that probe is itself a read, and answering it for an
+    // identity the caller may not assert would leak whether an id exists.
+    caller.authorize_identity(input.author.actor(), input.project.as_ref(), &input.teams)?;
+    caller.authorize_scope(&input.scope)?;
+
     let chain = ScopeChain::resolve(input.author.actor(), input.project.as_ref(), &input.teams);
     if state
         .store
@@ -293,7 +318,7 @@ pub async fn contest(
         session: input.session,
         turn: input.turn,
     };
-    save(state, save_input, endpoint).await
+    save(state, save_input, caller, endpoint).await
 }
 
 /// Everything an advance log entry needs, independent of transport.
@@ -331,6 +356,7 @@ pub struct AdvanceLogInput {
 pub async fn advance_log(
     state: &AppState,
     input: AdvanceLogInput,
+    caller: &Caller,
     endpoint: &str,
 ) -> Result<MemoryId, GatewayError> {
     let subject = SubjectRef::new(SubjectKind::Advance, input.advance_id)
@@ -349,7 +375,7 @@ pub async fn advance_log(
         session: input.session,
         turn: input.turn,
     };
-    save(state, save_input, endpoint).await
+    save(state, save_input, caller, endpoint).await
 }
 
 /// One advance's current status, read from the landscape mirror

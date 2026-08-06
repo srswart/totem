@@ -1,10 +1,19 @@
 //! The MCP tool surface: `totem_recall`, `totem_save`, `totem_landscape`
 //! (docs/solution-intent.md §3.1; ADV-GATEWAY-002). Served over stdio for
-//! desktop harnesses (Claude Code, Cursor) — streamable HTTP + auth for cloud
-//! agents is ADV-GATEWAY-003's job, per
-//! [docs/tech-direction/mcp.md](../../../docs/tech-direction/mcp.md)'s
-//! recommendation to design against streamable HTTP separately once that
-//! advance's token design exists.
+//! desktop harnesses (Claude Code, Cursor) and, since ADV-GATEWAY-003, over
+//! streamable HTTP for cloud agents ([`crate::mcp_http`]) — the transport
+//! [docs/tech-direction/mcp.md](../../../docs/tech-direction/mcp.md) MCP-003
+//! and MCP-004 name as what those harnesses actually require.
+//!
+//! One handler serves both, in one of two modes ([`McpAuth`]). Over stdio the
+//! process boundary is the credential and the caller is trusted, exactly as
+//! before. Over HTTP the caller must arrive with a credential
+//! [`crate::auth::authenticate`] already verified, and every tool authorizes
+//! the identity its arguments assert against that credential's grant. A
+//! token-bound handler that finds no verified caller refuses the call rather
+//! than falling back to the trusted mode — so mounting the tool surface
+//! without the credential layer produces a server that answers nothing, not
+//! one that answers everything.
 //!
 //! Every tool call resolves into [`ops::recall`]/[`ops::save`] — the same
 //! functions the REST surface (`handlers.rs`) uses — so provenance and access
@@ -20,8 +29,10 @@
 //! `Author`'s own `Deserialize`) before it reaches [`ops`] — the validation
 //! itself is not duplicated, only the envelope shape.
 
+use axum::http::request::Parts;
 use chrono::{DateTime, Utc};
 use rmcp::handler::server::wrapper::Parameters;
+use rmcp::model::Extensions;
 use rmcp::{ErrorData, schemars, tool, tool_router};
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
@@ -30,6 +41,7 @@ use totem_core::{
     SubjectRef, TeamId,
 };
 
+use crate::auth::Caller;
 use crate::error::GatewayError;
 use crate::ops::{self, AdvanceLogInput, ContestInput, FeedbackInput, RecallInput, SaveInput};
 use crate::state::AppState;
@@ -218,6 +230,10 @@ fn gateway_error(error: GatewayError) -> ErrorData {
         ) => invalid_params(error),
         GatewayError::Store(_) => ErrorData::internal_error("internal error", None),
         GatewayError::InvalidRequest(_) => invalid_params(error),
+        // A credential refusal names a rule the caller can act on — which
+        // actor, which repo, which scope its token is bound to — the same
+        // reason `error.rs` returns those messages verbatim over REST.
+        GatewayError::Auth(_) => invalid_params(error),
     }
 }
 
@@ -395,18 +411,69 @@ fn parse_advance_log_input(params: AdvanceLogParams) -> Result<AdvanceLogInput, 
     })
 }
 
+/// How far a caller's asserted identity is taken at its word.
+#[derive(Debug, Clone, Copy)]
+enum McpAuth {
+    /// stdio: the process boundary is the credential.
+    Trusted,
+    /// streamable HTTP: a verified credential must accompany every call.
+    TokenBound,
+}
+
 /// The MCP handler. Wraps the same [`AppState`] the REST router uses, so
 /// running both surfaces over one store is a matter of constructing this and
 /// [`crate::router`] from the same state, not two separate stacks.
 #[derive(Debug, Clone)]
 pub struct TotemMcp {
     state: AppState,
+    auth: McpAuth,
 }
 
 impl TotemMcp {
-    /// Build the MCP handler over the given gateway state.
+    /// Build the MCP handler for a local, single-user transport (stdio).
+    ///
+    /// Identity is caller-asserted: whoever can speak to this process already
+    /// has the access it would otherwise be checking for.
     pub fn new(state: AppState) -> Self {
-        Self { state }
+        Self {
+            state,
+            auth: McpAuth::Trusted,
+        }
+    }
+
+    /// Build the MCP handler for a remote transport, where every call must
+    /// carry a credential [`crate::auth::authenticate`] has verified.
+    ///
+    /// Only [`crate::mcp_http::routes`] constructs this, and it mounts the
+    /// credential layer in the same expression.
+    pub(crate) fn token_bound(state: AppState) -> Self {
+        Self {
+            state,
+            auth: McpAuth::TokenBound,
+        }
+    }
+
+    /// Who is making this tool call.
+    ///
+    /// `rmcp` injects the request's [`Parts`] — including the extensions the
+    /// credential layer wrote — into the MCP request context, which is how a
+    /// per-request grant reaches a handler the transport builds per session.
+    /// A token-bound handler with no verified caller refuses: there is no
+    /// path from "the credential layer is missing" to "the call proceeds".
+    fn caller(&self, extensions: &Extensions) -> Result<Caller, ErrorData> {
+        match self.auth {
+            McpAuth::Trusted => Ok(Caller::Trusted),
+            McpAuth::TokenBound => extensions
+                .get::<Parts>()
+                .and_then(|parts| parts.extensions.get::<Caller>())
+                .cloned()
+                .ok_or_else(|| {
+                    ErrorData::invalid_params(
+                        "this MCP surface requires a verified bearer credential",
+                        None,
+                    )
+                }),
+        }
     }
 }
 
@@ -422,9 +489,11 @@ impl TotemMcp {
     async fn totem_recall(
         &self,
         Parameters(params): Parameters<RecallParams>,
+        extensions: Extensions,
     ) -> Result<String, ErrorData> {
+        let caller = self.caller(&extensions)?;
         let input = parse_recall_input(params)?;
-        let records = ops::recall(&self.state, input, "mcp:totem_recall")
+        let records = ops::recall(&self.state, input, &caller, "mcp:totem_recall")
             .await
             .map_err(gateway_error)?;
         serde_json::to_string(&records).map_err(internal_error)
@@ -438,9 +507,11 @@ impl TotemMcp {
     async fn totem_save(
         &self,
         Parameters(params): Parameters<SaveParams>,
+        extensions: Extensions,
     ) -> Result<String, ErrorData> {
+        let caller = self.caller(&extensions)?;
         let input = parse_save_input(params)?;
-        let id = ops::save(&self.state, input, "mcp:totem_save")
+        let id = ops::save(&self.state, input, &caller, "mcp:totem_save")
             .await
             .map_err(gateway_error)?;
         serde_json::to_string(&serde_json::json!({ "id": id })).map_err(internal_error)
@@ -459,7 +530,12 @@ impl TotemMcp {
     async fn totem_landscape(
         &self,
         Parameters(params): Parameters<LandscapeParams>,
+        extensions: Extensions,
     ) -> Result<String, ErrorData> {
+        // The landscape mirror is not scoped memory, so there is no identity
+        // to bound here — but an unauthenticated caller must still not reach
+        // it, so the credential is checked and its grant then unused.
+        let _ = self.caller(&extensions)?;
         let Some(repo) = params.repo else {
             return Err(invalid_params(
                 "totem_landscape requires `repo`: the ARRIVE registry id (registry.yaml's \
@@ -488,9 +564,11 @@ impl TotemMcp {
     async fn totem_feedback(
         &self,
         Parameters(params): Parameters<FeedbackParams>,
+        extensions: Extensions,
     ) -> Result<String, ErrorData> {
+        let caller = self.caller(&extensions)?;
         let input = parse_feedback_input(params)?;
-        let record = ops::feedback(&self.state, input, "mcp:totem_feedback")
+        let record = ops::feedback(&self.state, input, &caller, "mcp:totem_feedback")
             .await
             .map_err(gateway_error)?;
         serde_json::to_string(&record).map_err(internal_error)
@@ -506,9 +584,11 @@ impl TotemMcp {
     async fn totem_contest(
         &self,
         Parameters(params): Parameters<ContestParams>,
+        extensions: Extensions,
     ) -> Result<String, ErrorData> {
+        let caller = self.caller(&extensions)?;
         let input = parse_contest_input(params)?;
-        let id = ops::contest(&self.state, input, "mcp:totem_contest")
+        let id = ops::contest(&self.state, input, &caller, "mcp:totem_contest")
             .await
             .map_err(gateway_error)?;
         serde_json::to_string(&serde_json::json!({ "id": id })).map_err(internal_error)
@@ -523,9 +603,11 @@ impl TotemMcp {
     async fn totem_advance_log(
         &self,
         Parameters(params): Parameters<AdvanceLogParams>,
+        extensions: Extensions,
     ) -> Result<String, ErrorData> {
+        let caller = self.caller(&extensions)?;
         let input = parse_advance_log_input(params)?;
-        let id = ops::advance_log(&self.state, input, "mcp:totem_advance_log")
+        let id = ops::advance_log(&self.state, input, &caller, "mcp:totem_advance_log")
             .await
             .map_err(gateway_error)?;
         serde_json::to_string(&serde_json::json!({ "id": id })).map_err(internal_error)
@@ -542,7 +624,11 @@ impl TotemMcp {
     async fn totem_advance_status(
         &self,
         Parameters(params): Parameters<AdvanceStatusParams>,
+        extensions: Extensions,
     ) -> Result<String, ErrorData> {
+        // Read from the landscape mirror, not scoped memory: authenticated,
+        // with no identity bound — the same reasoning as `totem_landscape`.
+        let _ = self.caller(&extensions)?;
         let advance = ops::advance_status(&self.state, &params.advance_id)
             .await
             .map_err(gateway_error)?;

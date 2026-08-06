@@ -204,7 +204,7 @@ passes:
           - id: "ADV-GATEWAY-003"
             advance_id: "ADV-GATEWAY-003"
             title: "Streamable-HTTP MCP + auth for cloud agents"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-GATEWAY-002", "ADV-INFRA-001"]
             notes: "Security-critical: least-privilege tokens bound to repo + scope. MODEL: claude-opus-5"

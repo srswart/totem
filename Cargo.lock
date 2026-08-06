@@ -6446,12 +6446,14 @@ dependencies = [
  "rmcp",
  "serde",
  "serde_json",
+ "sha2",
  "surrealdb",
  "thiserror 2.0.19",
  "tokio",
  "totem-core",
  "totem-store",
  "tower",
+ "uuid",
 ]
 
 [[package]]

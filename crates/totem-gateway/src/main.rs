@@ -1,4 +1,6 @@
-//! The gateway binary: the one long-running Totem process (DEP-001).
+//! The gateway binary: the one long-running Totem process (DEP-001), serving
+//! the authenticated application — REST plus MCP over streamable HTTP, every
+//! route behind a bearer credential (ADV-GATEWAY-003).
 //!
 //! With `TOTEM_DATA_DIR` set (and the `rocksdb` feature compiled in), the
 //! gateway owns an embedded on-disk store at that directory — the durable
@@ -7,18 +9,38 @@
 //! same directory fails to start. Without `TOTEM_DATA_DIR` the gateway runs
 //! the embedded in-memory engine — explicitly labelled EPHEMERAL — which is
 //! the demo/test mode, not a deployment.
+//!
+//! # The bootstrap credential
+//!
+//! The registry starts empty, and an empty registry refuses every request.
+//! That is deliberate: a gateway that served unauthenticated callers whenever
+//! it had no credentials configured would fail open exactly when it is least
+//! configured. One credential can be seeded from the environment to get an
+//! operator in; issuing the rest is the console's and CLI's job
+//! (ADV-CONSOLE-002, ADV-CLI-001).
+//!
+//! Credentials do **not** yet get DEP-001's durability: the registry is
+//! process-local, so a restart of this durable gateway still forgets every
+//! credential and needs its bootstrap credential re-seeded. Giving the
+//! registry the same on-disk home as the store is follow-up work, called out
+//! in ADV-GATEWAY-003's residual risks.
 
-use std::sync::Arc;
+use std::env;
 
 use surrealdb::engine::local::Db;
-use totem_gateway::AppState;
-use totem_store::{DeterministicEmbedder, Store};
+use totem_gateway::{AppState, AuthError, TokenGrant, TokenRegistry};
+use totem_store::Store;
+
+const TOKEN_VAR: &str = "TOTEM_BOOTSTRAP_TOKEN";
+const REPO_VAR: &str = "TOTEM_BOOTSTRAP_REPO";
+const SCOPE_VAR: &str = "TOTEM_BOOTSTRAP_SCOPE";
+const ACTOR_VAR: &str = "TOTEM_BOOTSTRAP_ACTOR";
 
 /// Connect the store per DEP-001: durable when configured, loudly ephemeral
 /// otherwise — and a hard refusal when configured for durability the binary
 /// cannot deliver.
 async fn connect_store() -> Store<Db> {
-    match std::env::var("TOTEM_DATA_DIR") {
+    match env::var("TOTEM_DATA_DIR") {
         Ok(dir) => {
             #[cfg(feature = "rocksdb")]
             {
@@ -60,20 +82,70 @@ async fn connect_store() -> Store<Db> {
     }
 }
 
+/// Register the credential named by the environment, if one is named.
+///
+/// Takes the token text rather than issuing one so an operator can hand the
+/// gateway a credential `totem credential issue` already produced
+/// (ADV-CLI-001) — the two describe the same grant.
+///
+/// Returns the grant that was registered, or `None` when no bootstrap
+/// credential was configured. A *partially* configured one is an error, not a
+/// silent skip: half-set variables mean someone intended to authenticate.
+fn bootstrap(tokens: &TokenRegistry) -> Result<Option<TokenGrant>, AuthError> {
+    let configured: Vec<Option<String>> = [TOKEN_VAR, REPO_VAR, SCOPE_VAR, ACTOR_VAR]
+        .iter()
+        .map(|name| env::var(name).ok().filter(|value| !value.is_empty()))
+        .collect();
+
+    if configured.iter().all(Option::is_none) {
+        return Ok(None);
+    }
+    if configured.iter().any(Option::is_none) {
+        return Err(AuthError::InvalidBinding(format!(
+            "a bootstrap credential needs all of {TOKEN_VAR}, {REPO_VAR}, {SCOPE_VAR}, {ACTOR_VAR}"
+        )));
+    }
+
+    let [token, repo, scope, actor] = <[Option<String>; 4]>::try_from(configured)
+        .expect("four variables were collected")
+        .map(|value| value.expect("every variable was checked as present"));
+
+    // Issue-then-replace rather than constructing the grant directly: `issue`
+    // is what refuses an over-scoped binding (a scope naming another repo or
+    // another actor), and a bootstrap credential must not be the one that
+    // skips that check.
+    let issued = tokens.issue(&repo, &scope, &actor, None)?;
+    let grant = tokens
+        .verify(&issued, chrono::Utc::now())
+        .expect("a credential this call just issued verifies");
+    tokens.revoke(&issued);
+    tokens.register(&token, grant.clone());
+
+    Ok(Some(grant))
+}
+
 #[tokio::main]
 async fn main() {
     let store = connect_store().await;
     store.migrate().await.expect("migrations apply");
+    let state = AppState::over(store);
 
-    // The deterministic, non-semantic embedder: real quality
-    // (BGE-small-en-v1.5 via `fastembed`, EMB-004) needs a model download this
-    // sandbox's egress policy blocks, so it stays behind the store's
-    // off-by-default `fastembed` feature until a workstation or CI runner
-    // with hub access builds this binary with it enabled.
-    let embedder = Arc::new(DeterministicEmbedder::new());
+    match bootstrap(&state.tokens) {
+        Ok(Some(grant)) => println!(
+            "registered bootstrap credential: repo {}, scope {}, actor {}",
+            grant.repo, grant.scope, grant.actor
+        ),
+        Ok(None) => eprintln!(
+            "warning: no credential is registered, so every request will be refused with 401. \
+             Set {TOKEN_VAR}/{REPO_VAR}/{SCOPE_VAR}/{ACTOR_VAR} to seed one."
+        ),
+        Err(error) => {
+            eprintln!("refusing to start: {error}");
+            std::process::exit(1);
+        }
+    }
 
-    let state = AppState { store, embedder };
-    let app = totem_gateway::router(state);
+    let app = totem_gateway::authenticated_app(state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8787")
         .await
