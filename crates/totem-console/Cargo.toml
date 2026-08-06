@@ -1,0 +1,57 @@
+[package]
+name = "totem-console"
+version = "0.1.0"
+description = "Dioxus web console: read-only landscape dashboard + memory browser"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "totem_console"
+path = "src/lib.rs"
+
+[[bin]]
+name = "totem-console"
+path = "src/main.rs"
+
+[dependencies]
+# Core-only feature set: macro/html/signals/hooks build components and state
+# on any target, including the native host `cargo test`/`cargo clippy` run
+# against. The "web" feature (dioxus-web, web-sys) is deliberately NOT
+# enabled here — it lives behind the wasm32-only target dependency below, so
+# the default workspace build never needs a browser's JS glue to link.
+dioxus = { version = "=0.6.3", default-features = false, features = [
+    "macro",
+    "html",
+    "signals",
+    "hooks",
+] }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+# Reused directly for the recall wire shape (`MemoryRecord`, `MemoryCategory`,
+# `Scope`) rather than a parallel struct set — this crate is already the
+# shared, dependency-light contract both sides parse (dto.rs's convention).
+# `totem-store` is not a dependency: its `LandscapeView` has no `Deserialize`
+# and pulls in `surrealdb`, which a wasm32-unknown-unknown crate must not.
+totem-core = { path = "../totem-core" }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# Only ever exercised from the browser (`src/api.rs`, `src/main.rs`); a
+# per-target dependency keeps both out of the native `cargo test`/`clippy`
+# dependency graph entirely, rather than merely cfg-gating code that still
+# has to link.
+dioxus-web = "=0.6.3"
+gloo-net = "0.7"
+
+[dev-dependencies]
+chrono.workspace = true
+# Server-side rendering: exercises real component trees (`App`,
+# `LandscapeView`, `MemoryBrowserView`) without a browser, satisfying the
+# advance's "component/view tests where the Dioxus toolchain supports them"
+# task on the native host `cargo test` runs on.
+dioxus-ssr = "=0.6.2"
+
+[lints]
+workspace = true
