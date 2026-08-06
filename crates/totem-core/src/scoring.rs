@@ -31,8 +31,14 @@ pub const DEFAULT_CURRENCY_HALF_LIFE: TimeDelta = TimeDelta::days(14);
 /// ever holds currency steady or lowers it. A non-positive `half_life`
 /// (a caller bug, not a real half-life) is treated the same way: no decay,
 /// rather than a division by zero.
-pub fn decay_currency(_currency: f32, _elapsed: TimeDelta, _half_life: TimeDelta) -> f32 {
-    unimplemented!("ADV-CORE-002: written test-first, red before green")
+pub fn decay_currency(currency: f32, elapsed: TimeDelta, half_life: TimeDelta) -> f32 {
+    if half_life <= TimeDelta::zero() {
+        return currency.clamp(0.0, 1.0);
+    }
+    let elapsed_secs = elapsed.num_seconds().max(0) as f64;
+    let half_life_secs = half_life.num_seconds() as f64;
+    let factor = 0.5_f64.powf(elapsed_secs / half_life_secs);
+    (f64::from(currency) * factor).clamp(0.0, 1.0) as f32
 }
 
 /// The `currency` a category's own lifecycle says a record should carry right
@@ -47,19 +53,22 @@ pub fn decay_currency(_currency: f32, _elapsed: TimeDelta, _half_life: TimeDelta
 /// where a scheduled process would eventually persist decay for records that
 /// are never reread).
 pub fn effective_currency(
-    _category: MemoryCategory,
-    _stored_currency: f32,
-    _elapsed: TimeDelta,
+    category: MemoryCategory,
+    stored_currency: f32,
+    elapsed: TimeDelta,
 ) -> f32 {
-    unimplemented!("ADV-CORE-002: written test-first, red before green")
+    if !category.lifecycle().decays {
+        return stored_currency.clamp(0.0, 1.0);
+    }
+    decay_currency(stored_currency, elapsed, DEFAULT_CURRENCY_HALF_LIFE)
 }
 
 /// A category's relative weight in retrieval ranking, normalized from its
 /// `injection_priority` (already the per-category weight the lifecycle
 /// carries — Instructions highest, Episodic lowest;
 /// `docs/solution-intent.md` §2.1/§4).
-pub fn category_weight(_category: MemoryCategory) -> f32 {
-    unimplemented!("ADV-CORE-002: written test-first, red before green")
+pub fn category_weight(category: MemoryCategory) -> f32 {
+    f32::from(category.lifecycle().injection_priority) / 100.0
 }
 
 /// Convert a vector-search distance into a `(0, 1]` closeness term, or a
@@ -70,8 +79,11 @@ pub fn category_weight(_category: MemoryCategory) -> f32 {
 /// A negative distance (never expected from SurrealDB's `knn_distance`, but
 /// not a type-level impossibility) is treated as zero rather than amplifying
 /// relevance past 1.0.
-pub fn relevance_from_distance(_distance: Option<f64>) -> f32 {
-    unimplemented!("ADV-CORE-002: written test-first, red before green")
+pub fn relevance_from_distance(distance: Option<f64>) -> f32 {
+    match distance {
+        Some(distance) => (1.0 / (1.0 + distance.max(0.0))) as f32,
+        None => 1.0,
+    }
 }
 
 /// Retrieval ranking = relevance × value × currency, weighted per category
@@ -79,12 +91,12 @@ pub fn relevance_from_distance(_distance: Option<f64>) -> f32 {
 /// score — a retired-in-all-but-name record (`value_score` driven to zero)
 /// should not out-ride a lucky relevance match.
 pub fn combined_score(
-    _relevance: f32,
-    _value_score: f32,
-    _currency: f32,
-    _category_weight: f32,
+    relevance: f32,
+    value_score: f32,
+    currency: f32,
+    category_weight: f32,
 ) -> f32 {
-    unimplemented!("ADV-CORE-002: written test-first, red before green")
+    relevance * value_score * currency * category_weight
 }
 
 #[cfg(test)]
@@ -136,7 +148,10 @@ mod tests {
                 TimeDelta::days(elapsed_days),
                 DEFAULT_CURRENCY_HALF_LIFE,
             );
-            assert!(decayed <= 0.7, "{decayed} exceeds the starting currency 0.7");
+            assert!(
+                decayed <= 0.7,
+                "{decayed} exceeds the starting currency 0.7"
+            );
         }
     }
 

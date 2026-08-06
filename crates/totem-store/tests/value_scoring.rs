@@ -90,7 +90,10 @@ async fn recall_never_touches_an_episodic_records_economics() {
         .expect("get succeeds")
         .expect("still there");
     assert_eq!(stored.economics.use_count, 0, "episodic use_count moved");
-    assert_eq!(stored.economics.last_used_at, None, "episodic last_used_at moved");
+    assert_eq!(
+        stored.economics.last_used_at, None,
+        "episodic last_used_at moved"
+    );
     assert_eq!(stored.economics.currency, 1.0, "episodic currency moved");
 }
 
@@ -217,7 +220,10 @@ async fn citing_an_episodic_source_does_not_error_and_leaves_it_unmodified() {
         .await
         .expect("get succeeds")
         .expect("still there");
-    assert_eq!(stored.economics.value_score, 1.0, "episodic value_score moved");
+    assert_eq!(
+        stored.economics.value_score, 1.0,
+        "episodic value_score moved"
+    );
 }
 
 #[tokio::test]
