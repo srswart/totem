@@ -274,11 +274,21 @@ impl<'a, C: Connection> MemoryRepository<'a, C> {
         query: &RecallQuery,
     ) -> StoreResult<Vec<MemoryRecord>> {
         let rows = objects(self.run_recall(reader, query, false).await?)?;
-        let mut records = Vec::with_capacity(rows.len());
+        let mut scored = Vec::with_capacity(rows.len());
         for row in &rows {
-            records.push(row::from_row(row)?);
+            // Only a vector query projects this column; `row::from_row`
+            // ignores it as an "extra projected column" the domain model has
+            // no field for (its own doc comment) — carried alongside instead
+            // of dropped, since ranking needs it (ADV-CORE-002).
+            let distance = row.get("knn_distance").and_then(row::number);
+            scored.push((row::from_row(row)?, distance));
         }
-        Ok(merge_chain(reader, records, query.limit))
+        let merged = merge_chain(reader, scored);
+        Ok(merged
+            .into_iter()
+            .take(query.limit)
+            .map(|(record, _distance)| record)
+            .collect())
     }
 
     /// The `EXPLAIN FULL` plan for the statement [`recall`](Self::recall) would
@@ -384,12 +394,20 @@ fn dedup_key(record: &MemoryRecord) -> DedupKey {
     (record.category, subject, body)
 }
 
+/// A candidate record paired with the vector distance it was ranked by, when
+/// the query carried a probe at all.
+type Scored = (MemoryRecord, Option<f64>);
+
 /// Resolve the chain into one view: narrowest scope wins, duplicates collapse,
 /// and statement order (rank, or recency) is preserved among the survivors.
-fn merge_chain(reader: &ScopeChain, records: Vec<MemoryRecord>, limit: usize) -> Vec<MemoryRecord> {
+///
+/// Deliberately does not truncate to a limit itself: the caller ranks the
+/// survivors by combined score first (ADV-CORE-002) and truncates after, so
+/// capping here could discard a record the final ranking would have kept.
+fn merge_chain(reader: &ScopeChain, records: Vec<Scored>) -> Vec<Scored> {
     let mut winners: HashMap<DedupKey, usize> = HashMap::new();
 
-    for (position, record) in records.iter().enumerate() {
+    for (position, (record, _distance)) in records.iter().enumerate() {
         // Defence in depth. The statement already filtered on the chain, so
         // this should never drop anything — but the cost of being wrong here is
         // another actor's private memory, and the plan assertion in
@@ -402,7 +420,7 @@ fn merge_chain(reader: &ScopeChain, records: Vec<MemoryRecord>, limit: usize) ->
         winners
             .entry(dedup_key(record))
             .and_modify(|held| {
-                let incumbent = &records[*held];
+                let incumbent = &records[*held].0;
                 let incumbent_precedence =
                     reader.precedence_of(&incumbent.scope).unwrap_or(usize::MAX);
                 let closer = precedence < incumbent_precedence;
@@ -418,7 +436,6 @@ fn merge_chain(reader: &ScopeChain, records: Vec<MemoryRecord>, limit: usize) ->
     let mut kept: Vec<usize> = winners.into_values().collect();
     kept.sort_unstable();
     kept.into_iter()
-        .take(limit)
         .map(|position| records[position].clone())
         .collect()
 }
