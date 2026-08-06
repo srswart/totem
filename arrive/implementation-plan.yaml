@@ -136,19 +136,18 @@ passes:
           - id: "ADV-CONSOLE-001"
             advance_id: "ADV-CONSOLE-001"
             title: "Landscape dashboard + memory browser (read-only)"
-            status: in_progress
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-GATEWAY-001", "ADV-ARRIVE-SYNC-001"]
             notes: >-
               First 'humans observe' surface; read-only. Dashboard + browser
               implemented (Dioxus app, GET /landscape/:repo, tests green on
-              native host + wasm32-unknown-unknown build clean), but two
-              things from the original scope are still open: live-query
-              auto-update (shipped as a manual Refresh button instead — TD-009
-              means the real fix is a gateway event relay, a separate
-              subsystem) and any actual browser verification (no dx/trunk/
-              browser in the cloud sandbox). See ADV-CONSOLE-001.md's Risk +
-              Rollback and Evidence sections.
+              native host + wasm32-unknown-unknown build clean). Scope
+              corrected 2026-08-06: live-query auto-update deferred to
+              ADV-CONSOLE-003 (TD-009 means the real fix is a gateway event
+              relay, a separate subsystem); browser verification (dx serve)
+              remains a workstation task recorded in ADV-CONSOLE-001.md's
+              Risk + Rollback.
 
   - id: "pass-004"
     title: "Pass 4: Value loop"
@@ -239,6 +238,18 @@ passes:
             owner: "058-totem"
             dependencies: ["ADV-GATEWAY-002", "ADV-STORE-005"]
             notes: "Proven with negative/positive control runs before any evaluation uses it."
+          - id: "ADV-CONSOLE-003"
+            advance_id: "ADV-CONSOLE-003"
+            title: "Live landscape updates: gateway event relay + console subscription"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-CONSOLE-001", "ADV-GATEWAY-001"]
+            notes: >-
+              Deferred residual from ADV-CONSOLE-001 (recorded 2026-08-06):
+              gateway subscribes to store live queries and relays events to
+              the browser (SSE preferred); console patches signals in place,
+              Refresh becomes fallback. Relay must go through store-enforced
+              scope resolution and append to the access log.
       - id: "phase-009"
         title: "Evaluations (quality, security, performance)"
         order: 2

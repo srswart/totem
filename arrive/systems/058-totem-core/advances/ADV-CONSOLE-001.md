@@ -19,7 +19,7 @@ advance:
   mode: implementation
   facets: [software]
   work_products: [production_code]
-  status: in_progress
+  status: complete
 ---
 
 ## Objective
@@ -76,7 +76,7 @@ After this advance:
   until someone with that tooling checks it out.
 - Risk (new, not in the original advance): **no live-query relay.** The
   Behavioral Change's auto-update claim does not hold — see the correction
-  above. Follow-up work (not scoped here) needs a gateway-side subscription
+  above. Follow-up work (deferred to ADV-CONSOLE-003, planned in phase-008) needs a gateway-side subscription
   to the landscape's live query, forwarded to the browser over SSE or
   WebSocket, and a console-side listener that patches `landscape`/`memories`
   signals instead of only responding to the Refresh button.
