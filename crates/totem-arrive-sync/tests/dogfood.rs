@@ -47,6 +47,7 @@ fn parsing_this_repos_arrive_tree_finds_the_expected_entities() {
             "core",
             "curator",
             "gateway",
+            "infra",
             "store",
         ],
     );
@@ -88,7 +89,7 @@ async fn syncing_this_repos_landscape_populates_the_store_and_is_queryable_in_on
         .await
         .expect("sync succeeds");
     assert_eq!(summary.systems, 1);
-    assert_eq!(summary.components, 7);
+    assert_eq!(summary.components, 8);
     assert!(summary.advances >= 23);
 
     let view = store
