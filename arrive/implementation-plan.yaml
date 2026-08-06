@@ -111,7 +111,7 @@ passes:
           - id: "ADV-GATEWAY-002"
             advance_id: "ADV-GATEWAY-002"
             title: "MCP server (stdio) exposing recall/save/landscape"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-GATEWAY-001", "ADV-GATEWAY-005"]
             notes: "First harness-facing surface (G1 for desktop agents)."

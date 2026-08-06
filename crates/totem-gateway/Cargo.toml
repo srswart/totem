@@ -11,14 +11,26 @@ publish.workspace = true
 name = "totem-gateway"
 path = "src/main.rs"
 
+[[bin]]
+name = "mcp_stdio"
+path = "src/bin/mcp_stdio.rs"
+
 [dependencies]
 # TD-009 (docs/tech-direction/surrealdb.md §5): the gateway's own SurrealDB
 # connection must be embedded or WebSocket, never HTTP, or live queries are
 # refused. `axum = "0.8"` matches the pin ADV-GATEWAY-005 measured rmcp's
 # server feature against, so ADV-GATEWAY-002 mounts on the same router with no
 # version reconciliation.
+anyhow = "1.0"
 axum = "0.8"
 chrono.workspace = true
+# Pinned exactly, matching totem-mcp-spike's pin: docs/tech-direction/mcp.md
+# (ADV-GATEWAY-005) verified this exact version's stdio and streamable-HTTP
+# transports end-to-end and named re-verifying the pin at ADV-GATEWAY-002 time
+# as a standing instruction, not a one-time check. Only stdio is wired up here
+# (this advance's title); `transport-streamable-http-server` is
+# ADV-GATEWAY-003's job, alongside the auth design it needs to sit behind.
+rmcp = { version = "=3.1.0", features = ["transport-io"] }
 serde.workspace = true
 serde_json.workspace = true
 # Named directly only for the embedded engine's `Db` connection type
@@ -33,6 +45,14 @@ totem-store = { path = "../totem-store" }
 [dev-dependencies]
 http-body-util = "0.1"
 tower = { version = "0.5", features = ["util"] }
+# Client-side transport for the tool-dispatch tests this commit adds
+# (tests/mcp_recall_and_save.rs): a real rmcp client, spawning the
+# not-yet-implemented `mcp_stdio` binary as a child process (ADV-GATEWAY-002).
+# Pinned exactly, matching totem-mcp-spike's pin: docs/tech-direction/mcp.md
+# (ADV-GATEWAY-005) verified this exact version end-to-end and named
+# re-verifying the pin at ADV-GATEWAY-002 time as a standing instruction.
+rmcp = { version = "=3.1.0", features = ["client", "transport-child-process"] }
+tokio = { workspace = true, features = ["process"] }
 
 [lints]
 workspace = true

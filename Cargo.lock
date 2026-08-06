@@ -5735,9 +5735,11 @@ dependencies = [
 name = "totem-gateway"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "axum",
  "chrono",
  "http-body-util",
+ "rmcp",
  "serde",
  "serde_json",
  "surrealdb",
