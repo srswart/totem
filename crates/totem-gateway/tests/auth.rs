@@ -131,7 +131,11 @@ fn recall_body(actor: &str, project: Option<&str>, teams: Vec<&str>) -> Value {
 async fn a_request_with_no_credential_is_refused() {
     let (router, _tokens) = app().await;
 
-    let response = send(&router, post("/recall", None, recall_body(ADA, Some(REPO), vec![]))).await;
+    let response = send(
+        &router,
+        post("/recall", None, recall_body(ADA, Some(REPO), vec![])),
+    )
+    .await;
 
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     assert_eq!(
@@ -268,7 +272,12 @@ async fn a_token_cannot_write_as_another_author() {
         post(
             "/save",
             Some(&token),
-            save_body(GRACE, REPO, &format!("project:{REPO}"), "not grace's to write"),
+            save_body(
+                GRACE,
+                REPO,
+                &format!("project:{REPO}"),
+                "not grace's to write",
+            ),
         ),
     )
     .await;
@@ -330,7 +339,11 @@ async fn an_actor_bound_token_cannot_widen_its_chain_to_project_scope() {
         "an actor-bound token that resolves a project scope reads memories it was never granted"
     );
 
-    let own = send(&router, post("/recall", Some(&token), recall_body(ADA, None, vec![]))).await;
+    let own = send(
+        &router,
+        post("/recall", Some(&token), recall_body(ADA, None, vec![])),
+    )
+    .await;
     assert_eq!(
         own.status(),
         StatusCode::OK,
@@ -404,7 +417,12 @@ async fn a_token_within_its_bounds_can_save_and_recall() {
         post(
             "/save",
             Some(&token),
-            save_body(ADA, REPO, &format!("project:{REPO}"), "the gateway pins rmcp 3.1.0"),
+            save_body(
+                ADA,
+                REPO,
+                &format!("project:{REPO}"),
+                "the gateway pins rmcp 3.1.0",
+            ),
         ),
     )
     .await;
@@ -550,20 +568,25 @@ async fn a_scoped_token_reaches_the_same_tool_surface_over_streamable_http() {
     }
 
     let saved = client
-        .call_tool(CallToolRequestParams::new("totem_save").with_arguments(object(save_body(
-            ADA,
-            REPO,
-            &format!("project:{REPO}"),
-            "streamable HTTP carries the same tools",
-        ))))
+        .call_tool(
+            CallToolRequestParams::new("totem_save").with_arguments(object(save_body(
+                ADA,
+                REPO,
+                &format!("project:{REPO}"),
+                "streamable HTTP carries the same tools",
+            ))),
+        )
         .await
         .expect("totem_save over streamable HTTP");
     assert!(text_of(&saved).contains("id"), "save returns the new id");
 
     let recalled = client
         .call_tool(
-            CallToolRequestParams::new("totem_recall")
-                .with_arguments(object(recall_body(ADA, Some(REPO), vec![]))),
+            CallToolRequestParams::new("totem_recall").with_arguments(object(recall_body(
+                ADA,
+                Some(REPO),
+                vec![],
+            ))),
         )
         .await
         .expect("totem_recall over streamable HTTP");
@@ -584,8 +607,11 @@ async fn a_token_cannot_act_as_another_actor_over_streamable_http() {
 
     let outcome = client
         .call_tool(
-            CallToolRequestParams::new("totem_recall")
-                .with_arguments(object(recall_body(GRACE, Some(REPO), vec![]))),
+            CallToolRequestParams::new("totem_recall").with_arguments(object(recall_body(
+                GRACE,
+                Some(REPO),
+                vec![],
+            ))),
         )
         .await;
 
@@ -605,12 +631,14 @@ async fn a_token_bound_to_one_repo_cannot_name_another_over_streamable_http() {
     let client = server.client(Some(&token)).await.expect("initialize");
 
     let outcome = client
-        .call_tool(CallToolRequestParams::new("totem_save").with_arguments(object(save_body(
-            ADA,
-            OTHER_REPO,
-            &format!("project:{OTHER_REPO}"),
-            "leak",
-        ))))
+        .call_tool(
+            CallToolRequestParams::new("totem_save").with_arguments(object(save_body(
+                ADA,
+                OTHER_REPO,
+                &format!("project:{OTHER_REPO}"),
+                "leak",
+            ))),
+        )
         .await;
 
     assert!(

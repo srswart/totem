@@ -10,9 +10,12 @@
 
 use axum::Json;
 use axum::http::StatusCode;
+use axum::http::header::WWW_AUTHENTICATE;
 use axum::response::{IntoResponse, Response};
 use serde::Serialize;
 use totem_store::StoreError;
+
+use crate::auth::AuthError;
 
 /// Why a request was refused, after it parsed successfully.
 #[derive(Debug, thiserror::Error)]
@@ -27,6 +30,10 @@ pub enum GatewayError {
     /// `SubjectRef` takes its kind from context, not the wire format).
     #[error("{0}")]
     InvalidRequest(String),
+    /// The caller presented no usable credential, or asked for something
+    /// outside the one they presented (ADV-GATEWAY-003).
+    #[error(transparent)]
+    Auth(#[from] AuthError),
 }
 
 #[derive(Serialize)]
@@ -58,6 +65,13 @@ impl IntoResponse for GatewayError {
             // Named the same way a `StoreError` client refusal is: a rule the
             // caller can act on, so its message is safe to return verbatim.
             GatewayError::InvalidRequest(_) => StatusCode::BAD_REQUEST,
+            // "We do not know who you are" and "you are outside your grant"
+            // are different answers, and a client that cannot tell them apart
+            // retries a revoked credential forever instead of renewing it.
+            GatewayError::Auth(error) if error.is_authentication_failure() => {
+                StatusCode::UNAUTHORIZED
+            }
+            GatewayError::Auth(_) => StatusCode::FORBIDDEN,
         };
         // A 4xx/409 message is safe to return verbatim — it names a rule the
         // caller can act on (a denied scope, a missing record). A 5xx message
@@ -69,7 +83,17 @@ impl IntoResponse for GatewayError {
         } else {
             self.to_string()
         };
-        (status, Json(ErrorBody { error: message })).into_response()
+
+        let mut response = (status, Json(ErrorBody { error: message })).into_response();
+        if status == StatusCode::UNAUTHORIZED {
+            // Both verified cloud harnesses discover how to authenticate from
+            // this header (docs/tech-direction/mcp.md MCP-003/MCP-004); a bare
+            // 401 leaves a client with nothing to act on.
+            response
+                .headers_mut()
+                .insert(WWW_AUTHENTICATE, "Bearer".parse().expect("static header"));
+        }
+        response
     }
 }
 

@@ -6,24 +6,26 @@
 
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use tokio::net::TcpListener;
 use totem_cli::enroll::{self, EnrollError};
 use totem_gateway::AppState;
-use totem_store::{DeterministicEmbedder, Store};
+use totem_store::Store;
 
 fn arrive_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../arrive")
 }
 
 async fn spawn_gateway() -> (String, Store<surrealdb::engine::local::Db>) {
-    let store = Store::in_memory().await.expect("embedded engine connects");
-    store.migrate().await.expect("migrations apply");
-    let state = AppState {
-        store: store.clone(),
-        embedder: Arc::new(DeterministicEmbedder::new()),
-    };
+    let state = AppState::in_memory()
+        .await
+        .expect("embedded engine connects and migrations apply");
+    let store = state.store.clone();
+    // The local, unauthenticated composition: `totem enroll` runs on a
+    // developer's own machine against their own gateway, and credential-bound
+    // enrollment is a separate question from this test's subject
+    // (ADV-GATEWAY-003's advance record notes `/enroll` is authenticated but
+    // not yet repo-bound).
     let app = totem_gateway::router(state);
 
     let listener = TcpListener::bind("127.0.0.1:0")

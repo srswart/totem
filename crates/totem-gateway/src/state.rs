@@ -12,6 +12,8 @@ use std::sync::Arc;
 use surrealdb::engine::local::Db;
 use totem_store::{DeterministicEmbedder, Embedder, Store, StoreResult};
 
+use crate::auth::TokenRegistry;
+
 /// State cloned into every request handler.
 ///
 /// [`Store`] is cheap to clone (it wraps a `Surreal<C>` connection handle),
@@ -25,6 +27,11 @@ pub struct AppState {
     pub store: Store<Db>,
     /// The embedder every `/save` and `/recall` call uses.
     pub embedder: Arc<dyn Embedder>,
+    /// The credentials this gateway accepts from remote callers
+    /// (ADV-GATEWAY-003). Empty by default, so a gateway that has been given
+    /// no credentials refuses every remote request rather than serving them
+    /// unauthenticated.
+    pub tokens: TokenRegistry,
 }
 
 impl AppState {
@@ -51,6 +58,7 @@ impl AppState {
             // the store's off-by-default `fastembed` feature until a
             // workstation or CI runner with hub access builds with it enabled.
             embedder: Arc::new(DeterministicEmbedder::new()),
+            tokens: TokenRegistry::new(),
         })
     }
 }
@@ -60,6 +68,7 @@ impl fmt::Debug for AppState {
         f.debug_struct("AppState")
             .field("store", &self.store)
             .field("embedder_model", &self.embedder.model_name())
+            .field("tokens", &self.tokens)
             .finish()
     }
 }
