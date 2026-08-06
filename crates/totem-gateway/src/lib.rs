@@ -47,9 +47,14 @@ use axum::routing::{get, post};
 
 pub use auth::{AuthError, Caller, TokenGrant, TokenRegistry};
 pub use dto::{
-    AdvanceLogRequest, AdvanceLogResponse, AdvanceStatusResponse, AdvanceView, ContestRequest,
-    ContestResponse, EnrollRequest, EnrollResponse, FeedbackRequest, FeedbackResponse,
-    LandscapeView, RecallRequest, RecallResponse, SaveRequest, SaveResponse,
+    AdvanceLogRequest, AdvanceLogResponse, AdvanceStatusResponse, AdvanceView, AuditRequest,
+    AuditTrailResponse, ContestRequest, ContestResponse, EnrollRequest, EnrollResponse,
+    FeedbackRequest, FeedbackResponse, LandscapeView, PromotionDecisionRequest,
+    PromotionDecisionResponse, PromotionQueueRequest, PromotionQueueResponse,
+    ProposePromotionRequest, ProposePromotionResponse, ProposedRecordRequest,
+    ProposedRecordResponse, RecallRequest, RecallResponse, ResolveUncertaintyRequest,
+    ResolveUncertaintyResponse, SaveRequest, SaveResponse, UncertaintyQueueRequest,
+    UncertaintyQueueResponse,
 };
 pub use error::GatewayError;
 pub use mcp::TotemMcp;
@@ -71,12 +76,31 @@ fn routes(state: AppState) -> Router {
         .route("/advance/{id}/status", get(handlers::advance_status))
         .route("/enroll", post(handlers::enroll))
         .route("/landscape/{repo}", get(handlers::landscape))
+        .route("/promotions", post(handlers::propose_promotion))
+        .route("/promotions/pending", post(handlers::promotion_pending))
+        .route("/promotions/{id}/record", post(handlers::proposed_record))
+        .route(
+            "/promotions/{id}/approve",
+            post(handlers::approve_promotion),
+        )
+        .route("/promotions/{id}/reject", post(handlers::reject_promotion))
+        .route("/uncertainty/pending", post(handlers::pending_uncertainty))
+        .route(
+            "/uncertainty/{id}/resolve",
+            post(handlers::resolve_uncertainty),
+        )
+        .route("/audit/{id}", post(handlers::audit_trail))
         .with_state(state)
 }
 
 /// Build the **local** REST router: `POST /recall`, `POST /save`,
 /// `POST /enroll`, `GET /landscape/:repo`, `POST /feedback`, `POST /contest`,
-/// `POST /advance/log`, and `GET /advance/:id/status`.
+/// `POST /advance/log`, `GET /advance/:id/status`, the promotion-approval
+/// surface (`POST /promotions`, `POST /promotions/pending`,
+/// `POST /promotions/:id/record`, `POST /promotions/:id/approve`,
+/// `POST /promotions/:id/reject`), the Uncertainty queue
+/// (`POST /uncertainty/pending`, `POST /uncertainty/:id/resolve`), and the
+/// audit trail (`POST /audit/:id`) — ADV-CONSOLE-002.
 ///
 /// Every caller is [`Caller::Trusted`] — this composition authenticates
 /// nobody. Use it in-process, or on a loopback listener for a single-user

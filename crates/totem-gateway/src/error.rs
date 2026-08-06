@@ -52,6 +52,23 @@ impl IntoResponse for GatewayError {
             // store's own design), so a missing or unreadable id is a 404.
             GatewayError::Store(StoreError::NotFound(_)) => StatusCode::NOT_FOUND,
             GatewayError::Store(StoreError::Lifecycle(_)) => StatusCode::CONFLICT,
+            // A promotion or curation policy refused the operation, or the
+            // caller asked to decide/roll back something already decided —
+            // a rule the caller can act on, same footing as `Lifecycle`.
+            GatewayError::Store(
+                StoreError::Promotion(_)
+                | StoreError::PromotionDecided(_)
+                | StoreError::Curation(_)
+                | StoreError::CurationRolledBack(_)
+                | StoreError::Governance(_)
+                | StoreError::ReviewDecided(_),
+            ) => StatusCode::CONFLICT,
+            // Same leak concern as `NotFound`: a proposal or curation event
+            // this caller cannot reach must not be distinguishable from one
+            // that never existed.
+            GatewayError::Store(
+                StoreError::PromotionNotFound(_) | StoreError::CurationNotFound(_),
+            ) => StatusCode::NOT_FOUND,
             GatewayError::Store(
                 StoreError::EmbeddingDimensions { .. }
                 | StoreError::Row(_)
