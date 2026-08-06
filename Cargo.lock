@@ -5856,11 +5856,13 @@ name = "totem-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "axum",
  "chrono",
  "clap",
  "reqwest 0.13.4",
  "serde",
  "serde_json",
+ "surrealdb",
  "tempfile",
  "thiserror",
  "tokio",
@@ -5868,7 +5870,6 @@ dependencies = [
  "totem-core",
  "totem-gateway",
  "totem-store",
- "tower",
  "uuid",
 ]
 

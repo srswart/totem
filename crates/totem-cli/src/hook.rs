@@ -49,6 +49,37 @@ fn script(gateway_url: &str) -> String {
 /// Install (or idempotently re-install, e.g. after a gateway URL change) the
 /// `post-commit` sync hook into `repo_root`'s `.git/hooks/`.
 pub fn install(repo_root: &Path, gateway_url: &str) -> Result<PathBuf, HookError> {
-    let _ = (repo_root, gateway_url, script(gateway_url));
-    unimplemented!("ADV-CLI-001")
+    let hooks_dir = repo_root.join(".git").join("hooks");
+    if !hooks_dir.is_dir() {
+        return Err(HookError::NotAGitRepo(repo_root.to_path_buf()));
+    }
+    let hook_path = hooks_dir.join(HOOK_NAME);
+
+    if hook_path.exists() {
+        let existing = fs::read_to_string(&hook_path).map_err(|source| HookError::Io {
+            path: hook_path.clone(),
+            source,
+        })?;
+        if !existing.contains(MARKER) {
+            return Err(HookError::ForeignHookExists(hook_path));
+        }
+    }
+
+    fs::write(&hook_path, script(gateway_url)).map_err(|source| HookError::Io {
+        path: hook_path.clone(),
+        source,
+    })?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&hook_path, fs::Permissions::from_mode(0o755)).map_err(|source| {
+            HookError::Io {
+                path: hook_path.clone(),
+                source,
+            }
+        })?;
+    }
+
+    Ok(hook_path)
 }

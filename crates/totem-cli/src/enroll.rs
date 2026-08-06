@@ -60,6 +60,35 @@ pub async fn enroll(
     arrive_root: &Path,
     source: &str,
 ) -> Result<EnrollSummary, EnrollError> {
-    let _ = (client, gateway_url, arrive_root, source);
-    unimplemented!("ADV-CLI-001")
+    let snapshot = totem_arrive_sync::read_repo_artifacts(arrive_root)?;
+
+    let mut body = serde_json::to_value(&snapshot).map_err(EnrollError::Encode)?;
+    body.as_object_mut()
+        .expect("a LandscapeSnapshot serialises to a JSON object")
+        .insert(
+            "source".to_string(),
+            serde_json::Value::String(source.to_string()),
+        );
+
+    let url = format!("{}/enroll", gateway_url.trim_end_matches('/'));
+    let response = client
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|source| EnrollError::Request {
+            url: url.clone(),
+            source,
+        })?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        return Err(EnrollError::Refused { status, body });
+    }
+
+    response
+        .json::<EnrollSummary>()
+        .await
+        .map_err(|source| EnrollError::Request { url, source })
 }

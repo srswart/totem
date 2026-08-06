@@ -53,10 +53,7 @@ async fn enrolling_this_repo_against_a_real_gateway_populates_its_landscape() {
         .view("058-totem")
         .await
         .expect("landscape view succeeds");
-    assert_eq!(
-        view.repo.map(|repo| repo.id),
-        Some("058-totem".to_string())
-    );
+    assert_eq!(view.repo.map(|repo| repo.id), Some("058-totem".to_string()));
 }
 
 #[tokio::test]

@@ -32,28 +32,40 @@ fn two_issued_credentials_never_share_a_token() {
 fn a_project_scope_naming_a_different_repo_is_refused() {
     let error = credential::issue("srswart/totem", "project:someone-else/other-repo", "ada")
         .expect_err("mismatched repo/scope must be refused");
-    assert!(matches!(error, CredentialError::ScopeMismatch { .. }), "{error:?}");
+    assert!(
+        matches!(error, CredentialError::ScopeMismatch { .. }),
+        "{error:?}"
+    );
 }
 
 #[test]
 fn an_actor_scope_naming_a_different_actor_is_refused() {
     let error = credential::issue("srswart/totem", "actor:grace", "ada")
         .expect_err("a credential cannot claim another actor's private scope");
-    assert!(matches!(error, CredentialError::ScopeMismatch { .. }), "{error:?}");
+    assert!(
+        matches!(error, CredentialError::ScopeMismatch { .. }),
+        "{error:?}"
+    );
 }
 
 #[test]
 fn an_unparsable_scope_is_refused() {
     let error = credential::issue("srswart/totem", "not-a-scope", "ada")
         .expect_err("an invalid scope string must be refused");
-    assert!(matches!(error, CredentialError::InvalidScope { .. }), "{error:?}");
+    assert!(
+        matches!(error, CredentialError::InvalidScope { .. }),
+        "{error:?}"
+    );
 }
 
 #[test]
 fn an_empty_actor_is_refused() {
     let error = credential::issue("srswart/totem", "platform", "")
         .expect_err("an empty actor id must be refused");
-    assert!(matches!(error, CredentialError::InvalidActor { .. }), "{error:?}");
+    assert!(
+        matches!(error, CredentialError::InvalidActor { .. }),
+        "{error:?}"
+    );
 }
 
 #[test]

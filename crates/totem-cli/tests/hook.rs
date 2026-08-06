@@ -28,7 +28,10 @@ fn installing_writes_an_executable_hook_naming_the_gateway() {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mode = fs::metadata(&hook_path).expect("hook exists").permissions().mode();
+        let mode = fs::metadata(&hook_path)
+            .expect("hook exists")
+            .permissions()
+            .mode();
         assert_eq!(mode & 0o111, 0o111, "hook must be executable, got {mode:o}");
     }
 }
@@ -65,8 +68,14 @@ fn a_foreign_post_commit_hook_is_never_overwritten() {
 
     let error = hook::install(dir.path(), "http://127.0.0.1:8787")
         .expect_err("a foreign hook must be refused, not clobbered");
-    assert!(matches!(error, HookError::ForeignHookExists(_)), "{error:?}");
+    assert!(
+        matches!(error, HookError::ForeignHookExists(_)),
+        "{error:?}"
+    );
 
     let contents = fs::read_to_string(&hook_path).expect("hook file reads");
-    assert!(contents.contains("a developer's own hook"), "foreign hook was overwritten");
+    assert!(
+        contents.contains("a developer's own hook"),
+        "foreign hook was overwritten"
+    );
 }

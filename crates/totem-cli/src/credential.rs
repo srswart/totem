@@ -109,8 +109,50 @@ pub enum CredentialError {
 /// requested — a credential must not claim a broader grant than its own
 /// repo/actor fields state.
 pub fn issue(repo: &str, scope: &str, actor: &str) -> Result<Credential, CredentialError> {
-    let _ = (repo, scope, actor);
-    unimplemented!("ADV-CLI-001")
+    let repo_id = RepoId::new(repo).map_err(|source| CredentialError::InvalidRepo {
+        value: repo.to_string(),
+        source,
+    })?;
+    let actor_id = ActorId::new(actor).map_err(|source| CredentialError::InvalidActor {
+        value: actor.to_string(),
+        source,
+    })?;
+    let parsed_scope: Scope = scope
+        .parse()
+        .map_err(|source| CredentialError::InvalidScope {
+            value: scope.to_string(),
+            source,
+        })?;
+
+    let mismatch = match &parsed_scope {
+        Scope::Project(scoped_repo) => scoped_repo != &repo_id,
+        Scope::Actor(scoped_actor) => scoped_actor != &actor_id,
+        Scope::Team(_) | Scope::Platform => false,
+    };
+    if mismatch {
+        return Err(CredentialError::ScopeMismatch {
+            scope: scope.to_string(),
+            repo: repo.to_string(),
+            actor: actor.to_string(),
+        });
+    }
+
+    // Two v4 UUIDs (256 bits of CSPRNG-backed randomness) rather than one:
+    // unguessability is the only property this token needs to hold up on its
+    // own today, since nothing server-side verifies it yet.
+    let token = format!(
+        "totem_cred_{}{}",
+        Uuid::new_v4().simple(),
+        Uuid::new_v4().simple()
+    );
+
+    Ok(Credential {
+        token,
+        repo: repo_id.to_string(),
+        scope: parsed_scope.to_string(),
+        actor: actor_id.to_string(),
+        issued_at: Utc::now(),
+    })
 }
 
 /// The default local credential store path: `<home>/.totem/credentials.json`.
@@ -121,8 +163,17 @@ pub fn default_store_path(home: &Path) -> PathBuf {
 /// Every credential currently stored at `path`. An absent file is an empty
 /// list, not an error — no credential has been issued yet is a normal state.
 pub fn load(path: &Path) -> Result<Vec<Credential>, CredentialError> {
-    let _ = path;
-    unimplemented!("ADV-CLI-001")
+    match fs::read_to_string(path) {
+        Ok(text) => serde_json::from_str(&text).map_err(|source| CredentialError::Decode {
+            path: path.to_path_buf(),
+            source,
+        }),
+        Err(source) if source.kind() == io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(source) => Err(CredentialError::Io {
+            path: path.to_path_buf(),
+            source,
+        }),
+    }
 }
 
 /// Append `credential` to the store at `path`, creating it (and its parent
@@ -130,6 +181,31 @@ pub fn load(path: &Path) -> Result<Vec<Credential>, CredentialError> {
 /// on unix (`0600`) — the advance's own "credential handling on developer
 /// machines (storage, leakage)" risk.
 pub fn store(path: &Path, credential: &Credential) -> Result<(), CredentialError> {
-    let _ = (path, credential);
-    unimplemented!("ADV-CLI-001")
+    let mut credentials = load(path)?;
+    credentials.push(credential.clone());
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|source| CredentialError::Io {
+            path: parent.to_path_buf(),
+            source,
+        })?;
+    }
+    let json = serde_json::to_string_pretty(&credentials).expect("credentials serialise");
+    fs::write(path, json).map_err(|source| CredentialError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600)).map_err(|source| {
+            CredentialError::Io {
+                path: path.to_path_buf(),
+                source,
+            }
+        })?;
+    }
+
+    Ok(())
 }

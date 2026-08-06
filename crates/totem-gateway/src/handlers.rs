@@ -14,7 +14,9 @@
 use axum::Json;
 use axum::extract::State;
 
-use crate::dto::{EnrollRequest, EnrollResponse, RecallRequest, RecallResponse, SaveRequest, SaveResponse};
+use crate::dto::{
+    EnrollRequest, EnrollResponse, RecallRequest, RecallResponse, SaveRequest, SaveResponse,
+};
 use crate::error::GatewayError;
 use crate::ops::{self, RecallInput, SaveInput};
 use crate::state::AppState;
@@ -68,6 +70,16 @@ pub(crate) async fn enroll(
     State(state): State<AppState>,
     Json(request): Json<EnrollRequest>,
 ) -> Result<Json<EnrollResponse>, GatewayError> {
-    let _ = (state, request);
-    unimplemented!("ADV-CLI-001")
+    let summary = state
+        .store
+        .landscape()
+        .sync(&request.snapshot, &request.source)
+        .await
+        .map_err(GatewayError::from)?;
+
+    Ok(Json(EnrollResponse {
+        systems: summary.systems,
+        components: summary.components,
+        advances: summary.advances,
+    }))
 }

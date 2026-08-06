@@ -45,7 +45,12 @@ fn enroll_request(repo_id: &str, source: &str) -> serde_json::Value {
 async fn enrolling_syncs_the_landscape_and_reports_a_summary() {
     let (router, store) = common::app().await;
 
-    let response = post(&router, "/enroll", enroll_request("058-totem", "cli:enroll")).await;
+    let response = post(
+        &router,
+        "/enroll",
+        enroll_request("058-totem", "cli:enroll"),
+    )
+    .await;
     assert_status(&response, StatusCode::OK);
 
     let body: serde_json::Value = json_body(response).await;
@@ -68,11 +73,21 @@ async fn re_enrolling_the_same_repo_is_idempotent() {
     let (router, store) = common::app().await;
 
     assert_status(
-        &post(&router, "/enroll", enroll_request("058-totem", "cli:enroll")).await,
+        &post(
+            &router,
+            "/enroll",
+            enroll_request("058-totem", "cli:enroll"),
+        )
+        .await,
         StatusCode::OK,
     );
     assert_status(
-        &post(&router, "/enroll", enroll_request("058-totem", "cli:enroll")).await,
+        &post(
+            &router,
+            "/enroll",
+            enroll_request("058-totem", "cli:enroll"),
+        )
+        .await,
         StatusCode::OK,
     );
 
