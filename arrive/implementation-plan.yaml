@@ -248,7 +248,7 @@ passes:
           - id: "ADV-STORE-005"
             advance_id: "ADV-STORE-005"
             title: "Enablement: synthetic memory corpus (test data for evaluations)"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-STORE-002"]
             notes: "Golden queries + leak-bait fixtures; deterministic seed/reset."

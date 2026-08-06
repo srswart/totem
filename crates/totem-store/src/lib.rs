@@ -46,6 +46,7 @@
 #![warn(missing_docs)]
 
 mod access_log;
+pub mod corpus;
 mod curation;
 mod embedding;
 mod error;
