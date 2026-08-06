@@ -75,11 +75,8 @@ fn installing_into_an_existing_hook_file_appends_without_clobbering_it() {
     let post_commit = repo.path().join(".git/hooks/post-commit");
     fs::create_dir_all(post_commit.parent().expect("hooks dir has a parent"))
         .expect("mkdir .git/hooks");
-    fs::write(
-        &post_commit,
-        "#!/usr/bin/env bash\necho existing-hook\n",
-    )
-    .expect("seed an existing hook");
+    fs::write(&post_commit, "#!/usr/bin/env bash\necho existing-hook\n")
+        .expect("seed an existing hook");
 
     let outcomes = hook::install(repo.path()).expect("install succeeds");
     assert!(
