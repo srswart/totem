@@ -51,6 +51,20 @@ pub async fn post(router: &Router, path: &str, body: Value) -> Response<Body> {
         .expect("the router does not fail to produce a response")
 }
 
+pub async fn get(router: &Router, path: &str) -> Response<Body> {
+    router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri(path)
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("the router does not fail to produce a response")
+}
+
 pub async fn json_body<T: DeserializeOwned>(response: Response<Body>) -> T {
     let bytes = response
         .into_body()

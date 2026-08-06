@@ -6,6 +6,7 @@ members = [
     "crates/totem-gateway",
     "crates/totem-arrive-sync",
     "crates/totem-cli",
+    "crates/totem-console",
     "crates/totem-store-spike",
     "crates/totem-embedding-spike",
     "crates/totem-mcp-spike",
@@ -14,7 +15,6 @@ members = [
 # Sibling crate slots per docs/solution-intent.md §7; each is added by the
 # advance that first needs it, rather than landing as empty scaffolding here:
 #   crates/totem-curator      ADV-CURATOR-001
-#   crates/totem-console      ADV-CONSOLE-001
 
 [workspace.package]
 edition = "2024"
@@ -40,7 +40,12 @@ serde_yaml = "0.9.34"
 surrealdb = { version = "=3.2.4", default-features = false }
 thiserror = "2.0.11"
 tokio = { version = "1.43.0" }
-uuid = { version = "1.11.1", features = ["serde", "v4"] }
+# "js" is inert on every target this workspace otherwise builds for
+# (native hosts already have a randomness source); it exists so
+# totem-console's wasm32-unknown-unknown build (which pulls totem-core, and
+# with it uuid's v4 generation) has one (uuid 1.x's own requirement, not a
+# Totem choice).
+uuid = { version = "1.11.1", features = ["serde", "v4", "js"] }
 
 [workspace.lints.rust]
 missing_debug_implementations = "warn"

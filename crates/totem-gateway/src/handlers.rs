@@ -1,21 +1,25 @@
 //! `/recall` and `/save`: the first HTTP surface over `totem-store`
 //! (docs/solution-intent.md §3.2; ADV-GATEWAY-001). `/enroll` (ADV-CLI-001)
-//! joins them as the third: registering or re-syncing a repo's ARRIVE
-//! landscape.
+//! and `GET /landscape/:repo` (ADV-CONSOLE-001) join them: registering or
+//! re-syncing a repo's ARRIVE landscape, and reading it back.
 //!
 //! `save`/`recall` build an [`ops`] input straight from the request's own
 //! `totem-core` types, call the shared operation, and wrap the result — the
 //! resolve-scope-chain/do-the-operation/append-one-access-log-entry sequence
 //! itself lives in [`ops`], not here (ADV-GATEWAY-002's tidy step), so the
-//! MCP surface gets the same behavior without duplicating it. `enroll` has no
-//! scope chain to resolve (a landscape sync is not scoped memory) and calls
-//! `totem-store`'s [`totem_store::LandscapeRepository::sync`] directly.
+//! MCP surface gets the same behavior without duplicating it. `enroll` and
+//! `landscape` have no scope chain to resolve (a landscape sync is not
+//! scoped memory) and call `totem-store`'s [`totem_store::LandscapeRepository`]
+//! directly — the same call `mcp.rs`'s `totem_landscape` tool makes, so the
+//! REST and MCP surfaces cannot silently diverge on what a repo's landscape
+//! contains.
 
 use axum::Json;
-use axum::extract::State;
+use axum::extract::{Path, State};
 
 use crate::dto::{
-    EnrollRequest, EnrollResponse, RecallRequest, RecallResponse, SaveRequest, SaveResponse,
+    EnrollRequest, EnrollResponse, LandscapeView, RecallRequest, RecallResponse, SaveRequest,
+    SaveResponse,
 };
 use crate::error::GatewayError;
 use crate::ops::{self, RecallInput, SaveInput};
@@ -82,4 +86,18 @@ pub(crate) async fn enroll(
         components: summary.components,
         advances: summary.advances,
     }))
+}
+
+pub(crate) async fn landscape(
+    State(state): State<AppState>,
+    Path(repo): Path<String>,
+) -> Result<Json<LandscapeView>, GatewayError> {
+    let view = state
+        .store
+        .landscape()
+        .view(&repo)
+        .await
+        .map_err(GatewayError::from)?;
+
+    Ok(Json(view))
 }

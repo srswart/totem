@@ -26,23 +26,26 @@ mod ops;
 mod state;
 
 use axum::Router;
-use axum::routing::post;
+use axum::routing::{get, post};
 
 pub use dto::{
-    EnrollRequest, EnrollResponse, RecallRequest, RecallResponse, SaveRequest, SaveResponse,
+    EnrollRequest, EnrollResponse, LandscapeView, RecallRequest, RecallResponse, SaveRequest,
+    SaveResponse,
 };
 pub use error::GatewayError;
 pub use mcp::TotemMcp;
 pub use state::AppState;
 
-/// Build the REST router. `POST /recall`, `POST /save`, and `POST /enroll`
-/// are the only routes this crate adds; the MCP surface ([`TotemMcp`]:
-/// `totem_recall`, `totem_save`, `totem_landscape`) calls the same [`ops`]
-/// functions rather than duplicating them.
+/// Build the REST router. `POST /recall`, `POST /save`, `POST /enroll`, and
+/// `GET /landscape/:repo` are the only routes this crate adds; the MCP
+/// surface ([`TotemMcp`]: `totem_recall`, `totem_save`, `totem_landscape`)
+/// calls the same [`ops`] functions (or, for the landscape, the same
+/// `totem-store` call) rather than duplicating them.
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/recall", post(handlers::recall))
         .route("/save", post(handlers::save))
         .route("/enroll", post(handlers::enroll))
+        .route("/landscape/{repo}", get(handlers::landscape))
         .with_state(state)
 }

@@ -136,10 +136,19 @@ passes:
           - id: "ADV-CONSOLE-001"
             advance_id: "ADV-CONSOLE-001"
             title: "Landscape dashboard + memory browser (read-only)"
-            status: planned
+            status: in_progress
             owner: "058-totem"
             dependencies: ["ADV-GATEWAY-001", "ADV-ARRIVE-SYNC-001"]
-            notes: "First 'humans observe' surface; read-only."
+            notes: >-
+              First 'humans observe' surface; read-only. Dashboard + browser
+              implemented (Dioxus app, GET /landscape/:repo, tests green on
+              native host + wasm32-unknown-unknown build clean), but two
+              things from the original scope are still open: live-query
+              auto-update (shipped as a manual Refresh button instead — TD-009
+              means the real fix is a gateway event relay, a separate
+              subsystem) and any actual browser verification (no dx/trunk/
+              browser in the cloud sandbox). See ADV-CONSOLE-001.md's Risk +
+              Rollback and Evidence sections.
 
   - id: "pass-004"
     title: "Pass 4: Value loop"
