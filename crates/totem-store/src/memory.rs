@@ -12,8 +12,8 @@ use chrono::{DateTime, Utc};
 use surrealdb::types::{SurrealValue, Value};
 use surrealdb::{Connection, Surreal};
 use totem_core::{
-    Content, FeedbackSignal, LifecycleError, MemoryCategory, MemoryId, MemoryRecord, ScopeChain,
-    SubjectKind,
+    Content, FeedbackSignal, LifecycleError, MemoryCategory, MemoryId, MemoryRecord, ReviewState,
+    ScopeChain, SubjectKind,
 };
 
 use crate::error::{StoreError, StoreResult};
@@ -352,6 +352,77 @@ impl<'a, C: Connection> MemoryRepository<'a, C> {
             .bind(("currency", f64::from(record.economics.currency)))
             .await?
             .check()?;
+        Ok(record)
+    }
+
+    /// Records of `category` awaiting a human decision, oldest first — the
+    /// queue ADV-CONSOLE-002 renders (its own use is
+    /// [`MemoryCategory::Uncertainty`]); scope-filtered to the reader's chain
+    /// the same way every other read here is.
+    pub async fn pending_review(
+        &self,
+        reader: &ScopeChain,
+        category: MemoryCategory,
+    ) -> StoreResult<Vec<MemoryRecord>> {
+        let mut response = self
+            .db
+            .query(format!(
+                "SELECT * FROM {MEMORY_TABLE} WHERE category = $category \
+                 AND governance.review = $pending AND scope IN $scopes \
+                 ORDER BY provenance.created_at ASC"
+            ))
+            .bind(("category", row::category_key(category).to_string()))
+            .bind(("pending", row::review_key(ReviewState::Pending).to_string()))
+            .bind(("scopes", readable_scopes(reader)))
+            .await?
+            .check()?;
+        objects(response.take(0)?)?
+            .iter()
+            .map(|row| row::from_row(row).map_err(StoreError::from))
+            .collect()
+    }
+
+    /// Record a human's decision on a pending review — approve or reject
+    /// (ADV-CONSOLE-002: the Uncertainty queue's resolution step, and equally
+    /// usable on any other human-gated category's record).
+    ///
+    /// Refused for a record the resolver cannot see ([`StoreError::NotFound`],
+    /// never forbidden, same as [`revise`](Self::revise)), and refused unless
+    /// the record's review is currently `Pending`
+    /// ([`totem_core::GovernanceError`] via [`totem_core::Governance::resolve`]).
+    /// The resolving `UPDATE` repeats that `governance.review = 'pending'`
+    /// guard at the database, so a decision that raced this one between the
+    /// read above and this write is refused too
+    /// ([`StoreError::ReviewDecided`]) rather than silently overwritten —
+    /// the same defence-in-depth [`totem_core::PromotionEvent`]'s decision
+    /// guard applies, and the same unserialised-race residual it discloses.
+    pub async fn resolve_review(
+        &self,
+        resolver: &ScopeChain,
+        id: MemoryId,
+        decision: ReviewState,
+    ) -> StoreResult<MemoryRecord> {
+        let Some(mut record) = self.get(resolver, id).await? else {
+            return Err(StoreError::NotFound(id));
+        };
+        record.governance = record.governance.resolve(decision)?;
+
+        let mut response = self
+            .db
+            .query(format!(
+                "UPDATE {MEMORY_TABLE} SET governance.review = $decision \
+                 WHERE id = $id AND scope IN $scopes AND governance.review = $pending"
+            ))
+            .bind(("id", row::memory_thing(id)))
+            .bind(("scopes", readable_scopes(resolver)))
+            .bind(("decision", row::review_key(decision).to_string()))
+            .bind(("pending", row::review_key(ReviewState::Pending).to_string()))
+            .await?
+            .check()?;
+        let moved = objects(response.take(0)?)?;
+        if moved.len() != 1 {
+            return Err(StoreError::ReviewDecided(id));
+        }
         Ok(record)
     }
 

@@ -1,7 +1,8 @@
 //! What the store refuses, and why.
 
 use totem_core::{
-    CurationError, CurationId, LifecycleError, MemoryId, PromotionError, PromotionId, Scope,
+    CurationError, CurationId, GovernanceError, LifecycleError, MemoryId, PromotionError,
+    PromotionId, Scope,
 };
 
 /// The result of a store operation.
@@ -50,6 +51,17 @@ pub enum StoreError {
     /// restore records that are already restored.
     #[error("curation event {0} has already been rolled back")]
     CurationRolledBack(CurationId),
+    /// A review decision was refused by [`Governance::resolve`](totem_core::Governance::resolve)
+    /// — not itself a decision, or the review is not `Pending`.
+    #[error(transparent)]
+    Governance(#[from] GovernanceError),
+    /// The database's own guard on the resolving `UPDATE` matched no rows
+    /// even though a pre-check on a fresh read passed — a review was decided
+    /// between that read and this write. Same shape as
+    /// [`StoreError::PromotionDecided`], and the same rare race it guards
+    /// against.
+    #[error("the review on memory {0} was already decided")]
+    ReviewDecided(MemoryId),
     /// An embedding did not match the dimension the vector index is pinned to.
     #[error("an embedding must have exactly {expected} dimensions, but this one has {actual}")]
     EmbeddingDimensions {

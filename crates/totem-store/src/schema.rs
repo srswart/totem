@@ -290,6 +290,16 @@ DEFINE EVENT curation_event_no_delete ON TABLE curation_event
     THEN { THROW 'a curation event is append-only and cannot be deleted'; };
 "#;
 
+/// Migration 7 — the `propose`, `promotion_decision`, and `resolve`
+/// access-log operations (ADV-CONSOLE-002).
+///
+/// Same `OVERWRITE` technique migration 4 established: existing rows are
+/// unaffected, and only the assertion a new row must satisfy widens.
+pub(crate) const ACCESS_LOG_GOVERNANCE_SCHEMA_V7: &str = r#"
+DEFINE FIELD OVERWRITE operation ON access_log TYPE string
+    ASSERT $value IN ['recall', 'save', 'feedback', 'propose', 'promotion_decision', 'resolve'];
+"#;
+
 #[cfg(test)]
 mod tests {
     //! Enforcement the repository API cannot be trusted to provide.
