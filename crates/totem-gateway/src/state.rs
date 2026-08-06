@@ -10,7 +10,7 @@ use std::fmt;
 use std::sync::Arc;
 
 use surrealdb::engine::local::Db;
-use totem_store::{Embedder, Store};
+use totem_store::{DeterministicEmbedder, Embedder, Store, StoreResult};
 
 /// State cloned into every request handler.
 ///
@@ -25,6 +25,34 @@ pub struct AppState {
     pub store: Store<Db>,
     /// The embedder every `/save` and `/recall` call uses.
     pub embedder: Arc<dyn Embedder>,
+}
+
+impl AppState {
+    /// State over a fresh, migrated, embedded in-memory store, with the
+    /// deterministic embedder.
+    ///
+    /// Both binaries (`totem-gateway`, `mcp_stdio`) and the integration tests
+    /// need exactly this, and had each spelled it out: three places to keep in
+    /// step every time the state gains a field.
+    ///
+    /// In-memory and non-persistent on purpose, for now: production deployment
+    /// topology (embedded vs. server SurrealDB, where state survives a restart)
+    /// is an open question (docs/solution-intent.md §9). Whoever resolves it
+    /// adds the durable constructor beside this one rather than changing what
+    /// this one means.
+    pub async fn in_memory() -> StoreResult<Self> {
+        let store = Store::in_memory().await?;
+        store.migrate().await?;
+        Ok(Self {
+            store,
+            // The deterministic, non-semantic embedder: real quality
+            // (BGE-small-en-v1.5 via `fastembed`, EMB-004) needs a model
+            // download this sandbox's egress policy blocks, so it stays behind
+            // the store's off-by-default `fastembed` feature until a
+            // workstation or CI runner with hub access builds with it enabled.
+            embedder: Arc::new(DeterministicEmbedder::new()),
+        })
+    }
 }
 
 impl fmt::Debug for AppState {

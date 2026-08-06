@@ -7,19 +7,12 @@
 //! docs/solution-intent.md §9) — this advance's scope is the tool surface,
 //! not that decision.
 
-use std::sync::Arc;
-
 use rmcp::{ServiceExt, transport::stdio};
 use totem_gateway::{AppState, TotemMcp};
-use totem_store::{DeterministicEmbedder, Store};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let store = Store::in_memory().await?;
-    store.migrate().await?;
-
-    let embedder = Arc::new(DeterministicEmbedder::new());
-    let state = AppState { store, embedder };
+    let state = AppState::in_memory().await?;
 
     let service = TotemMcp::new(state).serve(stdio()).await?;
     service.waiting().await?;

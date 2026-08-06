@@ -7,8 +7,6 @@
 
 #![allow(dead_code)]
 
-use std::sync::Arc;
-
 use axum::Router;
 use axum::body::Body;
 use axum::http::{Request, Response, StatusCode};
@@ -16,7 +14,7 @@ use http_body_util::BodyExt;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use totem_gateway::AppState;
-use totem_store::{DeterministicEmbedder, Store};
+use totem_store::Store;
 use tower::ServiceExt;
 
 pub const ADA: &str = "ada";
@@ -25,12 +23,10 @@ pub const REPO: &str = "srswart/totem";
 
 /// A router over a fresh, migrated, embedded store.
 pub async fn app() -> (Router, Store<surrealdb::engine::local::Db>) {
-    let store = Store::in_memory().await.expect("embedded engine connects");
-    store.migrate().await.expect("migrations apply");
-    let state = AppState {
-        store: store.clone(),
-        embedder: Arc::new(DeterministicEmbedder::new()),
-    };
+    let state = AppState::in_memory()
+        .await
+        .expect("embedded engine connects and migrations apply");
+    let store = state.store.clone();
     (totem_gateway::router(state), store)
 }
 
