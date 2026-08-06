@@ -71,11 +71,12 @@ practices resolve from work products):
 These need either a decision first or belong after phase 1. Suggested ids are
 reserved here so they can be created when ready.
 
-1. **Deployment & operations — suggest a new `infra` component** (type
-   `infra`) **+ `ADV-INFRA-001`.** Nothing covers service packaging, SurrealDB
-   server deployment (embedded vs. server split, §7), configuration, backup /
-   restore of the memory estate, or observability of Totem itself. Blocked on
-   the deployment-topology open question (§9: start shared single instance).
+1. **Deployment & operations — RESOLVED 2026-08-06.** The `infra` component
+   and `ADV-INFRA-001` now exist (phase-007, WORKSTATION-designated); the
+   deployment-topology question is decided as DEP-001
+   (docs/tech-direction/deployment.md): gateway-embedded RocksDB, gateway as
+   sole store owner. Remaining from this item: observability and fuller
+   service packaging, which stay open for a later infra advance.
    Note the irony risk: Totem is the audit system — losing its data loses the
    team's memory; backup deserves first-class treatment.
 2. **Remaining curator jobs — `ADV-CURATOR-002` (decay processing),
