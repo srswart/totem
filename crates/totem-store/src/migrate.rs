@@ -6,7 +6,7 @@
 
 use chrono::{DateTime, Utc};
 
-use crate::schema::{ACCESS_LOG_SCHEMA_V2, MEMORY_SCHEMA_V1};
+use crate::schema::{ACCESS_LOG_SCHEMA_V2, LANDSCAPE_SYNC_SCHEMA_V3, MEMORY_SCHEMA_V1};
 
 /// One forward-only schema change.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,6 +33,11 @@ pub const MIGRATIONS: &[Migration] = &[
         version: 2,
         name: "access_log",
         statements: ACCESS_LOG_SCHEMA_V2,
+    },
+    Migration {
+        version: 3,
+        name: "landscape_sync",
+        statements: LANDSCAPE_SYNC_SCHEMA_V3,
     },
 ];
 

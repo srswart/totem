@@ -4,6 +4,9 @@ members = [
     "crates/totem-core",
     "crates/totem-store",
     "crates/totem-gateway",
+    "crates/totem-arrive-sync",
+    "crates/totem-cli",
+    "crates/totem-console",
     "crates/totem-store-spike",
     "crates/totem-embedding-spike",
     "crates/totem-mcp-spike",
@@ -11,10 +14,7 @@ members = [
 
 # Sibling crate slots per docs/solution-intent.md §7; each is added by the
 # advance that first needs it, rather than landing as empty scaffolding here:
-#   crates/totem-arrive-sync  ADV-ARRIVE-SYNC-001
 #   crates/totem-curator      ADV-CURATOR-001
-#   crates/totem-cli          ADV-CLI-001
-#   crates/totem-console      ADV-CONSOLE-001
 
 [workspace.package]
 edition = "2024"
@@ -27,6 +27,12 @@ chrono = { version = "0.4.39", default-features = false, features = ["clock", "s
 futures = "0.3.31"
 serde = { version = "1.0.217", features = ["derive"] }
 serde_json = "1.0.135"
+# ARRIVE artifacts (registry.yaml, system.yaml, components/*.yaml) are YAML;
+# advance frontmatter is a YAML block inside Markdown. `serde_yaml` is
+# upstream-deprecated but still the most battle-tested parser for this shape;
+# revisit if a maintained fork stabilizes before totem-arrive-sync grows a
+# second consumer.
+serde_yaml = "0.9.34"
 # Pinned exactly, workspace-wide: the ADV-STORE-004/006 findings the store is
 # built on (knn syntax, query plans, event semantics) are version-specific, and
 # a second literal pin in a sibling crate is how the two silently drift apart.
@@ -34,7 +40,12 @@ serde_json = "1.0.135"
 surrealdb = { version = "=3.2.4", default-features = false }
 thiserror = "2.0.11"
 tokio = { version = "1.43.0" }
-uuid = { version = "1.11.1", features = ["serde", "v4"] }
+# "js" is inert on every target this workspace otherwise builds for
+# (native hosts already have a randomness source); it exists so
+# totem-console's wasm32-unknown-unknown build (which pulls totem-core, and
+# with it uuid's v4 generation) has one (uuid 1.x's own requirement, not a
+# Totem choice).
+uuid = { version = "1.11.1", features = ["serde", "v4", "js"] }
 
 [workspace.lints.rust]
 missing_debug_implementations = "warn"

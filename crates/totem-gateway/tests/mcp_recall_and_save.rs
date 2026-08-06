@@ -206,29 +206,47 @@ async fn writing_into_another_actors_scope_over_mcp_is_refused() {
     client.cancel().await.expect("clean shutdown");
 }
 
+/// Each test's `mcp_stdio` child process starts a fresh, private in-memory
+/// store (docs/tech-direction/surrealdb.md §4) with nothing synced into it,
+/// so this proves the honest "nothing here yet" case — real query, real
+/// empty result, not a hardcoded stub. Proving the populated case (a real
+/// sync feeding a real `totem_landscape` answer) needs a store the test can
+/// seed before the tool call, which this stdio-child-process harness cannot
+/// do; that path is covered instead by `totem-store`'s
+/// `tests/landscape_sync.rs` and `totem-arrive-sync`'s
+/// `tests/dogfood.rs::syncing_this_repos_landscape_populates_the_store_and_is_queryable_in_one_round_trip`.
 #[tokio::test]
-async fn totem_landscape_is_callable_and_honestly_reports_no_data_yet() {
+async fn totem_landscape_returns_an_empty_landscape_for_an_unsynced_repo() {
     let client = client().await;
 
     let result = client
         .call_tool(
             CallToolRequestParams::new("totem_landscape")
-                .with_arguments(object(json!({ "repo": REPO }))),
+                .with_arguments(object(json!({ "repo": "058-totem" }))),
         )
         .await
         .expect("call_tool(totem_landscape)");
     assert_ne!(result.is_error, Some(true), "{result:?}");
 
     let landscape = json_of(&result);
+    assert_eq!(landscape["repo"], Value::Null);
     assert_eq!(landscape["systems"], json!([]));
     assert_eq!(landscape["components"], json!([]));
     assert_eq!(landscape["advances"], json!([]));
+
+    client.cancel().await.expect("clean shutdown");
+}
+
+#[tokio::test]
+async fn totem_landscape_without_a_repo_id_is_a_protocol_level_error() {
+    let client = client().await;
+
+    let result = client
+        .call_tool(CallToolRequestParams::new("totem_landscape").with_arguments(object(json!({}))))
+        .await;
     assert!(
-        landscape["note"]
-            .as_str()
-            .unwrap_or_default()
-            .contains("ADV-ARRIVE-SYNC-001"),
-        "expected the note to explain landscape ingestion has not run yet: {landscape:?}"
+        result.is_err(),
+        "expected a protocol-level error for a missing `repo`, got {result:?}"
     );
 
     client.cancel().await.expect("clean shutdown");

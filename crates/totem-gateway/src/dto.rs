@@ -14,6 +14,8 @@ use totem_core::{
     ActorId, Author, Harness, MemoryCategory, MemoryId, MemoryRecord, RepoId, Scope, SessionId,
     SubjectRef, TeamId,
 };
+use totem_store::LandscapeSnapshot;
+pub use totem_store::LandscapeView;
 
 /// `POST /save` — a write with provenance auto-attached from the caller's own
 /// identity (the objective's phrase; ADV-GATEWAY-003 will replace `author` /
@@ -91,4 +93,34 @@ pub struct RecallResponse {
     /// The records the reader's chain permits, ranked or ordered per the
     /// request.
     pub records: Vec<MemoryRecord>,
+}
+
+/// `POST /enroll` — register or re-sync one repo's ARRIVE landscape (`totem
+/// enroll`, ADV-CLI-001). `totem-cli` parses `/arrive/` locally
+/// (`totem_arrive_sync::read_repo_artifacts`) and posts the resulting
+/// snapshot here rather than opening its own store connection, since the
+/// gateway — not the CLI — owns the store. Built directly on
+/// [`LandscapeSnapshot`] (flattened), the same "reuse the core type's own
+/// `Deserialize` rather than a parallel copy" pattern this module's other
+/// requests use.
+#[derive(Debug, Clone, Deserialize)]
+pub struct EnrollRequest {
+    /// The parsed `/arrive/` tree to sync.
+    #[serde(flatten)]
+    pub snapshot: LandscapeSnapshot,
+    /// Where the ingested artifacts came from, e.g. `"cli:enroll"` or
+    /// `"hook:post-commit"` — recorded as this sync run's provenance
+    /// (`arrive-sync.yaml`'s "every ingestion records sync provenance").
+    pub source: String,
+}
+
+/// `POST /enroll` response: what this sync run wrote.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnrollResponse {
+    /// Systems written.
+    pub systems: usize,
+    /// Components written.
+    pub components: usize,
+    /// Advances written.
+    pub advances: usize,
 }

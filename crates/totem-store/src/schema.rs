@@ -146,6 +146,39 @@ DEFINE EVENT access_log_no_delete ON TABLE access_log
     THEN { THROW 'the access log is append-only and cannot be deleted'; };
 "#;
 
+/// Migration 3 — landscape sync support (ADV-ARRIVE-SYNC-001).
+///
+/// Two additions, both needed before ingestion can write anything real:
+///
+/// - `component_id` recovers a component's short artifact id from its
+///   system-namespaced record key (`<system>__<component>`, chosen so two
+///   systems may each declare a component of the same short name without
+///   colliding).
+/// - `sync_run` is the provenance record every ingestion run writes — the
+///   same append-only pattern as `access_log`, because a sync's provenance
+///   must be as durable as the audit trail it feeds
+///   (`arrive-sync.yaml`: "Every ingestion records sync provenance").
+pub(crate) const LANDSCAPE_SYNC_SCHEMA_V3: &str = r#"
+DEFINE FIELD component_id ON component TYPE string;
+
+DEFINE TABLE sync_run SCHEMAFULL;
+
+DEFINE FIELD repo ON sync_run TYPE record<repo>;
+DEFINE FIELD source ON sync_run TYPE string ASSERT $value != '';
+DEFINE FIELD started_at ON sync_run TYPE datetime;
+DEFINE FIELD completed_at ON sync_run TYPE datetime;
+DEFINE FIELD systems_synced ON sync_run TYPE int;
+DEFINE FIELD components_synced ON sync_run TYPE int;
+DEFINE FIELD advances_synced ON sync_run TYPE int;
+
+DEFINE EVENT sync_run_no_update ON TABLE sync_run
+    WHEN $event = 'UPDATE'
+    THEN { THROW 'sync provenance is append-only and cannot be updated'; };
+DEFINE EVENT sync_run_no_delete ON TABLE sync_run
+    WHEN $event = 'DELETE'
+    THEN { THROW 'sync provenance is append-only and cannot be deleted'; };
+"#;
+
 #[cfg(test)]
 mod tests {
     //! Enforcement the repository API cannot be trusted to provide.
@@ -357,6 +390,70 @@ mod tests {
         let mut response = store
             .connection()
             .query("SELECT VALUE endpoint FROM access_log")
+            .await
+            .expect("sent")
+            .check()
+            .expect("select succeeded");
+        let rows: Value = response.take(0).expect("rows");
+        assert_eq!(rows.into_array().expect("an array").len(), 1);
+    }
+
+    const SYNC_RUN_ENTRY: &str = r#"
+        CREATE sync_run CONTENT {
+            repo: repo:test, source: 'test', started_at: d'2026-08-05T06:00:00Z',
+            completed_at: d'2026-08-05T06:00:01Z', systems_synced: 1,
+            components_synced: 1, advances_synced: 1
+        }
+    "#;
+
+    #[tokio::test]
+    async fn the_database_refuses_to_update_a_sync_run_row() {
+        let store = migrated().await;
+        store
+            .connection()
+            .query(SYNC_RUN_ENTRY)
+            .await
+            .expect("sent")
+            .check()
+            .expect("the run is written");
+
+        let refused = store
+            .connection()
+            .query("UPDATE sync_run SET source = 'tampered'")
+            .await
+            .expect("sent")
+            .check();
+        assert!(
+            refused.is_err(),
+            "a raw UPDATE rewrote a sync_run entry: {refused:?}",
+        );
+    }
+
+    #[tokio::test]
+    async fn the_database_refuses_to_delete_a_sync_run_row() {
+        let store = migrated().await;
+        store
+            .connection()
+            .query(SYNC_RUN_ENTRY)
+            .await
+            .expect("sent")
+            .check()
+            .expect("the run is written");
+
+        let refused = store
+            .connection()
+            .query("DELETE sync_run")
+            .await
+            .expect("sent")
+            .check();
+        assert!(
+            refused.is_err(),
+            "a raw DELETE removed a sync_run entry: {refused:?}",
+        );
+
+        let mut response = store
+            .connection()
+            .query("SELECT VALUE source FROM sync_run")
             .await
             .expect("sent")
             .check()
