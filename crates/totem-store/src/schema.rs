@@ -477,6 +477,120 @@ mod tests {
         assert_eq!(rows.into_array().expect("an array").len(), 1);
     }
 
+    const PROMOTION_EVENT: &str = r#"
+        CREATE promotion_event:proposal CONTENT {
+            memory: memory:episode, kind: 'proposed',
+            from_scope: 'actor:ada', to_scope: 'project:srswart/totem',
+            provenance: { author_kind: 'human', author: 'ada', harness: 'console',
+                          session: 's1', created_at: d'2026-08-06T06:00:00Z', derived_from: [] }
+        }
+    "#;
+
+    #[tokio::test]
+    async fn the_database_refuses_to_update_a_promotion_event() {
+        // A promotion event is the record that a scope boundary was crossed.
+        // If it could be rewritten, the audit trail of the project's
+        // highest-severity operation would be worth nothing.
+        let store = migrated().await;
+        store
+            .connection()
+            .query(PROMOTION_EVENT)
+            .await
+            .expect("sent")
+            .check()
+            .expect("the event is written");
+
+        let refused = store
+            .connection()
+            .query("UPDATE promotion_event:proposal SET kind = 'approved'")
+            .await
+            .expect("sent")
+            .check();
+        assert!(
+            refused.is_err(),
+            "a raw UPDATE rewrote a promotion event: {refused:?}",
+        );
+    }
+
+    #[tokio::test]
+    async fn the_database_refuses_to_delete_a_promotion_event() {
+        let store = migrated().await;
+        store
+            .connection()
+            .query(PROMOTION_EVENT)
+            .await
+            .expect("sent")
+            .check()
+            .expect("the event is written");
+
+        let refused = store
+            .connection()
+            .query("DELETE promotion_event")
+            .await
+            .expect("sent")
+            .check();
+        assert!(
+            refused.is_err(),
+            "a raw DELETE removed a promotion event: {refused:?}",
+        );
+
+        let mut response = store
+            .connection()
+            .query("SELECT VALUE kind FROM promotion_event")
+            .await
+            .expect("sent")
+            .check()
+            .expect("select succeeded");
+        let rows: Value = response.take(0).expect("rows");
+        assert_eq!(rows.into_array().expect("an array").len(), 1);
+    }
+
+    #[tokio::test]
+    async fn the_database_refuses_a_promotion_event_without_provenance() {
+        let store = migrated().await;
+        let refused = store
+            .connection()
+            .query(
+                "CREATE promotion_event CONTENT {
+                    memory: memory:episode, kind: 'proposed',
+                    from_scope: 'actor:ada', to_scope: 'project:srswart/totem'
+                }",
+            )
+            .await
+            .expect("sent")
+            .check();
+        assert!(
+            refused.is_err(),
+            "an unattributable promotion event was accepted: {refused:?}",
+        );
+    }
+
+    #[tokio::test]
+    async fn the_database_refuses_a_scope_edit_on_an_episodic_row() {
+        // Defence in depth behind PromotionPolicy: even if the policy were
+        // loosened by mistake, the append-only EVENT still refuses to move an
+        // episodic record.
+        let store = migrated().await;
+        store
+            .connection()
+            .query(EPISODE)
+            .await
+            .expect("sent")
+            .check()
+            .expect("the episode is written");
+
+        let refused = store
+            .connection()
+            .query("UPDATE memory:episode SET scope = 'platform'")
+            .await
+            .expect("sent")
+            .check();
+        assert!(
+            refused.is_err(),
+            "a raw UPDATE promoted an episodic record: {refused:?}",
+        );
+    }
+
     #[tokio::test]
     async fn the_vector_index_is_pinned_to_the_measured_dimension_and_distance() {
         let store = migrated().await;
