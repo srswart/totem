@@ -42,6 +42,12 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net"] }
 totem-core = { path = "../totem-core" }
 totem-store = { path = "../totem-store" }
 
+[features]
+# DEP-001 durable mode: build with this and set TOTEM_DATA_DIR to run the
+# gateway as the durable shared instance. Off by default so cloud/CI builds
+# stay lean (infra component invariant).
+rocksdb = ["totem-store/rocksdb"]
+
 [dev-dependencies]
 http-body-util = "0.1"
 tower = { version = "0.5", features = ["util"] }
