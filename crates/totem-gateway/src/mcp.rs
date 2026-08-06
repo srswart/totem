@@ -99,8 +99,13 @@ pub struct SaveParams {
 /// Parameters for `totem_landscape`.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct LandscapeParams {
-    /// The enrolled repository to describe, as `owner/name`. Accepted but
-    /// currently unused — see `totem_landscape`'s own doc comment.
+    /// The ARRIVE-enrolled repo id to describe — `registry.yaml`'s
+    /// `repo_id` (e.g. `"058-totem"`), **not** the `owner/name` form
+    /// `totem_recall`/`totem_save`'s `project` field uses. The two are
+    /// different id spaces: `project` names a repo's scope for memory
+    /// isolation, while this names the repo as ARRIVE's own governance
+    /// registry (`arrive/registry.yaml`) identifies it, which is how the
+    /// landscape graph keys every `repo` record (ADV-ARRIVE-SYNC-001).
     pub repo: Option<String>,
 }
 
@@ -259,29 +264,33 @@ impl TotemMcp {
     }
 
     /// `totem_landscape` — the ARRIVE landscape view: systems, components,
-    /// and advances for an enrolled repo (docs/solution-intent.md §2.3).
-    ///
-    /// **Not yet populated.** `ADV-ARRIVE-SYNC-001` — the advance that
-    /// ingests `/arrive/` into the landscape graph — has not landed, and
-    /// `totem-store` has no landscape repository yet. This tool is real and
-    /// callable (the surface this advance commits to exposing), but always
-    /// answers with an empty landscape and an explanatory `note` rather than
-    /// fabricating graph data that does not exist.
+    /// and advances for an enrolled repo, in one round trip
+    /// (docs/solution-intent.md §2.3, G2). Populated by
+    /// `totem-arrive-sync`'s ingestion (ADV-ARRIVE-SYNC-001); a repo that has
+    /// never been synced answers with an empty landscape (`repo: null`)
+    /// rather than an error, since "not yet enrolled" is a normal state, not
+    /// a fault.
     #[tool(
-        description = "The ARRIVE landscape for an enrolled repo: systems, components, and advances (planned/in-progress/done). Landscape ingestion (ADV-ARRIVE-SYNC-001) has not landed yet, so this always returns an empty landscape with an explanatory note."
+        description = "The ARRIVE landscape for an enrolled repo: systems, components, and advances (planned/in-progress/done), plus each component's current owners. `repo` is the ARRIVE registry id (registry.yaml's `repo_id`, e.g. `058-totem`), not the `owner/name` scope form. A repo that has not been synced yet returns an empty landscape rather than an error."
     )]
     async fn totem_landscape(
         &self,
         Parameters(params): Parameters<LandscapeParams>,
     ) -> Result<String, ErrorData> {
-        let response = serde_json::json!({
-            "repo": params.repo,
-            "systems": [],
-            "components": [],
-            "advances": [],
-            "note": "landscape ingestion has not run yet (ADV-ARRIVE-SYNC-001 is still \
-                     `planned`); totem-store has no landscape repository to query",
-        });
-        serde_json::to_string(&response).map_err(internal_error)
+        let Some(repo) = params.repo else {
+            return Err(invalid_params(
+                "totem_landscape requires `repo`: the ARRIVE registry id (registry.yaml's \
+                 `repo_id`, e.g. `058-totem`)",
+            ));
+        };
+        let view = self
+            .state
+            .store
+            .landscape()
+            .view(&repo)
+            .await
+            .map_err(GatewayError::from)
+            .map_err(gateway_error)?;
+        serde_json::to_string(&view).map_err(internal_error)
     }
 }

@@ -48,6 +48,7 @@
 mod access_log;
 mod embedding;
 mod error;
+mod landscape;
 mod memory;
 mod migrate;
 mod row;
@@ -59,6 +60,11 @@ pub use access_log::AccessLogRepository;
 pub use embedding::fastembed_embedder::FastembedEmbedder;
 pub use embedding::{DeterministicEmbedder, Embedder, embed};
 pub use error::{StoreError, StoreResult};
+pub use landscape::{
+    AdvanceArtifact, AdvanceView, ComponentArtifact, ComponentView, LandscapeRepository,
+    LandscapeSnapshot, LandscapeView, OwnerArtifact, RepoArtifact, RepoView, SyncRun, SyncSummary,
+    SystemArtifact, SystemView,
+};
 pub use memory::{MemoryRepository, RecallQuery};
 pub use migrate::{AppliedMigration, MIGRATIONS, Migration};
 pub use schema::EMBEDDING_DIMENSIONS;

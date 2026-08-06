@@ -122,7 +122,7 @@ passes:
           - id: "ADV-ARRIVE-SYNC-001"
             advance_id: "ADV-ARRIVE-SYNC-001"
             title: "Ingest this repo's own /arrive/ into the landscape graph (dogfood)"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-STORE-001"]
             notes: "Dogfood first; totem_landscape becomes real here."
