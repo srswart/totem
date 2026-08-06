@@ -29,6 +29,8 @@
 //! exactly the records the event names, in one transaction, and putting them
 //! back on rollback — is `totem-store`'s job.
 
+use serde::{Deserialize, Serialize};
+
 use crate::category::{MemoryCategory, ReviewPolicy};
 use crate::ids::{CurationId, MemoryId};
 use crate::provenance::Provenance;
@@ -83,7 +85,8 @@ pub enum CurationError {
 }
 
 /// What a recorded curation event says happened.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum CurationEventKind {
     /// A curator wrote a superseding record and retired the originals.
     Merged,
@@ -97,7 +100,7 @@ pub enum CurationEventKind {
 /// The status is recorded rather than assumed because rollback restores it: an
 /// event that only remembered *which* records it retired could only ever put
 /// them back as active, quietly promoting a contested record to a trusted one.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Supersession {
     /// The superseded record.
     pub memory: MemoryId,
@@ -111,7 +114,7 @@ pub struct Supersession {
 /// [`CurationEvent::rolled_back`], so an event cannot name a scope, a set of
 /// originals, or a prior status that disagrees with the records it was built
 /// from — there is no constructor that takes those separately.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CurationEvent {
     /// This event's identity.
     pub id: CurationId,
@@ -275,5 +278,51 @@ mod tests {
         assert!(policy.may_curate(MemoryCategory::Knowledge));
         assert!(!policy.may_curate(MemoryCategory::Episodic));
         assert!(!policy.may_curate(MemoryCategory::Instructions));
+    }
+
+    #[test]
+    fn a_curation_event_round_trips_through_json() {
+        // ADV-CONSOLE-002 needs to serialize a `CurationEvent` over the wire
+        // (one record's curator lineage, rendered by the audit trail viewer);
+        // this is the derive that makes that possible without a parallel
+        // gateway struct.
+        use crate::ids::{ActorId, RepoId, SessionId};
+        use crate::provenance::{Author, Harness};
+        use crate::record::Content;
+
+        let provenance = Provenance::new(
+            Author::Curator(ActorId::new("totem-curator").expect("valid actor id")),
+            Harness::Curator,
+            SessionId::new("curate-1").expect("valid session id"),
+            "2026-08-06T08:00:00Z".parse().expect("valid timestamp"),
+        );
+        let scope = Scope::Project(RepoId::new("srswart/totem").expect("valid repo id"));
+        let survivor = MemoryRecord::new(
+            MemoryCategory::Knowledge,
+            scope.clone(),
+            Content::new("merged claim"),
+            provenance.clone(),
+        );
+        let originals = [
+            MemoryRecord::new(
+                MemoryCategory::Knowledge,
+                scope.clone(),
+                Content::new("original claim one"),
+                provenance.clone(),
+            ),
+            MemoryRecord::new(
+                MemoryCategory::Knowledge,
+                scope,
+                Content::new("original claim two"),
+                provenance.clone(),
+            ),
+        ];
+
+        let event = CurationPolicy::new()
+            .merge(&survivor, &originals, provenance)
+            .expect("a same-category, same-scope merge of two originals is allowed");
+        let json = serde_json::to_string(&event).expect("serialises");
+        let back: CurationEvent = serde_json::from_str(&json).expect("deserialises");
+        assert_eq!(back, event);
     }
 }
