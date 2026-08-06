@@ -1,0 +1,623 @@
+//! Token auth for cloud agents (ADV-GATEWAY-003): the gateway's
+//! least-privilege invariant, `gateway.yaml`'s "Cloud credentials are
+//! least-privilege: tokens bound to repo + scope", proven by execution over
+//! both surfaces a cloud agent can reach — REST and MCP over streamable HTTP.
+//!
+//! The load-bearing claim is the negative one. A token bound to repo A and one
+//! actor must not be able to name repo B, act as another actor, or widen its
+//! own chain to a scope it was not issued for — so most of these tests assert
+//! a refusal, not a success. Each drives the real composed application
+//! ([`totem_gateway::authenticated_app`]), not the authorization functions in
+//! isolation, because the failure this advance guards against is a *surface*
+//! that forgot to ask, not a predicate that answered wrong.
+//!
+//! The streamable-HTTP tests bind a real loopback listener and drive a real
+//! `rmcp` client over it — the transport shape
+//! [docs/tech-direction/mcp.md](../../../docs/tech-direction/mcp.md) MCP-003
+//! and MCP-004 name as what cloud harnesses actually require — rather than
+//! calling the tool functions directly, so "a cloud agent holding a scoped
+//! token can call the same tool surface as desktop harnesses" is verified end
+//! to end.
+
+use std::net::SocketAddr;
+
+use axum::Router;
+use axum::body::Body;
+use axum::http::{Request, Response, StatusCode};
+use chrono::{Duration, Utc};
+use http_body_util::BodyExt;
+use rmcp::model::{CallToolRequestParams, CallToolResult};
+use rmcp::service::RunningService;
+use rmcp::transport::StreamableHttpClientTransport;
+use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
+use rmcp::{RoleClient, ServiceExt};
+use serde_json::{Map, Value, json};
+use tokio::task::JoinHandle;
+use totem_gateway::{AppState, TokenRegistry};
+use tower::ServiceExt as _;
+
+const ADA: &str = "ada";
+const GRACE: &str = "grace";
+const REPO: &str = "srswart/totem";
+const OTHER_REPO: &str = "srswart/other";
+
+/// A composed, authenticated application over a fresh embedded store, plus the
+/// registry its tokens were issued from.
+async fn app() -> (Router, TokenRegistry) {
+    let state = AppState::in_memory()
+        .await
+        .expect("embedded engine connects and migrations apply");
+    let tokens = state.tokens.clone();
+    (totem_gateway::authenticated_app(state), tokens)
+}
+
+/// A token bound to `REPO` + `project:REPO` + `ADA` — the ordinary cloud-agent
+/// credential shape.
+fn project_token(tokens: &TokenRegistry) -> String {
+    tokens
+        .issue(REPO, &format!("project:{REPO}"), ADA, None)
+        .expect("a coherent repo/scope/actor binding issues")
+}
+
+async fn send(router: &Router, request: Request<Body>) -> Response<Body> {
+    router
+        .clone()
+        .oneshot(request)
+        .await
+        .expect("the router does not fail to produce a response")
+}
+
+fn post(path: &str, token: Option<&str>, body: Value) -> Request<Body> {
+    let mut builder = Request::builder()
+        .method("POST")
+        .uri(path)
+        .header("content-type", "application/json");
+    if let Some(token) = token {
+        builder = builder.header("authorization", format!("Bearer {token}"));
+    }
+    builder
+        .body(Body::from(
+            serde_json::to_vec(&body).expect("body serialises"),
+        ))
+        .expect("request builds")
+}
+
+async fn body_text(response: Response<Body>) -> String {
+    let bytes = response
+        .into_body()
+        .collect()
+        .await
+        .expect("body collects")
+        .to_bytes();
+    String::from_utf8(bytes.to_vec()).expect("body is utf-8")
+}
+
+fn save_body(actor: &str, project: &str, scope: &str, body: &str) -> Value {
+    json!({
+        "project": project,
+        "teams": [],
+        "category": "knowledge",
+        "scope": scope,
+        "subject": null,
+        "body": body,
+        "tags": [],
+        "author": { "kind": "agent", "actor": actor },
+        "harness": "claude_code",
+        "session": "sess-1",
+        "turn": null,
+    })
+}
+
+fn recall_body(actor: &str, project: Option<&str>, teams: Vec<&str>) -> Value {
+    json!({
+        "actor": actor,
+        "project": project,
+        "teams": teams,
+        "query": null,
+        "categories": [],
+        "since": null,
+        "limit": null,
+        "harness": "claude_code",
+        "session": "sess-1",
+        "turn": null,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Authentication: is there a live credential at all?
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn a_request_with_no_credential_is_refused() {
+    let (router, _tokens) = app().await;
+
+    let response = send(&router, post("/recall", None, recall_body(ADA, Some(REPO), vec![]))).await;
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        response
+            .headers()
+            .get("www-authenticate")
+            .map(|value| value.to_str().expect("header is ascii")),
+        Some("Bearer"),
+        "a 401 must tell the client how to authenticate (docs/tech-direction/mcp.md MCP-003)"
+    );
+}
+
+#[tokio::test]
+async fn an_unknown_credential_is_refused() {
+    let (router, _tokens) = app().await;
+
+    let response = send(
+        &router,
+        post(
+            "/recall",
+            Some("totem_cred_not_a_real_token"),
+            recall_body(ADA, Some(REPO), vec![]),
+        ),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn a_revoked_credential_is_refused() {
+    let (router, tokens) = app().await;
+    let token = project_token(&tokens);
+
+    let before = send(
+        &router,
+        post(
+            "/recall",
+            Some(&token),
+            recall_body(ADA, Some(REPO), vec![]),
+        ),
+    )
+    .await;
+    assert_eq!(before.status(), StatusCode::OK, "sanity: the token works");
+
+    assert!(tokens.revoke(&token), "revoking a live token reports true");
+
+    let after = send(
+        &router,
+        post(
+            "/recall",
+            Some(&token),
+            recall_body(ADA, Some(REPO), vec![]),
+        ),
+    )
+    .await;
+    assert_eq!(after.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn an_expired_credential_is_refused() {
+    let (router, tokens) = app().await;
+    let token = tokens
+        .issue(
+            REPO,
+            &format!("project:{REPO}"),
+            ADA,
+            Some(Utc::now() - Duration::seconds(1)),
+        )
+        .expect("an already-expired token still issues");
+
+    let response = send(
+        &router,
+        post(
+            "/recall",
+            Some(&token),
+            recall_body(ADA, Some(REPO), vec![]),
+        ),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn the_registry_never_retains_the_plaintext_token() {
+    let tokens = TokenRegistry::new();
+    let token = project_token(&tokens);
+
+    assert!(
+        !format!("{tokens:?}").contains(&token),
+        "a token registry that keeps plaintext turns a state dump into a credential dump"
+    );
+    assert!(
+        tokens.verify(&token, Utc::now()).is_ok(),
+        "sanity: the token still verifies against its stored hash"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Authorization: the credential is live, but is the request inside its bounds?
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn a_token_cannot_read_as_another_actor() {
+    let (router, tokens) = app().await;
+    let token = project_token(&tokens);
+
+    let response = send(
+        &router,
+        post(
+            "/recall",
+            Some(&token),
+            recall_body(GRACE, Some(REPO), vec![]),
+        ),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let body = body_text(response).await;
+    assert!(
+        body.contains("actor"),
+        "the refusal should name the rule it enforced, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn a_token_cannot_write_as_another_author() {
+    let (router, tokens) = app().await;
+    let token = project_token(&tokens);
+
+    let response = send(
+        &router,
+        post(
+            "/save",
+            Some(&token),
+            save_body(GRACE, REPO, &format!("project:{REPO}"), "not grace's to write"),
+        ),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn a_token_bound_to_one_repo_cannot_name_another() {
+    let (router, tokens) = app().await;
+    let token = project_token(&tokens);
+
+    let read = send(
+        &router,
+        post(
+            "/recall",
+            Some(&token),
+            recall_body(ADA, Some(OTHER_REPO), vec![]),
+        ),
+    )
+    .await;
+    assert_eq!(
+        read.status(),
+        StatusCode::FORBIDDEN,
+        "a repo-bound token that can read another repo's project scope is the leak this advance exists to prevent"
+    );
+
+    let write = send(
+        &router,
+        post(
+            "/save",
+            Some(&token),
+            save_body(ADA, OTHER_REPO, &format!("project:{OTHER_REPO}"), "leak"),
+        ),
+    )
+    .await;
+    assert_eq!(write.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn an_actor_bound_token_cannot_widen_its_chain_to_project_scope() {
+    let (router, tokens) = app().await;
+    let token = tokens
+        .issue(REPO, &format!("actor:{ADA}"), ADA, None)
+        .expect("an actor-scoped token issues");
+
+    let widened = send(
+        &router,
+        post(
+            "/recall",
+            Some(&token),
+            recall_body(ADA, Some(REPO), vec![]),
+        ),
+    )
+    .await;
+    assert_eq!(
+        widened.status(),
+        StatusCode::FORBIDDEN,
+        "an actor-bound token that resolves a project scope reads memories it was never granted"
+    );
+
+    let own = send(&router, post("/recall", Some(&token), recall_body(ADA, None, vec![]))).await;
+    assert_eq!(
+        own.status(),
+        StatusCode::OK,
+        "its own actor scope is exactly what it was issued for"
+    );
+}
+
+#[tokio::test]
+async fn a_token_cannot_claim_a_team_it_was_not_issued_for() {
+    let (router, tokens) = app().await;
+    let token = project_token(&tokens);
+
+    let response = send(
+        &router,
+        post(
+            "/recall",
+            Some(&token),
+            recall_body(ADA, Some(REPO), vec!["058-totem"]),
+        ),
+    )
+    .await;
+
+    assert_eq!(
+        response.status(),
+        StatusCode::FORBIDDEN,
+        "team membership asserted by the caller, not by the credential, is a self-granted scope"
+    );
+}
+
+#[tokio::test]
+async fn only_a_platform_bound_token_may_write_platform_scope() {
+    let (router, tokens) = app().await;
+
+    // Platform is in every resolved chain by `ScopeChain::resolve`'s own
+    // construction, so the store alone would accept this write from anyone.
+    // The credential is what must refuse it.
+    let project_bound = project_token(&tokens);
+    let refused = send(
+        &router,
+        post(
+            "/save",
+            Some(&project_bound),
+            save_body(ADA, REPO, "platform", "everyone would see this"),
+        ),
+    )
+    .await;
+    assert_eq!(refused.status(), StatusCode::FORBIDDEN);
+
+    let platform_bound = tokens
+        .issue(REPO, "platform", ADA, None)
+        .expect("a platform-scoped token issues");
+    let allowed = send(
+        &router,
+        post(
+            "/save",
+            Some(&platform_bound),
+            save_body(ADA, REPO, "platform", "deliberately shared"),
+        ),
+    )
+    .await;
+    assert_eq!(allowed.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn a_token_within_its_bounds_can_save_and_recall() {
+    let (router, tokens) = app().await;
+    let token = project_token(&tokens);
+
+    let saved = send(
+        &router,
+        post(
+            "/save",
+            Some(&token),
+            save_body(ADA, REPO, &format!("project:{REPO}"), "the gateway pins rmcp 3.1.0"),
+        ),
+    )
+    .await;
+    assert_eq!(saved.status(), StatusCode::OK);
+
+    let recalled = send(
+        &router,
+        post(
+            "/recall",
+            Some(&token),
+            recall_body(ADA, Some(REPO), vec![]),
+        ),
+    )
+    .await;
+    assert_eq!(recalled.status(), StatusCode::OK);
+    let body = body_text(recalled).await;
+    assert!(
+        body.contains("the gateway pins rmcp 3.1.0"),
+        "a token acting inside its own bounds must still get its memories, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn a_credential_cannot_be_issued_for_a_scope_it_does_not_own() {
+    let tokens = TokenRegistry::new();
+
+    assert!(
+        tokens
+            .issue(REPO, &format!("project:{OTHER_REPO}"), ADA, None)
+            .is_err(),
+        "a credential naming a repo other than its own binding is over-scoped at issue time"
+    );
+    assert!(
+        tokens
+            .issue(REPO, &format!("actor:{GRACE}"), ADA, None)
+            .is_err(),
+        "a credential naming an actor other than its own binding is over-scoped at issue time"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// MCP over streamable HTTP: the transport cloud harnesses actually require.
+// ---------------------------------------------------------------------------
+
+/// A bound loopback server over the composed, authenticated application.
+struct Server {
+    address: SocketAddr,
+    handle: JoinHandle<()>,
+    tokens: TokenRegistry,
+}
+
+impl Server {
+    async fn start() -> Self {
+        let (router, tokens) = app().await;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind an OS-assigned loopback port");
+        let address = listener.local_addr().expect("listener has a local address");
+        let handle = tokio::spawn(async move {
+            axum::serve(listener, router).await.expect("axum::serve");
+        });
+        Self {
+            address,
+            handle,
+            tokens,
+        }
+    }
+
+    fn uri(&self) -> String {
+        format!("http://{}/mcp", self.address)
+    }
+
+    async fn client(&self, token: Option<&str>) -> Result<RunningService<RoleClient, ()>, String> {
+        let mut config = StreamableHttpClientTransportConfig::with_uri(self.uri());
+        if let Some(token) = token {
+            config = config.auth_header(token);
+        }
+        ().serve(StreamableHttpClientTransport::from_config(config))
+            .await
+            .map_err(|error| error.to_string())
+    }
+
+    async fn stop(self) {
+        self.handle.abort();
+        match self.handle.await {
+            Ok(()) => {}
+            Err(error) if error.is_cancelled() => {}
+            Err(error) => panic!("gateway server task failed: {error}"),
+        }
+    }
+}
+
+fn object(value: Value) -> Map<String, Value> {
+    value.as_object().cloned().expect("value is a JSON object")
+}
+
+fn text_of(result: &CallToolResult) -> String {
+    result
+        .content
+        .iter()
+        .find_map(|block| block.as_text())
+        .map(|text| text.text.clone())
+        .unwrap_or_else(|| panic!("tool call returned no text content: {result:?}"))
+}
+
+#[tokio::test]
+async fn streamable_http_refuses_a_session_with_no_credential() {
+    let server = Server::start().await;
+
+    let outcome = server.client(None).await;
+
+    assert!(
+        outcome.is_err(),
+        "an unauthenticated cloud agent must not get an MCP session at all"
+    );
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn a_scoped_token_reaches_the_same_tool_surface_over_streamable_http() {
+    let server = Server::start().await;
+    let token = project_token(&server.tokens);
+    let client = server.client(Some(&token)).await.expect("initialize");
+
+    let tools = client
+        .list_tools(Default::default())
+        .await
+        .expect("list_tools over streamable HTTP");
+    let names: Vec<&str> = tools.tools.iter().map(|tool| tool.name.as_ref()).collect();
+    for expected in [
+        "totem_recall",
+        "totem_save",
+        "totem_landscape",
+        "totem_feedback",
+        "totem_contest",
+        "totem_advance_log",
+        "totem_advance_status",
+    ] {
+        assert!(
+            names.contains(&expected),
+            "cloud agents must see the same tool surface as desktop harnesses; missing {expected} in {names:?}"
+        );
+    }
+
+    let saved = client
+        .call_tool(CallToolRequestParams::new("totem_save").with_arguments(object(save_body(
+            ADA,
+            REPO,
+            &format!("project:{REPO}"),
+            "streamable HTTP carries the same tools",
+        ))))
+        .await
+        .expect("totem_save over streamable HTTP");
+    assert!(text_of(&saved).contains("id"), "save returns the new id");
+
+    let recalled = client
+        .call_tool(
+            CallToolRequestParams::new("totem_recall")
+                .with_arguments(object(recall_body(ADA, Some(REPO), vec![]))),
+        )
+        .await
+        .expect("totem_recall over streamable HTTP");
+    assert!(
+        text_of(&recalled).contains("streamable HTTP carries the same tools"),
+        "the record saved over this transport must come back through it"
+    );
+
+    client.cancel().await.expect("clean shutdown");
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn a_token_cannot_act_as_another_actor_over_streamable_http() {
+    let server = Server::start().await;
+    let token = project_token(&server.tokens);
+    let client = server.client(Some(&token)).await.expect("initialize");
+
+    let outcome = client
+        .call_tool(
+            CallToolRequestParams::new("totem_recall")
+                .with_arguments(object(recall_body(GRACE, Some(REPO), vec![]))),
+        )
+        .await;
+
+    assert!(
+        outcome.is_err(),
+        "the MCP surface must enforce the same bounds as REST, not just the REST surface: {outcome:?}"
+    );
+
+    client.cancel().await.expect("clean shutdown");
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn a_token_bound_to_one_repo_cannot_name_another_over_streamable_http() {
+    let server = Server::start().await;
+    let token = project_token(&server.tokens);
+    let client = server.client(Some(&token)).await.expect("initialize");
+
+    let outcome = client
+        .call_tool(CallToolRequestParams::new("totem_save").with_arguments(object(save_body(
+            ADA,
+            OTHER_REPO,
+            &format!("project:{OTHER_REPO}"),
+            "leak",
+        ))))
+        .await;
+
+    assert!(
+        outcome.is_err(),
+        "a repo-bound token writing another repo's project scope over MCP: {outcome:?}"
+    );
+
+    client.cancel().await.expect("clean shutdown");
+    server.stop().await;
+}

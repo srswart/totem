@@ -27,12 +27,19 @@ chrono.workspace = true
 # Pinned exactly, matching totem-mcp-spike's pin: docs/tech-direction/mcp.md
 # (ADV-GATEWAY-005) verified this exact version's stdio and streamable-HTTP
 # transports end-to-end and named re-verifying the pin at ADV-GATEWAY-002 time
-# as a standing instruction, not a one-time check. Only stdio is wired up here
-# (this advance's title); `transport-streamable-http-server` is
-# ADV-GATEWAY-003's job, alongside the auth design it needs to sit behind.
-rmcp = { version = "=3.1.0", features = ["transport-io"] }
+# as a standing instruction, not a one-time check. Both transports are wired
+# up now: stdio for desktop harnesses (ADV-GATEWAY-002) and
+# `transport-streamable-http-server` for cloud agents (ADV-GATEWAY-003), the
+# latter only ever mounted behind this crate's bearer-credential layer.
+rmcp = { version = "=3.1.0", features = [
+    "transport-io",
+    "transport-streamable-http-server",
+] }
 serde.workspace = true
 serde_json.workspace = true
+# Credential fingerprints. The registry stores SHA-256 of each token and never
+# the token itself, so a state dump is not a credential dump (ADV-GATEWAY-003).
+sha2 = "0.10"
 # Named directly only for the embedded engine's `Db` connection type
 # (`AppState`'s field type); every query goes through `totem-store`'s
 # repositories, never a raw `Surreal<C>` this crate holds itself.
@@ -41,17 +48,25 @@ thiserror.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net"] }
 totem-core = { path = "../totem-core" }
 totem-store = { path = "../totem-store" }
+# Opaque credential material: two v4 UUIDs, the same shape and the same
+# CSPRNG-backed source `totem-cli`'s `credential::issue` already uses, so a
+# CLI-issued credential and a gateway-issued one are indistinguishable.
+uuid.workspace = true
 
 [dev-dependencies]
 http-body-util = "0.1"
 tower = { version = "0.5", features = ["util"] }
-# Client-side transport for the tool-dispatch tests this commit adds
-# (tests/mcp_recall_and_save.rs): a real rmcp client, spawning the
-# not-yet-implemented `mcp_stdio` binary as a child process (ADV-GATEWAY-002).
+# Client-side transports for the tool-dispatch tests: a real rmcp client over
+# stdio (tests/mcp_recall_and_save.rs, ADV-GATEWAY-002) and over streamable
+# HTTP against a real loopback listener (tests/auth.rs, ADV-GATEWAY-003).
 # Pinned exactly, matching totem-mcp-spike's pin: docs/tech-direction/mcp.md
 # (ADV-GATEWAY-005) verified this exact version end-to-end and named
 # re-verifying the pin at ADV-GATEWAY-002 time as a standing instruction.
-rmcp = { version = "=3.1.0", features = ["client", "transport-child-process"] }
+rmcp = { version = "=3.1.0", features = [
+    "client",
+    "transport-child-process",
+    "transport-streamable-http-client-reqwest",
+] }
 tokio = { workspace = true, features = ["process"] }
 
 [lints]
