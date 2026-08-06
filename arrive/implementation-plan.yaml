@@ -129,7 +129,7 @@ passes:
           - id: "ADV-CLI-001"
             advance_id: "ADV-CLI-001"
             title: "totem CLI: enroll, sync hook install, actor credentials"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-ARRIVE-SYNC-001", "ADV-GATEWAY-001"]
             notes: "Enroll wraps registration + ingestion + hook install."
