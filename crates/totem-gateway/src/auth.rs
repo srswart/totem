@@ -58,7 +58,11 @@ type Fingerprint = [u8; 32];
 pub struct TokenGrant {
     /// The repo this credential may name.
     pub repo: RepoId,
-    /// The single scope this credential is bound to.
+    /// The scope this credential is bound to — its **ceiling**, not the only
+    /// scope it may touch. See [`TokenGrant::authorize_scope`] for exactly
+    /// what a given binding reaches; the short version is that a credential
+    /// may write its own actor scope and (unless it is `actor:`-bound) its own
+    /// repo's project scope, plus the bound scope itself.
     pub scope: Scope,
     /// The actor this credential authenticates as.
     pub actor: ActorId,
@@ -196,12 +200,41 @@ impl TokenGrant {
         Ok(())
     }
 
-    /// Refuse a write into a scope the credential was not issued for.
+    /// Refuse a write into a scope the credential does not reach.
     ///
     /// The store already refuses a write outside the writer's resolved chain,
     /// and after [`TokenGrant::authorize_identity`] that chain is the honest
     /// one. This adds the check the chain cannot express: `platform` is in
     /// every chain, so only a `platform`-bound credential may write there.
+    ///
+    /// # The binding is a ceiling, not an exact match
+    ///
+    /// Spelled out because it is easy to read the wrong promise into "bound to
+    /// repo + scope". A grant bound at scope `S`, repo `R`, actor `A` may
+    /// write:
+    ///
+    /// | bound scope | `actor:A` | `project:R` | `team:T` | `platform` |
+    /// |---|---|---|---|---|
+    /// | `actor:A`   | yes | no  | no          | no  |
+    /// | `project:R` | yes | yes | no          | no  |
+    /// | `team:T`    | yes | yes | only `T`    | no  |
+    /// | `platform`  | yes | yes | no          | yes |
+    ///
+    /// Never another actor's scope, never another repo's project scope, never
+    /// a team the credential was not issued for.
+    ///
+    /// The `team:`/`platform` rows are the ones worth pausing on: both reach
+    /// `project:R`. That is deliberate, and it is a *de-escalation* rather
+    /// than an escalation — `project:R` is strictly narrower than the scope
+    /// those credentials already hold, and `R` is their own bound repo either
+    /// way. The alternative, exact-match writes, would also stop a
+    /// `project:`-bound cloud agent from saving a private `actor:` note, which
+    /// is ordinary work, not a privilege.
+    ///
+    /// The genuinely tighter design separates a read ceiling from a write set,
+    /// so an admin could issue "reads the chain, writes only `platform`". That
+    /// is a real improvement and a real interface change; it is not this
+    /// advance's call to make unilaterally.
     pub fn authorize_scope(&self, scope: &Scope) -> Result<(), AuthError> {
         let permitted = match scope {
             Scope::Actor(actor) => actor == &self.actor,
@@ -583,6 +616,64 @@ mod tests {
                 .authorize_scope(&Scope::Team(team("059-other")))
                 .is_err()
         );
+    }
+
+    /// The full write matrix from [`TokenGrant::authorize_scope`]'s doc, as an
+    /// executable table rather than prose.
+    ///
+    /// Pinned deliberately after review asked whether `team:`/`platform`
+    /// credentials should reach `project:` scope: the answer is yes, the
+    /// binding is a ceiling, and that intent should fail loudly if someone
+    /// later narrows or widens it by accident.
+    #[test]
+    fn the_write_matrix_is_a_ceiling_and_never_crosses_a_binding() {
+        let bindings = [
+            Scope::Actor(actor("ada")),
+            Scope::Project(repo("srswart/totem")),
+            Scope::Team(team("058-totem")),
+            Scope::Platform,
+        ];
+        //                       actor:ada  project:own  team:058  platform
+        let expected = [
+            /* actor:ada   */ [true, false, false, false],
+            /* project:own */ [true, true, false, false],
+            /* team:058    */ [true, true, true, false],
+            /* platform    */ [true, true, false, true],
+        ];
+
+        let targets = [
+            Scope::Actor(actor("ada")),
+            Scope::Project(repo("srswart/totem")),
+            Scope::Team(team("058-totem")),
+            Scope::Platform,
+        ];
+
+        for (bound, row) in bindings.iter().zip(expected) {
+            let grant = TokenGrant {
+                scope: bound.clone(),
+                ..project_grant()
+            };
+            for (target, allowed) in targets.iter().zip(row) {
+                assert_eq!(
+                    grant.authorize_scope(target).is_ok(),
+                    allowed,
+                    "a {bound}-bound credential writing {target}"
+                );
+            }
+
+            // No binding, however wide, ever crosses to another actor, another
+            // repo, or a team it was not issued for.
+            for forbidden in [
+                Scope::Actor(actor("grace")),
+                Scope::Project(repo("srswart/other")),
+                Scope::Team(team("059-other")),
+            ] {
+                assert!(
+                    grant.authorize_scope(&forbidden).is_err(),
+                    "a {bound}-bound credential must not write {forbidden}"
+                );
+            }
+        }
     }
 
     #[test]
