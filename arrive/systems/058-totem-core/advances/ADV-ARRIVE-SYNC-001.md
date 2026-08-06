@@ -11,7 +11,7 @@ advance:
   review_time_actual_minutes: ~
   pr_links: []
   external_refs: []
-  reviewability_score: 99
+  reviewability_score: 100
   risk_flags: ["migration", "concurrency", "new_dependency"]
   evidence: ["tests:unit", "tests:integration"]
   model_usage: []
@@ -100,9 +100,9 @@ After this advance:
 
 ## Reviewability
 
-`arrive score --base origin/advance/phase-005` reports **99, RED**
-(14 files, +1374/-30 lines; Size 64, Novelty 20, Risk 15; flags `migration`,
-`concurrency`, `new_dependency`). Splitting further rather than justifying
+`arrive score --base origin/advance/phase-005` reports **100, RED** (after
+the Copilot-review fix commit; 65/20/15 breakdown, same flags). Splitting
+further rather than justifying
 atomicity was considered and rejected:
 
 - **Store write path alone** (`landscape.rs`, migration 3, its tests) would
@@ -215,6 +215,23 @@ measured.
   `LandscapeParams.repo`'s doc comment (it is the ARRIVE registry id, not the
   `owner/name` scope form `totem_recall`/`totem_save` use — two different id
   spaces).
+
+### 2026-08-06 - fix: address Copilot review (PR #20)
+
+- `crates/totem-arrive-sync/src/lib.rs`: `sorted_entries` no longer drops a
+  per-entry `read_dir` error via `.ok()` — a directory entry that fails to
+  read now fails the whole ingestion instead of silently producing a
+  possibly-incomplete snapshot.
+- `crates/totem-arrive-sync/src/lib.rs`, `Cargo.toml`: `sync_repo` is now
+  generic over `surrealdb::Connection` instead of hardcoded to the embedded
+  `Db` engine — it only ever calls `Store::landscape()`, so it makes no
+  assumption about which connection type the caller's store was built
+  against.
+- `crates/totem-store/src/landscape.rs`: `count()` (used for `sync_run`'s
+  `*_synced` fields) now matches `Number::Int` directly instead of routing
+  through the shared `f64`-widening `row::number` helper, so a
+  wrong-shaped stored value (a float, an out-of-range integer) is reported
+  as malformed rather than silently truncated.
 
 ## Check for Understanding
 

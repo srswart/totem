@@ -18,7 +18,7 @@
 
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use surrealdb::types::{Object, RecordId, RecordIdKey, SurrealValue, Value};
+use surrealdb::types::{Number, Object, RecordId, RecordIdKey, SurrealValue, Value};
 use surrealdb::{Connection, Surreal};
 
 use crate::error::{StoreError, StoreResult};
@@ -513,11 +513,14 @@ fn strings(row: &Object, key: &str) -> StoreResult<Vec<String>> {
     }
 }
 
+/// Matches `Number::Int` directly rather than routing through
+/// [`row::number`]'s `f64` widening: these fields are `TYPE int` in the
+/// schema, and a float round trip through `f64` could silently truncate a
+/// value that should instead be reported as malformed.
 fn count(row: &Object, key: &str) -> StoreResult<usize> {
     match row.get(key) {
-        Some(value) => row::number(value)
-            .and_then(|value| usize::try_from(value as i64).ok())
-            .ok_or_else(|| malformed(format!("`{key}` is not a non-negative integer")).into()),
-        None => Err(malformed(format!("stored row has no `{key}`")).into()),
+        Some(Value::Number(Number::Int(value))) => usize::try_from(*value)
+            .map_err(|_| malformed(format!("`{key}` is out of range for usize: {value}")).into()),
+        other => Err(malformed(format!("`{key}` is not a non-negative integer: {other:?}")).into()),
     }
 }

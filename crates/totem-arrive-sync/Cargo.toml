@@ -10,10 +10,11 @@ publish.workspace = true
 [dependencies]
 serde.workspace = true
 serde_yaml.workspace = true
-# Named directly only for `sync_repo`'s embedded-engine `Db` connection type,
-# matching totem-gateway's `AppState` convention: every write still goes
-# through `totem-store`'s `LandscapeRepository`, never a raw connection this
-# crate holds itself.
+# `sync_repo` is generic over `surrealdb::Connection` (it only ever calls
+# `Store::landscape()`, never touches a connection directly), so this crate's
+# own code needs no engine feature. `kv-mem` is enabled because the doctest
+# and tests/dogfood.rs build their own embedded store to sync against — the
+# same engine every test in this workspace uses.
 surrealdb = { workspace = true, features = ["kv-mem"] }
 thiserror.workspace = true
 totem-store = { path = "../totem-store" }

@@ -28,7 +28,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
-use surrealdb::engine::local::Db;
+use surrealdb::Connection;
 use totem_store::{
     AdvanceArtifact, ComponentArtifact, LandscapeSnapshot, OwnerArtifact, RepoArtifact, Store,
     SyncSummary, SystemArtifact,
@@ -82,14 +82,23 @@ fn parse_yaml<T: for<'de> Deserialize<'de>>(path: &Path, text: &str) -> Result<T
 /// among otherwise-equal artifacts) does not depend on the filesystem's
 /// unspecified `read_dir` order.
 fn sorted_entries(dir: &Path, extension: &str) -> Result<Vec<PathBuf>, IngestError> {
-    let mut paths: Vec<PathBuf> = fs::read_dir(dir)
-        .map_err(|source| IngestError::Io {
+    let mut paths = Vec::new();
+    for entry in fs::read_dir(dir).map_err(|source| IngestError::Io {
+        path: dir.to_path_buf(),
+        source,
+    })? {
+        // A per-entry error (permissions, a concurrent delete) is dropped
+        // silently by `.ok()` — reported instead, so a partial directory
+        // read never produces a snapshot that looks complete but isn't.
+        let entry = entry.map_err(|source| IngestError::Io {
             path: dir.to_path_buf(),
             source,
-        })?
-        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
-        .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some(extension))
-        .collect();
+        })?;
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) == Some(extension) {
+            paths.push(path);
+        }
+    }
     paths.sort();
     Ok(paths)
 }
@@ -289,8 +298,13 @@ pub fn read_repo_artifacts(arrive_root: &Path) -> Result<LandscapeSnapshot, Inge
 /// Parse `arrive_root` and sync the result into `store` in one call — the
 /// enroll-time and hook-triggered entry point (`totem enroll`, ADV-CLI-001,
 /// will call this; this advance dogfoods it directly against this repo).
-pub async fn sync_repo(
-    store: &Store<Db>,
+///
+/// Generic over the store's connection: this crate only ever calls
+/// `Store::landscape()`, never touches the connection directly, so it makes
+/// no assumption about which engine `store` was built against (the
+/// embedded engine every test here uses, or a future server connection).
+pub async fn sync_repo<C: Connection>(
+    store: &Store<C>,
     arrive_root: &Path,
     source: &str,
 ) -> Result<SyncSummary, IngestError> {
