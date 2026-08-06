@@ -21,6 +21,10 @@ pub enum AccessOperation {
     Recall,
     /// A write of a new memory record.
     Save,
+    /// An explicit feedback signal applied to an existing record's economics
+    /// (ADV-GATEWAY-004 gap-fill) — distinct from [`AccessOperation::Save`]
+    /// because it revises a record's economics rather than writing a new one.
+    Feedback,
 }
 
 /// Who touched memory, from where, when, and via which surface.
