@@ -294,16 +294,16 @@ passes:
               scope resolution and append to the access log.
           - id: "ADV-CONSOLE-004"
             advance_id: "ADV-CONSOLE-004"
-            title: "Console visual design system (Tailwind preferred, vanilla CSS fallback)"
+            title: "Console visual design system (Tailwind, workstation)"
             status: planned
             owner: "058-totem"
             dependencies: ["ADV-CONSOLE-001"]
             notes: >-
-              First 'humans observe' surface gets a real visual design: app
-              shell, status badges, card/table presentation. Tailwind v4 via
-              dx's native integration if the sandbox can fetch the CLI;
-              committed vanilla stylesheet fallback otherwise — the outcome
-              is the spec, the vehicle is recorded honestly.
+              WORKSTATION — Tailwind's CLI is a blocked-download risk in the
+              sandbox, and visual design is verified by a human in a browser.
+              App shell, status badges, card/table presentation via Tailwind
+              v4 through dx's native integration; before/after screenshots
+              are evidence.
       - id: "phase-009"
         title: "Evaluations (quality, security, performance)"
         order: 2
