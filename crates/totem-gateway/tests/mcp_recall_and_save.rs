@@ -21,8 +21,7 @@ async fn client() -> RunningService<RoleClient, ()> {
     let transport =
         TokioChildProcess::new(Command::new(env!("CARGO_BIN_EXE_mcp_stdio")).configure(|_cmd| {}))
             .expect("spawn mcp_stdio child process");
-    ()
-        .serve(transport)
+    ().serve(transport)
         .await
         .expect("initialize MCP session over stdio")
 }
@@ -99,8 +98,11 @@ async fn totem_save_and_totem_recall_round_trip_over_stdio() {
 
     let save_result = client
         .call_tool(
-            CallToolRequestParams::new("totem_save")
-                .with_arguments(save_args(ADA, "project:srswart/totem", "run `cargo fmt` before pushing")),
+            CallToolRequestParams::new("totem_save").with_arguments(save_args(
+                ADA,
+                "project:srswart/totem",
+                "run `cargo fmt` before pushing",
+            )),
         )
         .await
         .expect("call_tool(totem_save)");
@@ -122,7 +124,9 @@ async fn totem_save_and_totem_recall_round_trip_over_stdio() {
         "totem_recall reported an error: {recall_result:?}"
     );
     let records = json_of(&recall_result);
-    let records = records.as_array().expect("totem_recall returns a JSON array");
+    let records = records
+        .as_array()
+        .expect("totem_recall returns a JSON array");
     assert_eq!(records.len(), 1);
     assert_eq!(records[0]["id"], Value::String(saved_id));
     assert_eq!(
@@ -139,8 +143,11 @@ async fn totem_recall_never_returns_another_actors_private_memory() {
 
     let ada_save = client
         .call_tool(
-            CallToolRequestParams::new("totem_save")
-                .with_arguments(save_args(ADA, "actor:ada", "ada's private note")),
+            CallToolRequestParams::new("totem_save").with_arguments(save_args(
+                ADA,
+                "actor:ada",
+                "ada's private note",
+            )),
         )
         .await
         .expect("call_tool(totem_save) for ada");
@@ -148,8 +155,11 @@ async fn totem_recall_never_returns_another_actors_private_memory() {
 
     let grace_save = client
         .call_tool(
-            CallToolRequestParams::new("totem_save")
-                .with_arguments(save_args(GRACE, "actor:grace", "grace's private note")),
+            CallToolRequestParams::new("totem_save").with_arguments(save_args(
+                GRACE,
+                "actor:grace",
+                "grace's private note",
+            )),
         )
         .await
         .expect("call_tool(totem_save) for grace");
@@ -164,7 +174,11 @@ async fn totem_recall_never_returns_another_actors_private_memory() {
         .as_array()
         .expect("array")
         .iter()
-        .map(|record| record["content"]["body"].as_str().expect("body is a string"))
+        .map(|record| {
+            record["content"]["body"]
+                .as_str()
+                .expect("body is a string")
+        })
         .collect();
     assert_eq!(bodies, vec!["ada's private note"]);
 
@@ -177,8 +191,11 @@ async fn writing_into_another_actors_scope_over_mcp_is_refused() {
 
     let result = client
         .call_tool(
-            CallToolRequestParams::new("totem_save")
-                .with_arguments(save_args(ADA, "actor:grace", "planted in grace's scope")),
+            CallToolRequestParams::new("totem_save").with_arguments(save_args(
+                ADA,
+                "actor:grace",
+                "planted in grace's scope",
+            )),
         )
         .await;
     assert!(
@@ -195,7 +212,8 @@ async fn totem_landscape_is_callable_and_honestly_reports_no_data_yet() {
 
     let result = client
         .call_tool(
-            CallToolRequestParams::new("totem_landscape").with_arguments(object(json!({ "repo": REPO }))),
+            CallToolRequestParams::new("totem_landscape")
+                .with_arguments(object(json!({ "repo": REPO }))),
         )
         .await
         .expect("call_tool(totem_landscape)");
