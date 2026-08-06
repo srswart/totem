@@ -1,7 +1,7 @@
 ---
 advance:
   id: "ADV-CONSOLE-004"
-  title: "Console visual design system (Tailwind preferred, vanilla CSS fallback)"
+  title: "Console visual design system (Tailwind, workstation)"
   system: "058-totem-core"
   primary_component: "console"
   components: ["console"]
@@ -31,22 +31,19 @@ readable data presentation, and clear status communication — without
 compromising the thin-view architecture (`view_model.rs` parses, `app.rs`
 renders) that keeps the console testable.
 
+WORKSTATION advance: Tailwind's CLI is a downloaded binary the cloud
+sandbox's egress proxy would likely refuse (the SurrealDB and embedding-model
+precedents), and visual design is verified by a human looking at a browser —
+both point at a workstation session. Cloud routines skip it per the
+workstation gate.
+
 ## Approach
 
-**Preferred: Tailwind CSS v4 via Dioxus's native integration** — `dx` 0.7
-detects a Tailwind input stylesheet and runs the Tailwind CLI during
+**Tailwind CSS v4 via Dioxus's native integration** — `dx` 0.7 detects a
+Tailwind input stylesheet and runs the Tailwind CLI during
 `dx serve`/`dx build`, so utility classes in `rsx!` are the styling surface
-and no JS toolchain enters the workspace.
-
-**Sandbox reality check, first task:** the Tailwind CLI is a downloaded
-binary, and the cloud sandbox's egress proxy has blocked binary downloads
-before (ADV-STORE-006, EMB-002). If the download is refused, do NOT fight
-the proxy: fall back to a hand-authored vanilla stylesheet (CSS custom
-properties for a small token palette; committed `assets/` file; no build
-step), keep the class-name surface in `rsx!` identical in spirit, and record
-which path shipped. The *outcome* is the spec; Tailwind is the preferred
-vehicle. If the fallback ships, a workstation follow-up may swap Tailwind in
-later without redesigning.
+and no JS toolchain enters the workspace. Pin the Tailwind CLI version so
+the toolchain stays reproducible.
 
 ## Behavioral Change
 
@@ -65,14 +62,14 @@ After this advance:
   intentional, not broken.
 - Refresh/loading states are visible (the fetch already exists; show it).
 - `dioxus-ssr` render tests updated: assert the semantic structure and
-  status-badge classes, not pixel styling — tests stay meaningful under
-  either styling vehicle.
+  status-badge classes, not pixel styling.
+- Verified in a real browser (`dx serve`), with before/after screenshots
+  recorded as evidence — the verification ADV-CONSOLE-001 had to defer is
+  in scope here by construction.
 
 ## Planned Implementation Tasks
 
 - [ ] branch: create or confirm feature branch for this advance
-- [ ] probe: attempt the Tailwind CLI fetch; record success or the exact
-      refusal, and choose the vehicle accordingly
 - [ ] tidy: preparatory refactoring (no behavior change)
 - [ ] test: SSR structure/badge assertions ahead of the restyle
 - [ ] feat: app shell, landscape cards/badges, memory browser hierarchy,
@@ -89,8 +86,8 @@ styling toolchain decision; SSR test updates.
 
 **Out of scope:** new data or routes (the relay is ADV-CONSOLE-003; audit
 views are ADV-CONSOLE-002); dark mode and theming beyond the token palette;
-browser screenshot verification (workstation, recorded as a residual the
-same way ADV-CONSOLE-001 did).
+(browser verification is IN scope for this advance — see Behavioral
+Change).
 
 ## Risk + Rollback
 
@@ -111,8 +108,7 @@ same way ADV-CONSOLE-001 did).
 - [ ] tidy:preparatory
 - [ ] tdd:red-green
 - [ ] tests:unit
-- [ ] toolchain-decision: recorded (Tailwind or fallback, with the probe
-      output verbatim)
+- [ ] screenshots: before/after, recorded in the advance
 
 ## CI Evidence Notes
 
