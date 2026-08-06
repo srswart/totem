@@ -35,6 +35,7 @@
 
 mod auth;
 mod dto;
+pub mod eval;
 mod error;
 mod handlers;
 mod mcp;
