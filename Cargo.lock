@@ -6409,6 +6409,7 @@ dependencies = [
  "dioxus-ssr",
  "dioxus-web",
  "gloo-net",
+ "percent-encoding",
  "serde",
  "serde_json",
  "thiserror 2.0.19",

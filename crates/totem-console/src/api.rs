@@ -17,10 +17,17 @@
 
 use dioxus::prelude::*;
 use gloo_net::http::Request;
+use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use totem_core::MemoryRecord;
 
 use crate::app::App;
 use crate::view_model::{LandscapeViewModel, ViewModelError, parse_landscape, parse_memories};
+
+/// `POST /recall`'s cap on this browser's own requests, in the absence of
+/// any pagination UI (review feedback on PR #22: an unbounded `limit` risks
+/// a very large response, and slow re-renders, once a project accumulates
+/// records).
+const RECALL_LIMIT: usize = 200;
 
 /// Why a gateway fetch failed.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -43,6 +50,7 @@ pub enum FetchError {
 
 /// `GET /landscape/:repo`.
 pub async fn fetch_landscape(repo: &str) -> Result<LandscapeViewModel, FetchError> {
+    let repo = utf8_percent_encode(repo.trim(), NON_ALPHANUMERIC).to_string();
     let response = Request::get(&format!("/landscape/{repo}"))
         .send()
         .await
@@ -61,13 +69,13 @@ pub async fn fetch_landscape(repo: &str) -> Result<LandscapeViewModel, FetchErro
 /// `POST /recall`, scoped to one actor's readable chain within one project.
 pub async fn fetch_memories(actor: &str, project: &str) -> Result<Vec<MemoryRecord>, FetchError> {
     let request_body = serde_json::json!({
-        "actor": actor,
-        "project": project,
+        "actor": actor.trim(),
+        "project": project.trim(),
         "teams": [],
         "query": null,
         "categories": [],
         "since": null,
-        "limit": null,
+        "limit": RECALL_LIMIT,
         "harness": "console",
         "session": "console-session",
         "turn": null,
@@ -110,11 +118,19 @@ pub fn RootApp() -> Element {
         let mut memories = memories;
         let mut error = error;
         spawn(async move {
+            // Cleared up front (review feedback on PR #22): otherwise a
+            // stale error from a previous failed refresh keeps showing next
+            // to a now-successful result.
+            error.set(None);
             match fetch_landscape(&repo_value).await {
                 Ok(view) => landscape.set(view),
                 Err(err) => error.set(Some(err.to_string())),
             }
-            if !actor_value.is_empty() && !project_value.is_empty() {
+            if actor_value.trim().is_empty() || project_value.trim().is_empty() {
+                // Cleared, not left stale: an actor/project the form no
+                // longer names should not keep showing that actor's memories.
+                memories.set(Vec::new());
+            } else {
                 match fetch_memories(&actor_value, &project_value).await {
                     Ok(records) => memories.set(records),
                     Err(err) => error.set(Some(err.to_string())),

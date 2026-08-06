@@ -44,6 +44,10 @@ totem-core = { path = "../totem-core" }
 # has to link.
 dioxus-web = "=0.6.3"
 gloo-net = "0.7"
+# Percent-encodes the `repo` path segment before it is interpolated into a
+# fetch URL (review feedback on PR #22): an untrimmed or slash-containing
+# value would otherwise change which route the browser actually requests.
+percent-encoding = "2"
 
 [dev-dependencies]
 chrono.workspace = true
