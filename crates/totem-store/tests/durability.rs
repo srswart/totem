@@ -88,7 +88,10 @@ async fn memories_survive_a_reopen() {
         .await
         .expect("get succeeds")
         .expect("the memory survived the reopen");
-    assert_eq!(stored.content.body, "this memory must survive a gateway restart");
+    assert_eq!(
+        stored.content.body,
+        "this memory must survive a gateway restart"
+    );
 
     let versions = reopened.applied_migrations().await.expect("ledger reads");
     assert!(

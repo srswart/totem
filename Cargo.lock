@@ -6474,6 +6474,7 @@ dependencies = [
  "fastembed",
  "serde",
  "surrealdb",
+ "tempfile",
  "thiserror 2.0.19",
  "tokio",
  "totem-core",
