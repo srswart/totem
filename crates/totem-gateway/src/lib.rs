@@ -35,8 +35,8 @@
 
 mod auth;
 mod dto;
-pub mod eval;
 mod error;
+pub mod eval;
 mod handlers;
 mod mcp;
 mod mcp_http;

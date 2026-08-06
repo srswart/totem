@@ -40,8 +40,11 @@ async fn injected_latency_visibly_worsens_every_latency_figure() {
     let state = seeded_state().await;
 
     let baseline = run_workload(&state, &WorkloadProfile::baseline()).await;
-    let degraded =
-        run_workload(&state, &WorkloadProfile::degraded(Duration::from_millis(30))).await;
+    let degraded = run_workload(
+        &state,
+        &WorkloadProfile::degraded(Duration::from_millis(30)),
+    )
+    .await;
 
     assert!(
         degraded.recall.mean_ms > baseline.recall.mean_ms,
@@ -61,5 +64,8 @@ async fn injected_latency_visibly_worsens_every_latency_figure() {
         degraded.throughput_ops_per_sec,
         baseline.throughput_ops_per_sec
     );
-    assert_eq!(degraded.error_count, 0, "injected latency alone must not fail operations");
+    assert_eq!(
+        degraded.error_count, 0,
+        "injected latency alone must not fail operations"
+    );
 }

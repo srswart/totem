@@ -92,7 +92,11 @@ fn score_one(query: GoldenQuery, records: &[MemoryRecord]) -> QueryResult {
     let must_appear_hits = query
         .must_appear
         .iter()
-        .filter(|expected| records.iter().any(|record| record.content.body == **expected))
+        .filter(|expected| {
+            records
+                .iter()
+                .any(|record| record.content.body == **expected)
+        })
         .count();
 
     QueryResult {

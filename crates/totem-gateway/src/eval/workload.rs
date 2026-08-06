@@ -211,7 +211,9 @@ pub async fn run_workload(state: &AppState, profile: &WorkloadProfile) -> Worklo
                         session,
                         turn: None,
                     };
-                    ops::save(&state, input, &caller, "eval:workload").await.is_ok()
+                    ops::save(&state, input, &caller, "eval:workload")
+                        .await
+                        .is_ok()
                 } else {
                     let input = RecallInput {
                         actor,
