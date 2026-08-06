@@ -1,0 +1,41 @@
+[package]
+name = "totem-cli"
+version = "0.1.0"
+description = "totem CLI: repo enrollment (register + initial ARRIVE ingestion + sync hook install), actor credential issuance"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "totem"
+path = "src/main.rs"
+
+[dependencies]
+chrono.workspace = true
+# No CLI argument parsing existed anywhere in this workspace before this
+# advance (totem-gateway's binary takes no args); `derive` keeps the
+# subcommand surface declarative rather than hand-rolled `env::args` parsing.
+clap = { version = "4.6.5", features = ["derive"] }
+serde.workspace = true
+serde_json.workspace = true
+# `enroll`/`sync` stand up their own embedded store the same way
+# totem-gateway's binary does (see src/enroll.rs) — deployment topology is
+# still an open question (docs/solution-intent.md §9), so this crate makes no
+# durable-engine assumption either.
+surrealdb = { workspace = true, features = ["kv-mem"] }
+thiserror.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+totem-arrive-sync = { path = "../totem-arrive-sync" }
+totem-core = { path = "../totem-core" }
+totem-store = { path = "../totem-store" }
+uuid.workspace = true
+
+[dev-dependencies]
+# First integration-test use of a scratch directory in this workspace: the
+# hook installer and credential store both write real files, and tests must
+# never touch this repo's own $HOME or .git/hooks.
+tempfile = "3.27.0"
+
+[lints]
+workspace = true
