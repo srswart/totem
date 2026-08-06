@@ -1,0 +1,25 @@
+[package]
+name = "totem-arrive-sync"
+version = "0.1.0"
+description = "Ingestion of an enrolled repo's /arrive/ artifacts into the Totem landscape graph"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_yaml.workspace = true
+# Named directly only for `sync_repo`'s embedded-engine `Db` connection type,
+# matching totem-gateway's `AppState` convention: every write still goes
+# through `totem-store`'s `LandscapeRepository`, never a raw connection this
+# crate holds itself.
+surrealdb = { workspace = true, features = ["kv-mem"] }
+thiserror.workspace = true
+totem-store = { path = "../totem-store" }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true
