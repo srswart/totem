@@ -33,6 +33,14 @@ totem-store = { path = "../totem-store" }
 [dev-dependencies]
 http-body-util = "0.1"
 tower = { version = "0.5", features = ["util"] }
+# Client-side transport for the tool-dispatch tests this commit adds
+# (tests/mcp_recall_and_save.rs): a real rmcp client, spawning the
+# not-yet-implemented `mcp_stdio` binary as a child process (ADV-GATEWAY-002).
+# Pinned exactly, matching totem-mcp-spike's pin: docs/tech-direction/mcp.md
+# (ADV-GATEWAY-005) verified this exact version end-to-end and named
+# re-verifying the pin at ADV-GATEWAY-002 time as a standing instruction.
+rmcp = { version = "=3.1.0", features = ["client", "transport-child-process"] }
+tokio = { workspace = true, features = ["process"] }
 
 [lints]
 workspace = true
