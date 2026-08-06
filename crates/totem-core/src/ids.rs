@@ -151,6 +151,10 @@ uuid_id!(
     /// (a proposal, a decision, or a demotion).
     PromotionId
 );
+uuid_id!(
+    /// The identity of one recorded curator action (a merge or its rollback).
+    CurationId
+);
 
 #[cfg(test)]
 mod tests {

@@ -138,7 +138,7 @@ pub(crate) fn harness_from(key: &str) -> Result<Harness, RowError> {
     }
 }
 
-fn status_key(status: MemoryStatus) -> &'static str {
+pub(crate) fn status_key(status: MemoryStatus) -> &'static str {
     match status {
         MemoryStatus::Active => "active",
         MemoryStatus::Contested => "contested",
@@ -146,7 +146,7 @@ fn status_key(status: MemoryStatus) -> &'static str {
     }
 }
 
-fn status_from(key: &str) -> Result<MemoryStatus, RowError> {
+pub(crate) fn status_from(key: &str) -> Result<MemoryStatus, RowError> {
     match key {
         "active" => Ok(MemoryStatus::Active),
         "contested" => Ok(MemoryStatus::Contested),

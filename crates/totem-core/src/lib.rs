@@ -49,6 +49,7 @@
 
 mod access_log;
 mod category;
+mod curation;
 mod feedback;
 mod ids;
 mod promotion;
@@ -59,8 +60,9 @@ mod scoring;
 
 pub use access_log::{AccessLogEntry, AccessOperation};
 pub use category::{CategoryLifecycle, MemoryCategory, Mutability, ReviewPolicy};
+pub use curation::{CurationError, CurationEvent, CurationEventKind, CurationPolicy, Supersession};
 pub use feedback::{FeedbackSignal, apply_feedback};
-pub use ids::{ActorId, IdError, MemoryId, PromotionId, RepoId, SessionId, TeamId};
+pub use ids::{ActorId, CurationId, IdError, MemoryId, PromotionId, RepoId, SessionId, TeamId};
 pub use promotion::{
     PromotionError, PromotionEvent, PromotionEventKind, PromotionPath, PromotionPolicy,
 };
