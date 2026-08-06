@@ -1,16 +1,20 @@
 //! `/recall` and `/save`: the first HTTP surface over `totem-store`
-//! (docs/solution-intent.md §3.2; ADV-GATEWAY-001).
+//! (docs/solution-intent.md §3.2; ADV-GATEWAY-001). `/enroll` (ADV-CLI-001)
+//! joins them as the third: registering or re-syncing a repo's ARRIVE
+//! landscape.
 //!
-//! Both handlers build an [`ops`] input straight from the request's own
+//! `save`/`recall` build an [`ops`] input straight from the request's own
 //! `totem-core` types, call the shared operation, and wrap the result — the
 //! resolve-scope-chain/do-the-operation/append-one-access-log-entry sequence
 //! itself lives in [`ops`], not here (ADV-GATEWAY-002's tidy step), so the
-//! MCP surface gets the same behavior without duplicating it.
+//! MCP surface gets the same behavior without duplicating it. `enroll` has no
+//! scope chain to resolve (a landscape sync is not scoped memory) and calls
+//! `totem-store`'s [`totem_store::LandscapeRepository::sync`] directly.
 
 use axum::Json;
 use axum::extract::State;
 
-use crate::dto::{RecallRequest, RecallResponse, SaveRequest, SaveResponse};
+use crate::dto::{EnrollRequest, EnrollResponse, RecallRequest, RecallResponse, SaveRequest, SaveResponse};
 use crate::error::GatewayError;
 use crate::ops::{self, RecallInput, SaveInput};
 use crate::state::AppState;
@@ -58,4 +62,12 @@ pub(crate) async fn recall(
     let records = ops::recall(&state, input, "/recall").await?;
 
     Ok(Json(RecallResponse { records }))
+}
+
+pub(crate) async fn enroll(
+    State(state): State<AppState>,
+    Json(request): Json<EnrollRequest>,
+) -> Result<Json<EnrollResponse>, GatewayError> {
+    let _ = (state, request);
+    unimplemented!("ADV-CLI-001")
 }

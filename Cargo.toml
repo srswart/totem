@@ -5,6 +5,7 @@ members = [
     "crates/totem-store",
     "crates/totem-gateway",
     "crates/totem-arrive-sync",
+    "crates/totem-cli",
     "crates/totem-store-spike",
     "crates/totem-embedding-spike",
     "crates/totem-mcp-spike",
@@ -13,7 +14,6 @@ members = [
 # Sibling crate slots per docs/solution-intent.md §7; each is added by the
 # advance that first needs it, rather than landing as empty scaffolding here:
 #   crates/totem-curator      ADV-CURATOR-001
-#   crates/totem-cli          ADV-CLI-001
 #   crates/totem-console      ADV-CONSOLE-001
 
 [workspace.package]
