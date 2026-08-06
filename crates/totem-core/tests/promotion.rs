@@ -82,7 +82,10 @@ fn episodic_memory_can_never_change_scope_in_either_direction() {
     // UPDATE), so a scope change is not merely gated — it is impossible, and
     // the policy says so before any statement is built.
     let policy = PromotionPolicy::new();
-    assert_eq!(policy.path(MemoryCategory::Episodic), PromotionPath::Forbidden);
+    assert_eq!(
+        policy.path(MemoryCategory::Episodic),
+        PromotionPath::Forbidden
+    );
     assert_eq!(
         policy.check_promotion(MemoryCategory::Episodic, &private(), &project()),
         Err(PromotionError::Forbidden(MemoryCategory::Episodic)),
@@ -141,7 +144,10 @@ fn demotion_is_never_gated_because_narrowing_is_the_rollback() {
     // Risk + Rollback promises demotion compensates a bad promotion. A demotion
     // that itself had to queue for approval would not be a rollback lever.
     let policy = PromotionPolicy::new();
-    for category in MemoryCategory::ALL.into_iter().filter(|c| !c.is_append_only()) {
+    for category in MemoryCategory::ALL
+        .into_iter()
+        .filter(|c| !c.is_append_only())
+    {
         assert!(
             policy
                 .check_demotion(category, &Scope::Platform, &private())
@@ -156,9 +162,18 @@ fn the_tightened_policy_gates_every_category_a_human_could_gate() {
     // The documented rollback: tighten to human-gated-for-everything. Episodic
     // stays forbidden — tightening never loosens.
     let policy = PromotionPolicy::human_gated_everywhere();
-    assert_eq!(policy.path(MemoryCategory::Knowledge), PromotionPath::HumanGated);
-    assert_eq!(policy.path(MemoryCategory::Identity), PromotionPath::HumanGated);
-    assert_eq!(policy.path(MemoryCategory::Episodic), PromotionPath::Forbidden);
+    assert_eq!(
+        policy.path(MemoryCategory::Knowledge),
+        PromotionPath::HumanGated
+    );
+    assert_eq!(
+        policy.path(MemoryCategory::Identity),
+        PromotionPath::HumanGated
+    );
+    assert_eq!(
+        policy.path(MemoryCategory::Episodic),
+        PromotionPath::Forbidden
+    );
 }
 
 #[test]

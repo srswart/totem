@@ -194,6 +194,49 @@ DEFINE FIELD OVERWRITE operation ON access_log TYPE string
     ASSERT $value IN ['recall', 'save', 'feedback'];
 "#;
 
+/// Migration 5 — recorded scope promotions (ADV-CORE-003).
+///
+/// Promotion is the one sanctioned path across a scope boundary
+/// (docs/solution-intent.md §2.2), so its trail is held to the same standard as
+/// the access log: the two `EVENT`s refuse `UPDATE` and `DELETE`, and
+/// `provenance` is a required object with required members. An event that could
+/// be rewritten, removed, or written anonymously would make the project's
+/// highest-severity operation unauditable.
+///
+/// `recorded_at` is assigned by the store, not by the caller. `provenance.
+/// created_at` is whatever the calling harness reported, so ordering the trail
+/// by it would let a caller with a wrong — or deliberately backdated — clock
+/// reorder the record of who decided what, and when.
+pub(crate) const PROMOTION_SCHEMA_V5: &str = r#"
+DEFINE TABLE promotion_event SCHEMAFULL;
+
+DEFINE FIELD memory ON promotion_event TYPE record<memory>;
+DEFINE FIELD kind ON promotion_event TYPE string
+    ASSERT $value IN ['proposed', 'auto_approved', 'approved', 'rejected', 'demoted'];
+DEFINE FIELD from_scope ON promotion_event TYPE string ASSERT $value != '';
+DEFINE FIELD to_scope ON promotion_event TYPE string ASSERT $value != '';
+DEFINE FIELD proposal ON promotion_event TYPE option<record<promotion_event>>;
+DEFINE FIELD reason ON promotion_event TYPE option<string>;
+DEFINE FIELD recorded_at ON promotion_event TYPE datetime;
+
+DEFINE FIELD provenance ON promotion_event TYPE object;
+DEFINE FIELD provenance.author_kind ON promotion_event TYPE string
+    ASSERT $value IN ['human', 'agent', 'curator'];
+DEFINE FIELD provenance.author ON promotion_event TYPE string ASSERT $value != '';
+DEFINE FIELD provenance.harness ON promotion_event TYPE string ASSERT $value != '';
+DEFINE FIELD provenance.session ON promotion_event TYPE string ASSERT $value != '';
+DEFINE FIELD provenance.turn ON promotion_event TYPE option<int>;
+DEFINE FIELD provenance.created_at ON promotion_event TYPE datetime;
+DEFINE FIELD provenance.derived_from ON promotion_event TYPE array<record<memory>> DEFAULT [];
+
+DEFINE EVENT promotion_event_no_update ON TABLE promotion_event
+    WHEN $event = 'UPDATE'
+    THEN { THROW 'a promotion event is append-only and cannot be updated'; };
+DEFINE EVENT promotion_event_no_delete ON TABLE promotion_event
+    WHEN $event = 'DELETE'
+    THEN { THROW 'a promotion event is append-only and cannot be deleted'; };
+"#;
+
 #[cfg(test)]
 mod tests {
     //! Enforcement the repository API cannot be trusted to provide.
@@ -481,6 +524,7 @@ mod tests {
         CREATE promotion_event:proposal CONTENT {
             memory: memory:episode, kind: 'proposed',
             from_scope: 'actor:ada', to_scope: 'project:srswart/totem',
+            recorded_at: d'2026-08-06T06:00:00Z',
             provenance: { author_kind: 'human', author: 'ada', harness: 'console',
                           session: 's1', created_at: d'2026-08-06T06:00:00Z', derived_from: [] }
         }
@@ -553,7 +597,8 @@ mod tests {
             .query(
                 "CREATE promotion_event CONTENT {
                     memory: memory:episode, kind: 'proposed',
-                    from_scope: 'actor:ada', to_scope: 'project:srswart/totem'
+                    from_scope: 'actor:ada', to_scope: 'project:srswart/totem',
+                    recorded_at: d'2026-08-06T06:00:00Z'
                 }",
             )
             .await

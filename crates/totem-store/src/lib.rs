@@ -51,6 +51,7 @@ mod error;
 mod landscape;
 mod memory;
 mod migrate;
+mod promotion;
 mod row;
 mod schema;
 mod store;
@@ -67,5 +68,6 @@ pub use landscape::{
 };
 pub use memory::{MemoryRepository, RecallQuery};
 pub use migrate::{AppliedMigration, MIGRATIONS, Migration};
+pub use promotion::{PromotionOutcome, PromotionRepository};
 pub use schema::EMBEDDING_DIMENSIONS;
 pub use store::Store;

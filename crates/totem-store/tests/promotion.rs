@@ -203,7 +203,11 @@ async fn a_rejected_proposal_leaves_the_record_exactly_where_it_was() {
 #[tokio::test]
 async fn a_decided_proposal_cannot_be_decided_again() {
     let store = store().await;
-    let rule = memory(MemoryCategory::Instructions, private(ADA), "one decision only");
+    let rule = memory(
+        MemoryCategory::Instructions,
+        private(ADA),
+        "one decision only",
+    );
     store
         .memories()
         .save(&chain(ADA), &rule)
@@ -237,7 +241,11 @@ async fn a_decided_proposal_cannot_be_decided_again() {
 #[tokio::test]
 async fn nobody_can_propose_a_record_they_cannot_see() {
     let store = store().await;
-    let note = memory(MemoryCategory::Knowledge, private(ADA), "ada's private note");
+    let note = memory(
+        MemoryCategory::Knowledge,
+        private(ADA),
+        "ada's private note",
+    );
     store
         .memories()
         .save(&chain(ADA), &note)
@@ -258,7 +266,11 @@ async fn nobody_can_propose_a_record_they_cannot_see() {
 #[tokio::test]
 async fn nobody_can_propose_into_a_scope_they_cannot_reach() {
     let store = store().await;
-    let note = memory(MemoryCategory::Knowledge, private(ADA), "team-only, allegedly");
+    let note = memory(
+        MemoryCategory::Knowledge,
+        private(ADA),
+        "team-only, allegedly",
+    );
     store
         .memories()
         .save(&chain(ADA), &note)
@@ -273,7 +285,7 @@ async fn nobody_can_propose_into_a_scope_they_cannot_reach() {
         .propose(&chain(ADA), note.id, team_scope(), decided_by(ADA))
         .await;
     assert!(
-        matches!(refused, Err(StoreError::ScopeDenied { scope }) if scope == team_scope()),
+        matches!(&refused, Err(StoreError::ScopeDenied { scope }) if scope == &team_scope()),
         "a non-member promoted into a team scope: {refused:?}",
     );
 }
@@ -281,7 +293,11 @@ async fn nobody_can_propose_into_a_scope_they_cannot_reach() {
 #[tokio::test]
 async fn nobody_can_decide_a_proposal_aimed_at_a_scope_they_cannot_reach() {
     let store = store().await;
-    let rule = memory(MemoryCategory::Instructions, private(ADA), "team convention");
+    let rule = memory(
+        MemoryCategory::Instructions,
+        private(ADA),
+        "team convention",
+    );
     store
         .memories()
         .save(&chain_with_team(ADA), &rule)
@@ -289,7 +305,12 @@ async fn nobody_can_decide_a_proposal_aimed_at_a_scope_they_cannot_reach() {
         .expect("saved");
     let PromotionOutcome::Pending { proposal } = store
         .promotions()
-        .propose(&chain_with_team(ADA), rule.id, team_scope(), decided_by(ADA))
+        .propose(
+            &chain_with_team(ADA),
+            rule.id,
+            team_scope(),
+            decided_by(ADA),
+        )
         .await
         .expect("proposed")
     else {
@@ -356,7 +377,11 @@ async fn episodic_memory_is_refused_before_any_statement_runs() {
 #[tokio::test]
 async fn demotion_compensates_a_promotion() {
     let store = store().await;
-    let note = memory(MemoryCategory::Knowledge, private(ADA), "regrettably shared");
+    let note = memory(
+        MemoryCategory::Knowledge,
+        private(ADA),
+        "regrettably shared",
+    );
     store
         .memories()
         .save(&chain(ADA), &note)
@@ -417,7 +442,7 @@ async fn demotion_cannot_hand_a_record_to_another_actor() {
         .demote(&chain(ADA), note.id, private(GRACE), decided_by(ADA), None)
         .await;
     assert!(
-        matches!(refused, Err(StoreError::ScopeDenied { scope }) if scope == private(GRACE)),
+        matches!(&refused, Err(StoreError::ScopeDenied { scope }) if scope == &private(GRACE)),
         "ada demoted a shared record into grace's private scope: {refused:?}",
     );
 }
@@ -425,7 +450,11 @@ async fn demotion_cannot_hand_a_record_to_another_actor() {
 #[tokio::test]
 async fn the_queue_only_shows_proposals_aimed_at_scopes_the_reader_can_reach() {
     let store = store().await;
-    let rule = memory(MemoryCategory::Instructions, private(ADA), "team convention");
+    let rule = memory(
+        MemoryCategory::Instructions,
+        private(ADA),
+        "team convention",
+    );
     store
         .memories()
         .save(&chain_with_team(ADA), &rule)
@@ -433,7 +462,12 @@ async fn the_queue_only_shows_proposals_aimed_at_scopes_the_reader_can_reach() {
         .expect("saved");
     store
         .promotions()
-        .propose(&chain_with_team(ADA), rule.id, team_scope(), decided_by(ADA))
+        .propose(
+            &chain_with_team(ADA),
+            rule.id,
+            team_scope(),
+            decided_by(ADA),
+        )
         .await
         .expect("proposed");
 
@@ -564,7 +598,11 @@ async fn the_tightened_policy_queues_even_a_knowledge_promotion() {
     // Risk + Rollback's other lever: policy can be tightened to
     // human-gated-for-everything without touching a category definition.
     let store = store().await;
-    let note = memory(MemoryCategory::Knowledge, private(ADA), "normally automatic");
+    let note = memory(
+        MemoryCategory::Knowledge,
+        private(ADA),
+        "normally automatic",
+    );
     store
         .memories()
         .save(&chain(ADA), &note)

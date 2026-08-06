@@ -146,6 +146,11 @@ uuid_id!(
     /// The identity of a single memory record.
     MemoryId
 );
+uuid_id!(
+    /// The identity of one recorded step in a memory's scope history
+    /// (a proposal, a decision, or a demotion).
+    PromotionId
+);
 
 #[cfg(test)]
 mod tests {
