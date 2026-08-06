@@ -17,7 +17,7 @@
 //! component, must not survive a re-sync.
 
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use surrealdb::types::{Number, Object, RecordId, RecordIdKey, SurrealValue, Value};
 use surrealdb::{Connection, Surreal};
 
@@ -32,7 +32,7 @@ const ACTOR_TABLE: &str = "actor";
 const SYNC_RUN_TABLE: &str = "sync_run";
 
 /// One repo, as the landscape mirrors it (`arrive/registry.yaml`).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RepoArtifact {
     /// The repo id (`registry.repo_id`).
     pub id: String,
@@ -41,7 +41,7 @@ pub struct RepoArtifact {
 }
 
 /// One system within a repo (`arrive/systems/<id>/system.yaml`).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SystemArtifact {
     /// The system id.
     pub id: String,
@@ -50,7 +50,7 @@ pub struct SystemArtifact {
 }
 
 /// One owner reference on a component (`component.owners[]`).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OwnerArtifact {
     /// A stable id for the owner, e.g. `team:058-totem`.
     pub id: String,
@@ -59,7 +59,7 @@ pub struct OwnerArtifact {
 }
 
 /// One component within a system (`arrive/systems/<id>/components/*.yaml`).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ComponentArtifact {
     /// The component id, unique within its system.
     pub id: String,
@@ -88,7 +88,7 @@ fn component_key(system: &str, component: &str) -> String {
 }
 
 /// One advance within a system (`arrive/systems/<id>/advances/*.md`).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AdvanceArtifact {
     /// The advance id (`ADV-<COMPONENT>-<SEQ>`), already globally unique by
     /// ARRIVE convention, so it is used as the record key directly.
@@ -106,7 +106,15 @@ pub struct AdvanceArtifact {
 }
 
 /// Everything ingested from one repo's `/arrive/` tree in a single run.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// `Serialize`/`Deserialize` on this and its fields (`RepoArtifact`,
+/// `SystemArtifact`, `ComponentArtifact`, `OwnerArtifact`, `AdvanceArtifact`)
+/// let a snapshot cross a process boundary as JSON — the gateway's `POST
+/// /enroll` (ADV-CLI-001) is the first caller: `totem-cli` parses `/arrive/`
+/// locally via `totem-arrive-sync` and sends the resulting snapshot to a
+/// running gateway rather than opening its own store connection, since the
+/// gateway (not the CLI) owns the store.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LandscapeSnapshot {
     /// The repo the snapshot belongs to.
     pub repo: RepoArtifact,

@@ -1,0 +1,48 @@
+[package]
+name = "totem-cli"
+version = "0.1.0"
+description = "totem CLI: repo enrollment (register + initial ARRIVE ingestion + sync hook install), actor credential issuance"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "totem"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0"
+chrono.workspace = true
+clap = { version = "4.5", features = ["derive"] }
+# Same pin family as the rest of the workspace's rmcp/mcp-spike reqwest usage
+# (Cargo.lock already resolves 0.13.4 for it): JSON body support only, no TLS
+# backend — the gateway binary (`totem-gateway/src/main.rs`) serves plain HTTP
+# only today, and production deployment topology is still an open question
+# (docs/solution-intent.md §9), so this crate does not pay a TLS-stack compile
+# cost for a scheme the gateway cannot speak yet.
+reqwest = { version = "=0.13.4", default-features = false, features = ["json"] }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+totem-arrive-sync = { path = "../totem-arrive-sync" }
+# Only for `Scope`/`RepoId`/`ActorId`'s own validating parsers: credential
+# issuance reuses the same identifier rules the gateway and store already
+# enforce rather than re-validating repo/scope/actor strings here.
+totem-core = { path = "../totem-core" }
+uuid.workspace = true
+
+[dev-dependencies]
+# Only for spawning a real bound-socket gateway in tests/enroll.rs: `totem-cli`
+# is a separate process from `totem-gateway` in practice, so the test drives
+# the actual HTTP client path rather than an in-process `tower::oneshot` call.
+axum = "0.8"
+surrealdb = { workspace = true, features = ["kv-mem"] }
+tempfile = "3"
+tokio = { workspace = true, features = ["net"] }
+totem-gateway = { path = "../totem-gateway" }
+totem-store = { path = "../totem-store" }
+
+[lints]
+workspace = true

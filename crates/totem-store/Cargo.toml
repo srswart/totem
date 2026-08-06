@@ -23,9 +23,12 @@ fastembed = ["dep:fastembed"]
 
 [dependencies]
 chrono.workspace = true
-# Only for the landscape view types (`LandscapeView` and friends): they are a
-# read model the gateway returns directly over MCP/REST, the same way
-# `totem-core`'s `MemoryRecord` already does for recall.
+# The landscape view types (`LandscapeView` and friends) are a read model the
+# gateway returns directly over MCP/REST, the same way `totem-core`'s
+# `MemoryRecord` already does for recall; the landscape artifact/snapshot
+# types (`Deserialize`, ADV-CLI-001) are the write side of the same crossing —
+# `totem-cli` sends a `LandscapeSnapshot` as JSON to the gateway's `POST
+# /enroll` rather than opening its own store connection.
 serde.workspace = true
 # Pinned exactly, matching totem-embedding-spike's ADV-STORE-007 pin: EMB-004
 # measured this exact version, and an upstream release changing inference
