@@ -174,6 +174,18 @@ impl<'a, C: Connection> MemoryRepository<'a, C> {
     /// Refused when the record's scope is not one the writer's chain contains:
     /// a caller cannot deposit memory into another actor's private scope, nor
     /// into a team it does not belong to.
+    ///
+    /// If the record names sources it was derived from
+    /// (`provenance.derived_from`), each cited source's `value_score` is
+    /// raised (VAL-002, docs/tech-direction/value-attribution.md): citation
+    /// is the one signal this investigation found real discriminating power
+    /// in. The boost only ever reaches a source the *writer's own chain* can
+    /// see — a citation naming an id outside it is silently a no-op, the same
+    /// as any other write this repository refuses to let cross a scope
+    /// boundary. The insert and the citation boost commit as one transaction
+    /// (TD-006) so a failure in the citation update can never leave the new
+    /// record inserted without it — `save` stays all-or-nothing rather than
+    /// risking a duplicate insert on a caller's retry.
     pub async fn save(&self, writer: &ScopeChain, record: &MemoryRecord) -> StoreResult<()> {
         if !writer.contains(&record.scope) {
             return Err(StoreError::ScopeDenied {
@@ -184,9 +196,36 @@ impl<'a, C: Connection> MemoryRepository<'a, C> {
             check_dimensions(embedding)?;
         }
 
+        if record.provenance.derived_from.is_empty() {
+            self.db
+                .query(format!("INSERT INTO {MEMORY_TABLE} $row"))
+                .bind(("row", row::to_row(record)))
+                .await?
+                .check()?;
+            return Ok(());
+        }
+
+        let ids: Vec<Value> = record
+            .provenance
+            .derived_from
+            .iter()
+            .copied()
+            .map(|id| row::memory_thing(id).into_value())
+            .collect();
+        let sql = format!(
+            "BEGIN TRANSACTION;\n\
+             INSERT INTO {MEMORY_TABLE} $row;\n\
+             UPDATE {MEMORY_TABLE} SET economics.value_score += $boost \
+                 WHERE id IN $ids AND scope IN $scopes AND category != $episodic;\n\
+             COMMIT TRANSACTION;"
+        );
         self.db
-            .query(format!("INSERT INTO {MEMORY_TABLE} $row"))
+            .query(sql)
             .bind(("row", row::to_row(record)))
+            .bind(("ids", ids))
+            .bind(("boost", CITATION_BOOST))
+            .bind(("scopes", readable_scopes(writer)))
+            .bind(("episodic", row::category_key(MemoryCategory::Episodic)))
             .await?
             .check()?;
         Ok(())
@@ -267,18 +306,51 @@ impl<'a, C: Connection> MemoryRepository<'a, C> {
         Ok(record)
     }
 
-    /// The merged, deduplicated view across the reader's whole chain.
+    /// The merged, deduplicated view across the reader's whole chain, ranked
+    /// by combined score — relevance × value × currency, weighted per
+    /// category (docs/solution-intent.md §4) — and not merely by the
+    /// statement's own vector-rank or recency order.
+    ///
+    /// Every record actually returned counts as a use: its `use_count`
+    /// increments, `last_used_at` moves to now, and `currency` refreshes to
+    /// full trust (reinforcement). Episodic records are exempt — the schema
+    /// refuses `UPDATE` on them outright (schema.rs), so touching one here
+    /// would fail the whole recall, not just skip it; `is_append_only`
+    /// excludes them before any statement is built.
     pub async fn recall(
         &self,
         reader: &ScopeChain,
         query: &RecallQuery,
     ) -> StoreResult<Vec<MemoryRecord>> {
         let rows = objects(self.run_recall(reader, query, false).await?)?;
-        let mut records = Vec::with_capacity(rows.len());
+        let mut scored = Vec::with_capacity(rows.len());
         for row in &rows {
-            records.push(row::from_row(row)?);
+            // Only a vector query projects this column; `row::from_row`
+            // ignores it as an "extra projected column" the domain model has
+            // no field for (its own doc comment) — carried alongside instead
+            // of dropped, since ranking needs it (ADV-CORE-002).
+            let distance = row.get("knn_distance").and_then(row::number);
+            scored.push((row::from_row(row)?, distance));
         }
-        Ok(merge_chain(reader, records, query.limit))
+        let merged = merge_chain(reader, scored);
+
+        let now = Utc::now();
+        let mut ranked: Vec<(MemoryRecord, f32)> = merged
+            .into_iter()
+            .map(|(record, distance)| {
+                let score = rank_score(&record, distance, now);
+                (record, score)
+            })
+            .collect();
+        // Stable: records tied on score keep the order the statement (and
+        // merge_chain's precedence rule) already gave them.
+        ranked.sort_by(|a, b| b.1.total_cmp(&a.1));
+        ranked.truncate(query.limit);
+
+        let records: Vec<MemoryRecord> =
+            ranked.into_iter().map(|(record, _score)| record).collect();
+        self.reinforce_usage(reader, &records, now).await?;
+        Ok(records)
     }
 
     /// The `EXPLAIN FULL` plan for the statement [`recall`](Self::recall) would
@@ -334,6 +406,73 @@ impl<'a, C: Connection> MemoryRepository<'a, C> {
         let mut response = request.await?.check()?;
         Ok(response.take(0)?)
     }
+
+    /// Meter a recall: `use_count` up by one, `last_used_at` to `at`,
+    /// `currency` refreshed to full trust, for every returned record the
+    /// category rules allow touching at all. Episodic records are filtered
+    /// out before the statement is even built (`is_append_only`), and the
+    /// `category != $episodic` predicate is the same defence-in-depth the
+    /// rest of this module already applies to scope filtering: two
+    /// independent reasons the append-only invariant cannot be crossed here,
+    /// not one.
+    async fn reinforce_usage(
+        &self,
+        reader: &ScopeChain,
+        records: &[MemoryRecord],
+        at: DateTime<Utc>,
+    ) -> StoreResult<()> {
+        let ids: Vec<Value> = records
+            .iter()
+            .filter(|record| !record.category.is_append_only())
+            .map(|record| row::memory_thing(record.id).into_value())
+            .collect();
+        if ids.is_empty() {
+            return Ok(());
+        }
+
+        self.db
+            .query(format!(
+                "UPDATE {MEMORY_TABLE}
+                 SET economics.use_count += 1, economics.last_used_at = $at, economics.currency = 1.0
+                 WHERE id IN $ids AND scope IN $scopes AND category != $episodic"
+            ))
+            .bind(("ids", ids))
+            .bind(("at", row::instant(at)))
+            .bind(("scopes", readable_scopes(reader)))
+            .bind(("episodic", row::category_key(MemoryCategory::Episodic)))
+            .await?
+            .check()?;
+        Ok(())
+    }
+}
+
+/// How much a citation (a new record's `provenance.derived_from` link)
+/// raises the cited record's `value_score`. VAL-002
+/// (docs/tech-direction/value-attribution.md) scored citation at precision
+/// 0.80 on the labeled corpus — the only signal with real, if noisy,
+/// discriminating power available today (VAL-003 rules out weighting raw
+/// retrieval directly; VAL-005 has zero explicit-feedback data points). One
+/// flat constant, not per-category tuning: the investigation's per-category
+/// weights (§5) govern `category_weight` in ranking, not this boost.
+const CITATION_BOOST: f64 = 0.2;
+
+/// Combined ranking score for one candidate: relevance × value × currency,
+/// weighted by category (docs/solution-intent.md §4). `currency` is computed
+/// live from the record's own stored value and how long it has sat since it
+/// was last used (or, if never used, since it was written) — nothing here
+/// persists a decayed value; only [`MemoryRepository::reinforce_usage`]
+/// writes to `currency`, and only ever resets it to full trust.
+fn rank_score(record: &MemoryRecord, distance: Option<f64>, now: DateTime<Utc>) -> f32 {
+    let reference = record
+        .economics
+        .last_used_at
+        .unwrap_or(record.provenance.created_at);
+    let elapsed = now - reference;
+    let currency =
+        totem_core::effective_currency(record.category, record.economics.currency, elapsed);
+    let relevance = totem_core::relevance_from_distance(distance);
+    let weight = totem_core::category_weight(record.category);
+    totem_core::combined_score(relevance, record.economics.value_score, currency, weight)
 }
 
 /// The scopes a reader may see, as the store's own predicate values.
@@ -384,12 +523,20 @@ fn dedup_key(record: &MemoryRecord) -> DedupKey {
     (record.category, subject, body)
 }
 
+/// A candidate record paired with the vector distance it was ranked by, when
+/// the query carried a probe at all.
+type Scored = (MemoryRecord, Option<f64>);
+
 /// Resolve the chain into one view: narrowest scope wins, duplicates collapse,
 /// and statement order (rank, or recency) is preserved among the survivors.
-fn merge_chain(reader: &ScopeChain, records: Vec<MemoryRecord>, limit: usize) -> Vec<MemoryRecord> {
+///
+/// Deliberately does not truncate to a limit itself: the caller ranks the
+/// survivors by combined score first (ADV-CORE-002) and truncates after, so
+/// capping here could discard a record the final ranking would have kept.
+fn merge_chain(reader: &ScopeChain, records: Vec<Scored>) -> Vec<Scored> {
     let mut winners: HashMap<DedupKey, usize> = HashMap::new();
 
-    for (position, record) in records.iter().enumerate() {
+    for (position, (record, _distance)) in records.iter().enumerate() {
         // Defence in depth. The statement already filtered on the chain, so
         // this should never drop anything — but the cost of being wrong here is
         // another actor's private memory, and the plan assertion in
@@ -402,7 +549,7 @@ fn merge_chain(reader: &ScopeChain, records: Vec<MemoryRecord>, limit: usize) ->
         winners
             .entry(dedup_key(record))
             .and_modify(|held| {
-                let incumbent = &records[*held];
+                let incumbent = &records[*held].0;
                 let incumbent_precedence =
                     reader.precedence_of(&incumbent.scope).unwrap_or(usize::MAX);
                 let closer = precedence < incumbent_precedence;
@@ -418,7 +565,6 @@ fn merge_chain(reader: &ScopeChain, records: Vec<MemoryRecord>, limit: usize) ->
     let mut kept: Vec<usize> = winners.into_values().collect();
     kept.sort_unstable();
     kept.into_iter()
-        .take(limit)
         .map(|position| records[position].clone())
         .collect()
 }
