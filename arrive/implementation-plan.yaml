@@ -38,18 +38,17 @@ passes:
           - id: "ADV-STORE-006"
             advance_id: "ADV-STORE-006"
             title: "Investigation: SurrealDB server-mode parity (embedded vs surreal start)"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-STORE-004"]
             notes: >-
-              WORKSTATION — needs a running surreal server (Docker available
-              locally); the cloud sandbox's egress proxy refuses
-              download/install.surrealdb.com. Closes the one question
-              ADV-STORE-004 could not answer; feeds the §9 deployment-topology
-              decision that gates ADV-INFRA-001 (reserved, also WORKSTATION —
-              see docs/arrive-decomposition-gaps.md). Does not block
-              ADV-STORE-001 — the residual parity risk stays recorded there
-              and on ADV-GATEWAY-003 until this runs.
+              WORKSTATION (executed 2026-08-05 on a Docker workstation, PR #4 —
+              the cloud sandbox cannot run a surreal server). Parity confirmed
+              (H1), no isolation-relevant divergence (H3 refuted, ADV-STORE-001
+              residual retired), server-only constraints recorded as
+              TD-009..TD-011. Feeds the §9 deployment-topology decision that
+              gates ADV-INFRA-001 (reserved — see
+              docs/arrive-decomposition-gaps.md).
           - id: "ADV-STORE-003"
             advance_id: "ADV-STORE-003"
             title: "Investigation: embedding provider + placement spike"

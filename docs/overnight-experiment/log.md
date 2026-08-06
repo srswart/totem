@@ -125,3 +125,43 @@ a deadlock, flag a suspicious pattern (four documented-Reds). Open questions:
 authority boundary (it must not absorb the human's review/merge/scope role),
 cost of a standing session vs. an hourly triage pass, and whether its
 interventions should themselves be logged here.
+
+## 2026-08-06 — `worked` — The workstation/cloud boundary became a first-class routing designation
+
+Advances that need what the sandbox cannot provide (browser, Docker, blocked
+downloads, judgment calls) are now marked `WORKSTATION` in plan notes (PR #26):
+cloud runs skip them when selecting work, dependencies stay binding, and
+`WORKSTATION-GATED` is the no-op line when nothing cloud-eligible remains. The
+day/night split is now expressed in the same vocabulary as the Opus/Sonnet
+model gate — who, and where.
+
+## 2026-08-06 — `failure-mode` — Stale plan notes caused a false status flip on a done advance
+
+ADV-STORE-006's plan entry carried a leftover "BLOCKED on environment... move
+to planned only when running it on a capable host" note from before its
+execution, while its status correctly said `done`. Reading only the plan, both
+the assistant and the human concluded the advance had never run and "restored"
+it to `planned` (PR #26) — but the advance *file* showed it fully executed the
+day before (PR #4, TD-009..TD-011, residual retired). Corrected same-day.
+
+**Implications:** (1) the advance file is the authoritative record; never
+change a plan status without reading it. (2) Plan `notes` rot — a status
+transition should rewrite the note, not append to history. (3) `arrive plan
+check` validated both the wrong state and the right one; it does not
+cross-check plan status against advance frontmatter status — a tooling gap
+worth an upstream request. (4) For the overnight cycle: agents made neither
+error — the run that marked it done rewrote nothing misleading in its own
+records; the divergence was introduced and later fixed by day-side humans.
+The audit trail (advance file + PR history) is what caught it.
+
+## 2026-08-06 — `worked` — Demo milestone: every shipped layer functions end-to-end
+
+First live run on a workstation (2026-08-06): gateway up, CLI-enrolled this
+repo (1 system / 7 components / 26 advances into the landscape), memory
+save/recall over REST with scope isolation verified at the API and in the UI
+(an actor:alice memory invisible to shawn), and the Dioxus console rendering
+in a real browser for the first time — closing ADV-CONSOLE-001's
+"unverified in browser" residual and confirming by hand the Refresh-only
+behavior ADV-CONSOLE-003 exists to fix. Everything is per-process in-memory;
+the demo promoted the §9 topology decision (and reserved ADV-INFRA-001) from
+"documented someday" to the blocker between demo and daily use.
