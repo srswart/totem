@@ -41,7 +41,7 @@ git show origin/advance/phase-<NNN>:arrive/implementation-plan.yaml
 
   GATED (plan inconsistency): advance/phase-<NNN> has <ADV-ID> at status: in_progress — awaiting a human scope decision. No work done this run.
 
-- **Otherwise** → find the FIRST item in the phase (plan order) with `status: planned` and apply the model gate (Step 4). Match → continue to Step 2 in CONTINUE mode targeting that advance. No match → report exactly, then stop:
+- **Otherwise** → find the FIRST item in the phase (plan order) with `status: planned`, skipping any whose `notes` contain `WORKSTATION` (see the workstation gate in Step 4; if only WORKSTATION items remain, report the WORKSTATION-GATED line and stop). Apply the model gate (Step 4). Match → continue to Step 2 in CONTINUE mode targeting that advance. No match → report exactly, then stop:
 
   MODEL-GATED: <ADV-ID> on advance/phase-<NNN> is designated for <model>. Waiting for that routine. No work done this run.
 
@@ -77,7 +77,11 @@ Read in this order:
 
 **Model gate (applies everywhere).** Two routines run this protocol on different models; your routine prompt states which model you are. A plan item whose `notes` contain `MODEL: claude-opus-5` is Opus-only; every other item is Sonnet-only.
 
-**FRESH mode.** Run `arrive plan show` and `arrive info`. Select the FIRST phase in plan order that contains any advance with `status: planned`. Every advance in all earlier phases must be `done` — if not, STOP and report the inconsistency instead of improvising. The target is the first planned advance of that phase; it additionally requires every id in its `dependencies` to be `done`. If it is not designated for your model, report the MODEL-GATED line and stop — do not create any branch, and do not skip ahead to a later advance that matches your model. Plan order is strict.
+**Workstation gate (applies everywhere).** A plan item whose `notes` contain `WORKSTATION` is never cloud-eligible: it needs something this sandbox cannot provide (a browser, Docker, a blocked download, a human judgment call). When selecting "the first planned item", skip WORKSTATION items as if they were done — but dependencies stay binding: an item that depends on an unfinished WORKSTATION item is not eligible either. WORKSTATION items are implemented from a workstation session (following the same sub-branch/sub-PR discipline when their phase is active; via a standalone PR to master when their phase has already merged). If the only reachable planned work is WORKSTATION-designated or blocked behind one, report exactly, then stop:
+
+  WORKSTATION-GATED: <ADV-ID> requires local execution. Waiting for a workstation session. No work done this run.
+
+**FRESH mode.** Run `arrive plan show` and `arrive info`. Select the FIRST phase in plan order that contains any advance with `status: planned`, ignoring WORKSTATION-designated items when scanning (a lingering planned WORKSTATION item in an earlier phase is expected, not an inconsistency). Every non-WORKSTATION advance in all earlier phases must be `done` — if not, STOP and report the inconsistency instead of improvising. The target is the first planned, non-WORKSTATION advance of that phase; it additionally requires every id in its `dependencies` to be `done`. If it is not designated for your model, report the MODEL-GATED line and stop — do not create any branch, and do not skip ahead to a later advance that matches your model. Plan order is strict among cloud-eligible items.
 
 **CONTINUE mode.** The phase and target advance were already determined in Step 1. Verify the target advance's dependencies are `done` on the phase branch; if not, STOP and report why.
 
