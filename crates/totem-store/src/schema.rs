@@ -194,6 +194,49 @@ DEFINE FIELD OVERWRITE operation ON access_log TYPE string
     ASSERT $value IN ['recall', 'save', 'feedback'];
 "#;
 
+/// Migration 5 — recorded scope promotions (ADV-CORE-003).
+///
+/// Promotion is the one sanctioned path across a scope boundary
+/// (docs/solution-intent.md §2.2), so its trail is held to the same standard as
+/// the access log: the two `EVENT`s refuse `UPDATE` and `DELETE`, and
+/// `provenance` is a required object with required members. An event that could
+/// be rewritten, removed, or written anonymously would make the project's
+/// highest-severity operation unauditable.
+///
+/// `recorded_at` is assigned by the store, not by the caller. `provenance.
+/// created_at` is whatever the calling harness reported, so ordering the trail
+/// by it would let a caller with a wrong — or deliberately backdated — clock
+/// reorder the record of who decided what, and when.
+pub(crate) const PROMOTION_SCHEMA_V5: &str = r#"
+DEFINE TABLE promotion_event SCHEMAFULL;
+
+DEFINE FIELD memory ON promotion_event TYPE record<memory>;
+DEFINE FIELD kind ON promotion_event TYPE string
+    ASSERT $value IN ['proposed', 'auto_approved', 'approved', 'rejected', 'demoted'];
+DEFINE FIELD from_scope ON promotion_event TYPE string ASSERT $value != '';
+DEFINE FIELD to_scope ON promotion_event TYPE string ASSERT $value != '';
+DEFINE FIELD proposal ON promotion_event TYPE option<record<promotion_event>>;
+DEFINE FIELD reason ON promotion_event TYPE option<string>;
+DEFINE FIELD recorded_at ON promotion_event TYPE datetime;
+
+DEFINE FIELD provenance ON promotion_event TYPE object;
+DEFINE FIELD provenance.author_kind ON promotion_event TYPE string
+    ASSERT $value IN ['human', 'agent', 'curator'];
+DEFINE FIELD provenance.author ON promotion_event TYPE string ASSERT $value != '';
+DEFINE FIELD provenance.harness ON promotion_event TYPE string ASSERT $value != '';
+DEFINE FIELD provenance.session ON promotion_event TYPE string ASSERT $value != '';
+DEFINE FIELD provenance.turn ON promotion_event TYPE option<int>;
+DEFINE FIELD provenance.created_at ON promotion_event TYPE datetime;
+DEFINE FIELD provenance.derived_from ON promotion_event TYPE array<record<memory>> DEFAULT [];
+
+DEFINE EVENT promotion_event_no_update ON TABLE promotion_event
+    WHEN $event = 'UPDATE'
+    THEN { THROW 'a promotion event is append-only and cannot be updated'; };
+DEFINE EVENT promotion_event_no_delete ON TABLE promotion_event
+    WHEN $event = 'DELETE'
+    THEN { THROW 'a promotion event is append-only and cannot be deleted'; };
+"#;
+
 #[cfg(test)]
 mod tests {
     //! Enforcement the repository API cannot be trusted to provide.
@@ -475,6 +518,122 @@ mod tests {
             .expect("select succeeded");
         let rows: Value = response.take(0).expect("rows");
         assert_eq!(rows.into_array().expect("an array").len(), 1);
+    }
+
+    const PROMOTION_EVENT: &str = r#"
+        CREATE promotion_event:proposal CONTENT {
+            memory: memory:episode, kind: 'proposed',
+            from_scope: 'actor:ada', to_scope: 'project:srswart/totem',
+            recorded_at: d'2026-08-06T06:00:00Z',
+            provenance: { author_kind: 'human', author: 'ada', harness: 'console',
+                          session: 's1', created_at: d'2026-08-06T06:00:00Z', derived_from: [] }
+        }
+    "#;
+
+    #[tokio::test]
+    async fn the_database_refuses_to_update_a_promotion_event() {
+        // A promotion event is the record that a scope boundary was crossed.
+        // If it could be rewritten, the audit trail of the project's
+        // highest-severity operation would be worth nothing.
+        let store = migrated().await;
+        store
+            .connection()
+            .query(PROMOTION_EVENT)
+            .await
+            .expect("sent")
+            .check()
+            .expect("the event is written");
+
+        let refused = store
+            .connection()
+            .query("UPDATE promotion_event:proposal SET kind = 'approved'")
+            .await
+            .expect("sent")
+            .check();
+        assert!(
+            refused.is_err(),
+            "a raw UPDATE rewrote a promotion event: {refused:?}",
+        );
+    }
+
+    #[tokio::test]
+    async fn the_database_refuses_to_delete_a_promotion_event() {
+        let store = migrated().await;
+        store
+            .connection()
+            .query(PROMOTION_EVENT)
+            .await
+            .expect("sent")
+            .check()
+            .expect("the event is written");
+
+        let refused = store
+            .connection()
+            .query("DELETE promotion_event")
+            .await
+            .expect("sent")
+            .check();
+        assert!(
+            refused.is_err(),
+            "a raw DELETE removed a promotion event: {refused:?}",
+        );
+
+        let mut response = store
+            .connection()
+            .query("SELECT VALUE kind FROM promotion_event")
+            .await
+            .expect("sent")
+            .check()
+            .expect("select succeeded");
+        let rows: Value = response.take(0).expect("rows");
+        assert_eq!(rows.into_array().expect("an array").len(), 1);
+    }
+
+    #[tokio::test]
+    async fn the_database_refuses_a_promotion_event_without_provenance() {
+        let store = migrated().await;
+        let refused = store
+            .connection()
+            .query(
+                "CREATE promotion_event CONTENT {
+                    memory: memory:episode, kind: 'proposed',
+                    from_scope: 'actor:ada', to_scope: 'project:srswart/totem',
+                    recorded_at: d'2026-08-06T06:00:00Z'
+                }",
+            )
+            .await
+            .expect("sent")
+            .check();
+        assert!(
+            refused.is_err(),
+            "an unattributable promotion event was accepted: {refused:?}",
+        );
+    }
+
+    #[tokio::test]
+    async fn the_database_refuses_a_scope_edit_on_an_episodic_row() {
+        // Defence in depth behind PromotionPolicy: even if the policy were
+        // loosened by mistake, the append-only EVENT still refuses to move an
+        // episodic record.
+        let store = migrated().await;
+        store
+            .connection()
+            .query(EPISODE)
+            .await
+            .expect("sent")
+            .check()
+            .expect("the episode is written");
+
+        let refused = store
+            .connection()
+            .query("UPDATE memory:episode SET scope = 'platform'")
+            .await
+            .expect("sent")
+            .check();
+        assert!(
+            refused.is_err(),
+            "a raw UPDATE promoted an episodic record: {refused:?}",
+        );
     }
 
     #[tokio::test]

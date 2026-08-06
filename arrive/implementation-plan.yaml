@@ -211,7 +211,7 @@ passes:
           - id: "ADV-CORE-003"
             advance_id: "ADV-CORE-003"
             title: "Scope promotion policy engine"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-STORE-001"]
             notes: "Security-critical: the one sanctioned path across scope boundaries. MODEL: claude-opus-5"

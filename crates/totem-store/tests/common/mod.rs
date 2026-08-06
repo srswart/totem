@@ -55,6 +55,17 @@ pub fn at(timestamp: &str) -> DateTime<Utc> {
     timestamp.parse().expect("valid RFC 3339 timestamp")
 }
 
+/// Provenance for an action a person takes at the console — the shape every
+/// promotion decision carries.
+pub fn decided_by(id: &str) -> Provenance {
+    Provenance::new(
+        Author::Human(actor(id)),
+        Harness::Console,
+        SessionId::new("sess-review").expect("valid session id"),
+        at("2026-08-06T07:00:00Z"),
+    )
+}
+
 /// A record with the minimum every write needs: category, scope, body, and
 /// provenance naming an author, harness, session, and time.
 pub fn memory(category: MemoryCategory, scope: Scope, body: &str) -> MemoryRecord {

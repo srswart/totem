@@ -1,6 +1,6 @@
 //! What the store refuses, and why.
 
-use totem_core::{LifecycleError, MemoryId, Scope};
+use totem_core::{LifecycleError, MemoryId, PromotionError, PromotionId, Scope};
 
 /// The result of a store operation.
 pub type StoreResult<T> = Result<T, StoreError>;
@@ -26,6 +26,17 @@ pub enum StoreError {
     /// The record does not exist, or is not visible to this caller.
     #[error("memory {0} is not present in the caller's scope chain")]
     NotFound(MemoryId),
+    /// A policy rule refused a scope change.
+    #[error(transparent)]
+    Promotion(#[from] PromotionError),
+    /// The proposal does not exist, is already decided, or targets a scope this
+    /// caller cannot reach.
+    #[error("promotion {0} is not open to this caller")]
+    PromotionNotFound(PromotionId),
+    /// The proposal has already been approved or rejected; a second decision
+    /// would put a contradiction in the audit trail.
+    #[error("promotion {0} has already been decided")]
+    PromotionDecided(PromotionId),
     /// An embedding did not match the dimension the vector index is pinned to.
     #[error("an embedding must have exactly {expected} dimensions, but this one has {actual}")]
     EmbeddingDimensions {

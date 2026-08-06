@@ -12,6 +12,7 @@ use crate::error::{StoreError, StoreResult};
 use crate::landscape::LandscapeRepository;
 use crate::memory::MemoryRepository;
 use crate::migrate::{AppliedMigration, MIGRATIONS};
+use crate::promotion::PromotionRepository;
 use crate::row;
 use crate::schema::MIGRATION_LEDGER;
 
@@ -169,6 +170,26 @@ impl<C: Connection> Store<C> {
     /// (docs/project-brief.md G3).
     pub fn access_log(&self) -> AccessLogRepository<'_, C> {
         AccessLogRepository::new(&self.db)
+    }
+
+    /// Scope promotions under the standing policy — the only way a record's
+    /// scope ever changes (docs/solution-intent.md §2.2).
+    pub fn promotions(&self) -> PromotionRepository<'_, C> {
+        self.promotions_with_policy(totem_core::PromotionPolicy::new())
+    }
+
+    /// Scope promotions under a policy of the caller's choosing.
+    ///
+    /// The configuration lever ADV-CORE-003's rollback plan names: pass
+    /// [`PromotionPolicy::human_gated_everywhere`] to put every category behind
+    /// a human without editing a category definition.
+    ///
+    /// [`PromotionPolicy::human_gated_everywhere`]: totem_core::PromotionPolicy::human_gated_everywhere
+    pub fn promotions_with_policy(
+        &self,
+        policy: totem_core::PromotionPolicy,
+    ) -> PromotionRepository<'_, C> {
+        PromotionRepository::new(&self.db, policy)
     }
 
     /// The landscape mirror — the only way to ingest or query an enrolled
