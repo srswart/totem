@@ -10,7 +10,10 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use totem_core::{ActorId, Author, Harness, MemoryCategory, MemoryId, MemoryRecord, RepoId, Scope, SessionId, SubjectRef, TeamId};
+use totem_core::{
+    ActorId, Author, Harness, MemoryCategory, MemoryId, MemoryRecord, RepoId, Scope, SessionId,
+    SubjectRef, TeamId,
+};
 
 /// `POST /save` — a write with provenance auto-attached from the caller's own
 /// identity (the objective's phrase; ADV-GATEWAY-003 will replace `author` /

@@ -29,7 +29,11 @@ async fn saving_and_recalling_round_trips_over_http() {
     let save_response = post(
         &router,
         "/save",
-        save_request(ADA, "project:srswart/totem", "run `cargo fmt` before pushing"),
+        save_request(
+            ADA,
+            "project:srswart/totem",
+            "run `cargo fmt` before pushing",
+        ),
     )
     .await;
     assert_status(&save_response, StatusCode::OK);
@@ -70,7 +74,8 @@ async fn recall_never_returns_another_actors_private_memory() {
         StatusCode::OK,
     );
 
-    let recalled: RecallResponse = json_body(post(&router, "/recall", recall_request(ADA)).await).await;
+    let recalled: RecallResponse =
+        json_body(post(&router, "/recall", recall_request(ADA)).await).await;
     let bodies: Vec<&str> = recalled
         .records
         .iter()
@@ -125,7 +130,11 @@ async fn every_request_appends_one_access_log_entry() {
     let _: RecallResponse = json_body(post(&router, "/recall", recall_request(ADA)).await).await;
 
     let entries = store.access_log().list().await.expect("list succeeds");
-    assert_eq!(entries.len(), 2, "expected one entry per request: {entries:?}");
+    assert_eq!(
+        entries.len(),
+        2,
+        "expected one entry per request: {entries:?}"
+    );
 
     assert_eq!(entries[0].endpoint, "/save");
     assert_eq!(entries[0].actor, actor(ADA));
@@ -197,7 +206,8 @@ async fn recalling_an_unknown_memory_never_happened_still_appends_an_access_log_
     // completed recall, and the log must record it.
     let (router, store) = common::app().await;
 
-    let recalled: RecallResponse = json_body(post(&router, "/recall", recall_request(ADA)).await).await;
+    let recalled: RecallResponse =
+        json_body(post(&router, "/recall", recall_request(ADA)).await).await;
     assert!(recalled.records.is_empty());
 
     let entries = store.access_log().list().await.expect("list succeeds");

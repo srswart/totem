@@ -15,9 +15,9 @@ use axum::http::{Request, Response, StatusCode};
 use http_body_util::BodyExt;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
-use tower::ServiceExt;
 use totem_gateway::AppState;
 use totem_store::{DeterministicEmbedder, Store};
+use tower::ServiceExt;
 
 pub const ADA: &str = "ada";
 pub const GRACE: &str = "grace";
@@ -42,7 +42,9 @@ pub async fn post(router: &Router, path: &str, body: Value) -> Response<Body> {
                 .method("POST")
                 .uri(path)
                 .header("content-type", "application/json")
-                .body(Body::from(serde_json::to_vec(&body).expect("body serialises")))
+                .body(Body::from(
+                    serde_json::to_vec(&body).expect("body serialises"),
+                ))
                 .expect("request builds"),
         )
         .await

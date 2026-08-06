@@ -31,7 +31,10 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8787")
         .await
         .expect("binds the gateway's listening port");
-    println!("totem-gateway listening on {}", listener.local_addr().expect("listener has a local address"));
+    println!(
+        "totem-gateway listening on {}",
+        listener.local_addr().expect("listener has a local address")
+    );
     axum::serve(listener, app)
         .await
         .expect("the server runs until shut down");
