@@ -9,7 +9,7 @@ advance:
   implementation_completed_at: "2026-08-06T19:30:11Z"
   review_time_estimate_minutes: 35
   review_time_actual_minutes: ~
-  pr_links: []
+  pr_links: ["https://github.com/srswart/totem/pull/42"]
   external_refs: []
   reviewability_score: 43
   risk_flags: ["public_api"]
