@@ -237,6 +237,59 @@ DEFINE EVENT promotion_event_no_delete ON TABLE promotion_event
     THEN { THROW 'a promotion event is append-only and cannot be deleted'; };
 "#;
 
+/// Migration 6 — recorded curator actions (ADV-CURATOR-001).
+///
+/// The curator is the first writer that touches records it did not author, and
+/// its whole safety argument is that every action is reversible. That argument
+/// rests on this table, so it is held to the same standard as the access log
+/// and the promotion trail: the two `EVENT`s refuse `UPDATE` and `DELETE`, and
+/// `provenance` is a required object with required members. A rollback is
+/// reconstructed from the event alone — including `superseded.*.prior_status`,
+/// the status each original held *before* the merge — so an event that could be
+/// rewritten or removed would leave a merge with nothing to undo it by.
+///
+/// `scope` is the one scope every record in the event sits at: a merge may not
+/// cross a scope boundary (`totem_core::CurationPolicy`), which is what lets
+/// the trail be scope-filtered on a single column rather than by joining back
+/// to each record.
+///
+/// `recorded_at` is assigned by the store for the same reason it is on
+/// `promotion_event`: `provenance.created_at` is whatever the calling job
+/// reported, and ordering an audit trail by a caller's clock lets a wrong one
+/// rearrange history.
+pub(crate) const CURATION_SCHEMA_V6: &str = r#"
+DEFINE TABLE curation_event SCHEMAFULL;
+
+DEFINE FIELD kind ON curation_event TYPE string
+    ASSERT $value IN ['merged', 'rolled_back'];
+DEFINE FIELD merged ON curation_event TYPE record<memory>;
+DEFINE FIELD scope ON curation_event TYPE string ASSERT $value != '';
+DEFINE FIELD superseded ON curation_event TYPE array<object>;
+DEFINE FIELD superseded.*.memory ON curation_event TYPE record<memory>;
+DEFINE FIELD superseded.*.prior_status ON curation_event TYPE string
+    ASSERT $value IN ['active', 'contested', 'retired'];
+DEFINE FIELD rolls_back ON curation_event TYPE option<record<curation_event>>;
+DEFINE FIELD reason ON curation_event TYPE option<string>;
+DEFINE FIELD recorded_at ON curation_event TYPE datetime;
+
+DEFINE FIELD provenance ON curation_event TYPE object;
+DEFINE FIELD provenance.author_kind ON curation_event TYPE string
+    ASSERT $value IN ['human', 'agent', 'curator'];
+DEFINE FIELD provenance.author ON curation_event TYPE string ASSERT $value != '';
+DEFINE FIELD provenance.harness ON curation_event TYPE string ASSERT $value != '';
+DEFINE FIELD provenance.session ON curation_event TYPE string ASSERT $value != '';
+DEFINE FIELD provenance.turn ON curation_event TYPE option<int>;
+DEFINE FIELD provenance.created_at ON curation_event TYPE datetime;
+DEFINE FIELD provenance.derived_from ON curation_event TYPE array<record<memory>> DEFAULT [];
+
+DEFINE EVENT curation_event_no_update ON TABLE curation_event
+    WHEN $event = 'UPDATE'
+    THEN { THROW 'a curation event is append-only and cannot be updated'; };
+DEFINE EVENT curation_event_no_delete ON TABLE curation_event
+    WHEN $event = 'DELETE'
+    THEN { THROW 'a curation event is append-only and cannot be deleted'; };
+"#;
+
 #[cfg(test)]
 mod tests {
     //! Enforcement the repository API cannot be trusted to provide.

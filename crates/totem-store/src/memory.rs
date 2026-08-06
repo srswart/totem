@@ -128,6 +128,13 @@ impl RecallQuery {
             ));
         }
         sql.push_str("scope IN $scopes");
+        // Retired records are withdrawn from retrieval and kept for audit
+        // (`MemoryStatus::Retired`). Without this predicate a curator's
+        // supersession would be a label on a row that still competes for the
+        // agent's context window, and dedupe would never actually dedupe.
+        // Contested records stay: a contradiction the reader should see is not
+        // the same as a fact that has been withdrawn.
+        sql.push_str(" AND governance.status != $retired");
         if !self.categories.is_empty() {
             sql.push_str(" AND category IN $categories");
         }
@@ -151,7 +158,7 @@ impl RecallQuery {
     }
 }
 
-fn check_dimensions(embedding: &[f32]) -> StoreResult<()> {
+pub(crate) fn check_dimensions(embedding: &[f32]) -> StoreResult<()> {
     if embedding.len() == EMBEDDING_DIMENSIONS {
         return Ok(());
     }
@@ -427,6 +434,10 @@ impl<'a, C: Connection> MemoryRepository<'a, C> {
             .db
             .query(sql)
             .bind(("scopes", readable_scopes(reader)))
+            .bind((
+                "retired",
+                row::status_key(totem_core::MemoryStatus::Retired).to_string(),
+            ))
             .bind((
                 "categories",
                 query

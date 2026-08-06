@@ -14,7 +14,7 @@ use totem_core::{
     ActorId, Author, Content, CurationEventKind, Harness, MemoryCategory, MemoryRecord,
     MemoryStatus, Provenance, Scope, ScopeChain, SessionId,
 };
-use totem_store::{RecallQuery, StoreError, Store};
+use totem_store::{RecallQuery, Store, StoreError};
 
 fn curator_provenance() -> Provenance {
     Provenance::new(
@@ -37,6 +37,23 @@ async fn saved(
     body: &str,
 ) -> MemoryRecord {
     let record = memory(MemoryCategory::Knowledge, scope, body);
+    store
+        .memories()
+        .save(writer, &record)
+        .await
+        .expect("the record saves");
+    record
+}
+
+/// A knowledge record written at a chosen time, saved.
+async fn written(
+    store: &Store<surrealdb::engine::local::Db>,
+    writer: &ScopeChain,
+    scope: Scope,
+    body: &str,
+    timestamp: &str,
+) -> MemoryRecord {
+    let record = common::written_at(MemoryCategory::Knowledge, scope, body, timestamp);
     store
         .memories()
         .save(writer, &record)
@@ -77,9 +94,18 @@ async fn a_merge_retires_the_originals_and_leaves_them_readable() {
     let store = store().await;
     let ada = chain(ADA);
     let repo_scope = ada.scopes()[1].clone();
-    let first = saved(&store, &ada, repo_scope.clone(), "deploys happen on fridays").await;
+    let first = saved(
+        &store,
+        &ada,
+        repo_scope.clone(),
+        "deploys happen on fridays",
+    )
+    .await;
     let second = saved(&store, &ada, repo_scope, "deploys happen on fridays.").await;
-    let merged = superseding(&[first.clone(), second.clone()], "deploys happen on fridays");
+    let merged = superseding(
+        &[first.clone(), second.clone()],
+        "deploys happen on fridays",
+    );
 
     let event = store
         .curation()
@@ -97,7 +123,10 @@ async fn a_merge_retires_the_originals_and_leaves_them_readable() {
     // Superseded, not deleted: both originals are still readable, and the
     // lineage from the survivor back to them is on the record itself.
     assert_eq!(status_of(&store, &ada, &first).await, MemoryStatus::Retired);
-    assert_eq!(status_of(&store, &ada, &second).await, MemoryStatus::Retired);
+    assert_eq!(
+        status_of(&store, &ada, &second).await,
+        MemoryStatus::Retired
+    );
     assert_eq!(status_of(&store, &ada, &merged).await, MemoryStatus::Active);
     assert_eq!(
         store
@@ -119,9 +148,18 @@ async fn recall_stops_returning_a_retired_record() {
     let store = store().await;
     let ada = chain(ADA);
     let repo_scope = ada.scopes()[1].clone();
-    let first = saved(&store, &ada, repo_scope.clone(), "deploys happen on fridays").await;
+    let first = saved(
+        &store,
+        &ada,
+        repo_scope.clone(),
+        "deploys happen on fridays",
+    )
+    .await;
     let second = saved(&store, &ada, repo_scope, "deploys happen on fridays.").await;
-    let merged = superseding(&[first.clone(), second.clone()], "deploys happen on fridays");
+    let merged = superseding(
+        &[first.clone(), second.clone()],
+        "deploys happen on fridays",
+    );
 
     store
         .curation()
@@ -150,12 +188,16 @@ async fn recall_stops_returning_a_retired_record() {
 async fn a_curator_cannot_supersede_a_record_it_cannot_see() {
     // Grace's chain does not reach ada's private scope, so ada's records read
     // as absent — the curator gets the same refusal any other caller would.
+    // The survivor is written at the shared project scope, which grace *can*
+    // reach: without that, the refusal would come from the write side and this
+    // test would never exercise the read side at all.
     let store = store().await;
     let ada = chain(ADA);
     let grace = chain(GRACE);
     let first = saved(&store, &ada, private(ADA), "a private note").await;
     let second = saved(&store, &ada, private(ADA), "a private note!").await;
-    let merged = superseding(&[first.clone(), second.clone()], "a private note");
+    let mut merged = superseding(&[first.clone(), second.clone()], "a private note");
+    merged.scope = grace.scopes()[1].clone();
 
     let refused = store
         .curation()
@@ -189,7 +231,10 @@ async fn a_curator_cannot_write_the_survivor_into_a_scope_it_cannot_reach() {
         .await;
 
     assert!(
-        matches!(refused, Err(StoreError::ScopeDenied { .. }) | Err(StoreError::Curation(_))),
+        matches!(
+            refused,
+            Err(StoreError::ScopeDenied { .. }) | Err(StoreError::Curation(_))
+        ),
         "a survivor was written outside the curator's chain: {refused:?}",
     );
 }
@@ -228,7 +273,10 @@ async fn the_same_merge_cannot_be_applied_twice() {
         )
         .await;
 
-    assert!(refused.is_err(), "the same merge applied twice: {refused:?}");
+    assert!(
+        refused.is_err(),
+        "the same merge applied twice: {refused:?}"
+    );
     assert_eq!(
         store
             .curation()
@@ -284,7 +332,10 @@ async fn a_rollback_restores_the_originals_and_retires_the_survivor() {
     assert_eq!(rollback.rolls_back, Some(event.id));
     assert_eq!(status_of(&store, &ada, &first).await, MemoryStatus::Active);
     assert_eq!(status_of(&store, &ada, &second).await, MemoryStatus::Active);
-    assert_eq!(status_of(&store, &ada, &merged).await, MemoryStatus::Retired);
+    assert_eq!(
+        status_of(&store, &ada, &merged).await,
+        MemoryStatus::Retired
+    );
 
     let recalled = store
         .memories()
@@ -379,8 +430,24 @@ async fn scanning_for_candidates_reads_the_active_set_without_metering_it() {
     let store = store().await;
     let ada = chain(ADA);
     let repo_scope = ada.scopes()[1].clone();
-    let live = saved(&store, &ada, repo_scope.clone(), "a fact").await;
-    let other = saved(&store, &ada, repo_scope.clone(), "another fact").await;
+    // Distinct write times: the scan orders by them, and a tie would leave the
+    // expected order to the database.
+    let live = written(
+        &store,
+        &ada,
+        repo_scope.clone(),
+        "a fact",
+        "2026-08-05T06:00:00Z",
+    )
+    .await;
+    let other = written(
+        &store,
+        &ada,
+        repo_scope.clone(),
+        "another fact",
+        "2026-08-05T07:00:00Z",
+    )
+    .await;
     let merged = superseding(&[live.clone(), other.clone()], "a fact");
     let unrelated = memory(MemoryCategory::Context, repo_scope, "the working set");
     store
@@ -395,19 +462,17 @@ async fn scanning_for_candidates_reads_the_active_set_without_metering_it() {
         .await
         .expect("the scan succeeds");
     assert_eq!(
-        candidates.iter().map(|record| record.id).collect::<Vec<_>>(),
+        candidates
+            .iter()
+            .map(|record| record.id)
+            .collect::<Vec<_>>(),
         vec![live.id, other.id],
         "the scan returned something other than the active knowledge set",
     );
 
     store
         .curation()
-        .merge(
-            &ada,
-            &merged,
-            &[live.clone(), other],
-            curator_provenance(),
-        )
+        .merge(&ada, &merged, &[live.clone(), other], curator_provenance())
         .await
         .expect("the merge applies");
     assert_eq!(

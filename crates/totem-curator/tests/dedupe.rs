@@ -127,7 +127,11 @@ impl Written {
     }
 }
 
-async fn status_of(store: &Store<Db>, reader: &ScopeChain, id: totem_core::MemoryId) -> MemoryStatus {
+async fn status_of(
+    store: &Store<Db>,
+    reader: &ScopeChain,
+    id: totem_core::MemoryId,
+) -> MemoryStatus {
     store
         .memories()
         .get(reader, id)
@@ -181,8 +185,14 @@ async fn near_duplicates_become_one_survivor_that_cites_them() {
         "the survivor was not attributed to the curator: {:?}",
         survivor.provenance.author,
     );
-    assert_eq!(status_of(&store, &ada, older.id).await, MemoryStatus::Retired);
-    assert_eq!(status_of(&store, &ada, newer.id).await, MemoryStatus::Retired);
+    assert_eq!(
+        status_of(&store, &ada, older.id).await,
+        MemoryStatus::Retired
+    );
+    assert_eq!(
+        status_of(&store, &ada, newer.id).await,
+        MemoryStatus::Retired
+    );
 }
 
 #[tokio::test]
@@ -253,9 +263,7 @@ async fn identical_records_at_different_scopes_are_never_merged() {
         .at_scope(Scope::Actor(actor(ADA)))
         .save(&store, &ada)
         .await;
-    let ours = note("deploys happen on fridays")
-        .save(&store, &ada)
-        .await;
+    let ours = note("deploys happen on fridays").save(&store, &ada).await;
 
     let report = curator(&store)
         .dedupe(&ada, &DedupePolicy::new())
@@ -388,8 +396,14 @@ async fn a_rollback_through_the_runner_restores_what_the_job_superseded() {
         .expect("the rollback applies");
 
     assert_eq!(rollback.rolls_back, Some(merge.id));
-    assert_eq!(status_of(&store, &ada, older.id).await, MemoryStatus::Active);
-    assert_eq!(status_of(&store, &ada, newer.id).await, MemoryStatus::Active);
+    assert_eq!(
+        status_of(&store, &ada, older.id).await,
+        MemoryStatus::Active
+    );
+    assert_eq!(
+        status_of(&store, &ada, newer.id).await,
+        MemoryStatus::Active
+    );
     assert_eq!(
         status_of(&store, &ada, merge.merged).await,
         MemoryStatus::Retired

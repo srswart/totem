@@ -8,6 +8,7 @@ use surrealdb::types::{Number, RecordId, Value};
 use surrealdb::{Connection, Surreal};
 
 use crate::access_log::AccessLogRepository;
+use crate::curation::CurationRepository;
 use crate::error::{StoreError, StoreResult};
 use crate::landscape::LandscapeRepository;
 use crate::memory::MemoryRepository;
@@ -190,6 +191,21 @@ impl<C: Connection> Store<C> {
         policy: totem_core::PromotionPolicy,
     ) -> PromotionRepository<'_, C> {
         PromotionRepository::new(&self.db, policy)
+    }
+
+    /// Curator merges and their rollbacks under the standing policy — the only
+    /// way a record is ever retired (`components/curator.yaml`: curation never
+    /// deletes).
+    pub fn curation(&self) -> CurationRepository<'_, C> {
+        self.curation_with_policy(totem_core::CurationPolicy::new())
+    }
+
+    /// Curation under a policy of the caller's choosing.
+    pub fn curation_with_policy(
+        &self,
+        policy: totem_core::CurationPolicy,
+    ) -> CurationRepository<'_, C> {
+        CurationRepository::new(&self.db, policy)
     }
 
     /// The landscape mirror — the only way to ingest or query an enrolled

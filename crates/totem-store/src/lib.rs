@@ -46,6 +46,7 @@
 #![warn(missing_docs)]
 
 mod access_log;
+mod curation;
 mod embedding;
 mod error;
 mod landscape;
@@ -57,6 +58,7 @@ mod schema;
 mod store;
 
 pub use access_log::AccessLogRepository;
+pub use curation::CurationRepository;
 #[cfg(feature = "fastembed")]
 pub use embedding::fastembed_embedder::FastembedEmbedder;
 pub use embedding::{DeterministicEmbedder, Embedder, embed};

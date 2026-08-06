@@ -118,7 +118,7 @@ fn a_merge_needs_at_least_two_originals_and_none_of_them_may_be_itself() {
 
     assert_eq!(
         policy
-            .merge(&merged, &[other.clone()], curator())
+            .merge(&merged, std::slice::from_ref(&other), curator())
             .expect_err("one original is a rename, not a merge"),
         CurationError::NothingToMerge { superseded: 1 }
     );

@@ -1,6 +1,8 @@
 //! What the store refuses, and why.
 
-use totem_core::{LifecycleError, MemoryId, PromotionError, PromotionId, Scope};
+use totem_core::{
+    CurationError, CurationId, LifecycleError, MemoryId, PromotionError, PromotionId, Scope,
+};
 
 /// The result of a store operation.
 pub type StoreResult<T> = Result<T, StoreError>;
@@ -37,6 +39,17 @@ pub enum StoreError {
     /// would put a contradiction in the audit trail.
     #[error("promotion {0} has already been decided")]
     PromotionDecided(PromotionId),
+    /// A policy rule refused a curation.
+    #[error(transparent)]
+    Curation(#[from] CurationError),
+    /// The curation event does not exist, or happened at a scope this caller
+    /// cannot reach.
+    #[error("curation event {0} is not visible to this caller")]
+    CurationNotFound(CurationId),
+    /// The merge has already been rolled back; a second rollback would claim to
+    /// restore records that are already restored.
+    #[error("curation event {0} has already been rolled back")]
+    CurationRolledBack(CurationId),
     /// An embedding did not match the dimension the vector index is pinned to.
     #[error("an embedding must have exactly {expected} dimensions, but this one has {actual}")]
     EmbeddingDimensions {

@@ -7,8 +7,8 @@
 use chrono::{DateTime, Utc};
 
 use crate::schema::{
-    ACCESS_LOG_FEEDBACK_SCHEMA_V4, ACCESS_LOG_SCHEMA_V2, LANDSCAPE_SYNC_SCHEMA_V3,
-    MEMORY_SCHEMA_V1, PROMOTION_SCHEMA_V5,
+    ACCESS_LOG_FEEDBACK_SCHEMA_V4, ACCESS_LOG_SCHEMA_V2, CURATION_SCHEMA_V6,
+    LANDSCAPE_SYNC_SCHEMA_V3, MEMORY_SCHEMA_V1, PROMOTION_SCHEMA_V5,
 };
 
 /// One forward-only schema change.
@@ -51,6 +51,11 @@ pub const MIGRATIONS: &[Migration] = &[
         version: 5,
         name: "scope_promotion_events",
         statements: PROMOTION_SCHEMA_V5,
+    },
+    Migration {
+        version: 6,
+        name: "curation_events",
+        statements: CURATION_SCHEMA_V6,
     },
 ];
 
