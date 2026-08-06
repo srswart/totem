@@ -571,7 +571,10 @@ mod tests {
             html.contains(&proposal.memory.to_string()),
             "expected the proposed memory's id: {html}"
         );
-        assert!(html.contains("Approve"), "expected an Approve button: {html}");
+        assert!(
+            html.contains("Approve"),
+            "expected an Approve button: {html}"
+        );
         assert!(html.contains("Reject"), "expected a Reject button: {html}");
     }
 
@@ -619,7 +622,10 @@ mod tests {
             html.contains("actually the deploy runs on Thursdays"),
             "expected the contested claim's body: {html}"
         );
-        assert!(html.contains("Approve"), "expected an Approve button: {html}");
+        assert!(
+            html.contains("Approve"),
+            "expected an Approve button: {html}"
+        );
         assert!(html.contains("Reject"), "expected a Reject button: {html}");
     }
 
@@ -641,7 +647,8 @@ mod tests {
 
     #[test]
     fn the_audit_trail_view_prompts_for_a_lookup_when_nothing_has_been_fetched_yet() {
-        let mut vdom = VirtualDom::new_with_props(AuditTrailView, AuditTrailViewProps { audit: None });
+        let mut vdom =
+            VirtualDom::new_with_props(AuditTrailView, AuditTrailViewProps { audit: None });
         let html = ssr(&mut vdom);
 
         assert!(
@@ -659,10 +666,8 @@ mod tests {
             curation_history: Vec::new(),
             promotion_history: vec![a_promotion_event()],
         };
-        let mut vdom = VirtualDom::new_with_props(
-            AuditTrailView,
-            AuditTrailViewProps { audit: Some(audit) },
-        );
+        let mut vdom =
+            VirtualDom::new_with_props(AuditTrailView, AuditTrailViewProps { audit: Some(audit) });
         let html = ssr(&mut vdom);
 
         assert!(
@@ -677,6 +682,9 @@ mod tests {
             html.contains("No curator actions yet"),
             "expected the empty curation-history message: {html}"
         );
-        assert!(html.contains("Proposed"), "expected the promotion history entry: {html}");
+        assert!(
+            html.contains("Proposed"),
+            "expected the promotion history entry: {html}"
+        );
     }
 }

@@ -331,7 +331,9 @@ mod tests {
                 status: MemoryStatus::Active,
                 review: ReviewState::Pending,
             };
-            let resolved = pending.resolve(decision).expect("a pending review resolves");
+            let resolved = pending
+                .resolve(decision)
+                .expect("a pending review resolves");
             assert_eq!(resolved.review, decision);
             assert_eq!(
                 resolved.status, pending.status,

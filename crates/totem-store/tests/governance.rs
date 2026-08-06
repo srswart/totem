@@ -41,9 +41,10 @@ async fn pending_review_lists_only_that_categorys_open_reviews_oldest_first() {
         .await
         .expect("pending_review succeeds");
 
-    assert_eq!(pending.iter().map(|r| r.id).collect::<Vec<_>>(), vec![
-        first.id, second.id
-    ]);
+    assert_eq!(
+        pending.iter().map(|r| r.id).collect::<Vec<_>>(),
+        vec![first.id, second.id]
+    );
 }
 
 #[tokio::test]
@@ -90,7 +91,10 @@ async fn resolving_a_pending_review_removes_it_from_the_queue() {
         .pending_review(&chain(ADA), MemoryCategory::Uncertainty)
         .await
         .expect("pending_review succeeds");
-    assert!(pending.is_empty(), "resolved record still queued: {pending:?}");
+    assert!(
+        pending.is_empty(),
+        "resolved record still queued: {pending:?}"
+    );
 
     let stored = memories
         .get(&chain(ADA), contested.id)

@@ -153,7 +153,11 @@ impl<'a, C: Connection> AccessLogRepository<'a, C> {
         reader: &ScopeChain,
         id: MemoryId,
     ) -> StoreResult<Vec<AccessLogEntry>> {
-        if MemoryRepository::new(self.db).get(reader, id).await?.is_none() {
+        if MemoryRepository::new(self.db)
+            .get(reader, id)
+            .await?
+            .is_none()
+        {
             return Err(StoreError::NotFound(id));
         }
 
