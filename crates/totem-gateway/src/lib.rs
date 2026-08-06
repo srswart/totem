@@ -15,6 +15,7 @@
 mod dto;
 mod error;
 mod handlers;
+mod ops;
 mod state;
 
 use axum::Router;
