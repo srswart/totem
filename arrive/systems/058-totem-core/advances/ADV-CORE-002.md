@@ -11,7 +11,7 @@ advance:
   review_time_actual_minutes: ~
   pr_links: []
   external_refs: []
-  reviewability_score: 47
+  reviewability_score: 59
   risk_flags: []
   evidence: ["tidy:preparatory", "tdd:red-green", "tests:unit", "tests:integration"]
   practices:
@@ -132,7 +132,8 @@ After this advance:
   `totem-store/src/memory.rs` is the one call site that combines the four
   factors — reverting it to `relevance_from_distance(distance)` alone
   restores the pre-advance ordering without touching `reinforce_usage` or
-  `record_citations`, which only ever write additive/idempotent-shaped data.
+  `save`'s citation transaction, which only ever write additive/
+  idempotent-shaped data.
 
 ## Evidence
 
@@ -180,14 +181,17 @@ After this advance:
 
 ## Reviewability
 
-`arrive score --base origin/advance/phase-006` reports **47 [YELLOW]** (size
-43, novelty 4, risk 0). Not split further: the three touched files — the pure
-scoring math, its wiring into `save`/`recall`, and the tests proving both —
-are one cohesive change (a ranking function has no meaning reviewed apart
-from the store logic that calls it, and neither has meaning apart from the
-tests that pin its behavior), and the commit series already separates
-tidy → test → feat per the mandatory practice, so a reviewer can approve each
-phase independently within the one sub-PR.
+`arrive score --base origin/advance/phase-006` reports **59 [YELLOW]** (size
+53, novelty 6, risk 0) after the `fix:` commit addressing Copilot's PR review
+(the score was 47 before it — folding `record_citations` into `save`'s own
+transaction touched more of the same function than a separate method would
+have). Still under the Red threshold. Not split further: the three touched
+files — the pure scoring math, its wiring into `save`/`recall`, and the tests
+proving both — are one cohesive change (a ranking function has no meaning
+reviewed apart from the store logic that calls it, and neither has meaning
+apart from the tests that pin its behavior), and the commit series already
+separates tidy → test → feat → fix, so a reviewer can approve each phase
+independently within the one sub-PR.
 
 ## Changes Made
 
@@ -214,9 +218,9 @@ phase independently within the one sub-PR.
   `MemoryCategory::lifecycle().decays`; category weight normalized from
   `injection_priority`; vector distance to a `(0, 1]` relevance term (neutral
   `1.0` with no probe); the four-factor product. 16/16 tests green.
-- crates/totem-store/src/memory.rs: `save` now calls `record_citations` for
-  `provenance.derived_from`, raising each cited (non-episodic, in-chain)
-  source's `value_score` by `CITATION_BOOST` (0.2). `recall` now scores the
+- crates/totem-store/src/memory.rs: `save` now boosts each cited
+  (non-episodic, in-chain) source's `value_score` by `CITATION_BOOST` (0.2)
+  when `provenance.derived_from` is non-empty. `recall` now scores the
   merged view with `rank_score` (relevance from `knn_distance` × `value_score`
   × live-decayed `currency` × `category_weight`), sorts, truncates to the
   caller's limit, then calls `reinforce_usage` on exactly what it returns
@@ -229,13 +233,31 @@ phase independently within the one sub-PR.
   status `complete`, evidence, practice dispositions, reviewability score,
   refreshed Behavioral Change/Risk/CFU.
 
+### 2026-08-06 - fix: address Copilot PR review comments (#30)
+- crates/totem-store/src/memory.rs: `save` now commits the `INSERT` and the
+  citation `value_score` boost as one `BEGIN`/`COMMIT TRANSACTION` (TD-006)
+  instead of two separate writes — a transient failure in the citation
+  update could otherwise leave the new record inserted but return an error
+  to the caller, risking a duplicate insert on retry. The standalone
+  `record_citations` method (its only caller) is folded directly into
+  `save`; the no-citations path is still a plain `INSERT`, no transaction
+  overhead when `derived_from` is empty.
+- crates/totem-store/tests/value_scoring.rs: renamed
+  `recall_ranks_a_recently_reinforced_decaying_record_above_a_stale_one` to
+  `...recently_written...` and corrected its comment — the test never
+  performs a reinforcing recall on the "fresh" record, it only writes it
+  more recently, so "reinforced" misnamed what the test actually exercises
+  (currency decay from elapsed time since creation).
+- Reviewability rose from 47 to 59 (still YELLOW) — recorded in this file's
+  own Reviewability section.
+
 ## Check for Understanding
 
 1. `effective_currency` (`crates/totem-core/src/scoring.rs`) checks
    `category.lifecycle().decays` before ever calling `decay_currency`. Which
    four categories does this exempt, and what would go wrong for
    `Instructions` specifically if that check were removed?
-2. `reinforce_usage` and `record_citations`
+2. `reinforce_usage` and `save`'s citation update
    (`crates/totem-store/src/memory.rs`) both filter out episodic records
    *and* add a `category != $episodic` predicate to the statement itself.
    Why is the Rust-side filter alone not enough — what's the actual failure
@@ -243,19 +265,23 @@ phase independently within the one sub-PR.
 3. `citing_a_memory_outside_the_writers_chain_does_not_boost_it`
    (`crates/totem-store/tests/value_scoring.rs`) has ada name grace's private
    memory in `derived_from` for a record ada legitimately writes to her own
-   scope. Why does `record_citations` still refuse to move grace's
+   scope. Why does `save`'s citation update still refuse to move grace's
    `value_score`, given that ada's own write succeeds?
-4. `rank_score` computes `elapsed` from `last_used_at.unwrap_or(created_at)`
+4. `save` wraps the insert and the citation boost in one
+   `BEGIN`/`COMMIT TRANSACTION` only when `derived_from` is non-empty. Why
+   is a single-statement `INSERT` (no transaction wrapper) still correct
+   for the empty case, rather than always wrapping both statements?
+5. `rank_score` computes `elapsed` from `last_used_at.unwrap_or(created_at)`
    — trace what happens to a Knowledge record's ranking position across two
    consecutive `recall` calls with nothing else changing in between, and
    explain why.
-5. The Behavioral Change section lists five things this advance's Objective
+6. The Behavioral Change section lists five things this advance's Objective
    implied but does not implement (explicit feedback, per-actor/per-harness
    aggregates, an injections counter, gateway exposure of `derived_from`, the
    console retire queue). Pick the one you think is riskiest to leave
    unimplemented and say what could go wrong for a real harness before it
    lands.
-6. `CITATION_BOOST` (0.2) and `DEFAULT_CURRENCY_HALF_LIFE` (14 days) are both
+7. `CITATION_BOOST` (0.2) and `DEFAULT_CURRENCY_HALF_LIFE` (14 days) are both
    named constants rather than configuration. What evidence would justify
    changing either value, and where would that evidence come from given
    VAL-004/VAL-005's findings?
