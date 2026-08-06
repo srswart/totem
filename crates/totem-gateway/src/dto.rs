@@ -15,6 +15,7 @@ use totem_core::{
     SubjectRef, TeamId,
 };
 use totem_store::LandscapeSnapshot;
+pub use totem_store::LandscapeView;
 
 /// `POST /save` — a write with provenance auto-attached from the caller's own
 /// identity (the objective's phrase; ADV-GATEWAY-003 will replace `author` /
