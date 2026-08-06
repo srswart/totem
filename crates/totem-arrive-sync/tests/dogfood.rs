@@ -102,7 +102,7 @@ async fn syncing_this_repos_landscape_populates_the_store_and_is_queryable_in_on
         Some("058 Totem".to_string())
     );
     assert_eq!(view.systems.len(), 1);
-    assert_eq!(view.components.len(), 7);
+    assert_eq!(view.components.len(), 8);
     assert_eq!(view.advances.len(), summary.advances);
 
     let store_component = view
