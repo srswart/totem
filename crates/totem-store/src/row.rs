@@ -32,7 +32,7 @@ impl From<RowError> for crate::StoreError {
     }
 }
 
-fn malformed(what: impl std::fmt::Display) -> RowError {
+pub(crate) fn malformed(what: impl std::fmt::Display) -> RowError {
     RowError(what.to_string())
 }
 
@@ -41,7 +41,7 @@ pub(crate) fn memory_thing(id: MemoryId) -> RecordId {
     RecordId::new(MEMORY_TABLE, RecordIdKey::from(id.to_string()))
 }
 
-fn memory_id(thing: &RecordId) -> Result<MemoryId, RowError> {
+pub(crate) fn memory_id(thing: &RecordId) -> Result<MemoryId, RowError> {
     let RecordIdKey::String(key) = &thing.key else {
         return Err(malformed(format!(
             "memory id is not a string key: {thing:?}"
@@ -112,7 +112,7 @@ fn author_from(kind: &str, actor: ActorId) -> Result<Author, RowError> {
 /// `Harness::Other` keeps its payload behind an `other:` prefix so the stored
 /// value stays a single string, and so a harness Totem learns the name of later
 /// can be promoted to a named variant by a migration.
-fn harness_key(harness: &Harness) -> String {
+pub(crate) fn harness_key(harness: &Harness) -> String {
     match harness {
         Harness::ClaudeCode => "claude_code".to_string(),
         Harness::Cursor => "cursor".to_string(),
@@ -123,7 +123,7 @@ fn harness_key(harness: &Harness) -> String {
     }
 }
 
-fn harness_from(key: &str) -> Result<Harness, RowError> {
+pub(crate) fn harness_from(key: &str) -> Result<Harness, RowError> {
     match key {
         "claude_code" => Ok(Harness::ClaudeCode),
         "cursor" => Ok(Harness::Cursor),
@@ -364,12 +364,12 @@ pub(crate) fn from_row(row: &Object) -> Result<MemoryRecord, RowError> {
     })
 }
 
-fn field<'a>(row: &'a Object, key: &str) -> Result<&'a Value, RowError> {
+pub(crate) fn field<'a>(row: &'a Object, key: &str) -> Result<&'a Value, RowError> {
     row.get(key)
         .ok_or_else(|| malformed(format!("stored row has no `{key}`")))
 }
 
-fn string(row: &Object, key: &str) -> Result<String, RowError> {
+pub(crate) fn string(row: &Object, key: &str) -> Result<String, RowError> {
     match field(row, key)? {
         Value::String(value) => Ok(value.to_string()),
         other => Err(malformed(format!("`{key}` is not a string: {other:?}"))),
@@ -397,14 +397,14 @@ fn object(row: &Object, key: &str) -> Result<Object, RowError> {
     }
 }
 
-fn record_id(row: &Object, key: &str) -> Result<RecordId, RowError> {
+pub(crate) fn record_id(row: &Object, key: &str) -> Result<RecordId, RowError> {
     match field(row, key)? {
         Value::RecordId(thing) => Ok(thing.clone()),
         other => Err(malformed(format!("`{key}` is not a record id: {other:?}"))),
     }
 }
 
-fn datetime(row: &Object, key: &str) -> Result<DateTime<Utc>, RowError> {
+pub(crate) fn datetime(row: &Object, key: &str) -> Result<DateTime<Utc>, RowError> {
     match field(row, key)? {
         Value::Datetime(value) => Ok(DateTime::<Utc>::from(*value)),
         // A stored instant that arrives as a string is TD-004 in the flesh:
@@ -414,7 +414,7 @@ fn datetime(row: &Object, key: &str) -> Result<DateTime<Utc>, RowError> {
     }
 }
 
-fn number(value: &Value) -> Option<f64> {
+pub(crate) fn number(value: &Value) -> Option<f64> {
     match value {
         Value::Number(Number::Int(value)) => Some(*value as f64),
         Value::Number(Number::Float(value)) => Some(*value),
