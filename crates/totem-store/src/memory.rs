@@ -9,15 +9,15 @@
 use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
-use surrealdb::types::{Object, SurrealValue, Value};
+use surrealdb::types::{SurrealValue, Value};
 use surrealdb::{Connection, Surreal};
 use totem_core::{
-    Content, FeedbackSignal, LifecycleError, MemoryCategory, MemoryId, MemoryRecord, Scope,
-    ScopeChain, SubjectKind,
+    Content, FeedbackSignal, LifecycleError, MemoryCategory, MemoryId, MemoryRecord, ScopeChain,
+    SubjectKind,
 };
 
 use crate::error::{StoreError, StoreResult};
-use crate::row::{self, MEMORY_TABLE};
+use crate::row::{self, MEMORY_TABLE, objects, readable_scopes};
 use crate::schema::EMBEDDING_DIMENSIONS;
 
 /// How many rows a recall returns when the caller does not say.
@@ -515,31 +515,6 @@ fn rank_score(record: &MemoryRecord, distance: Option<f64>, now: DateTime<Utc>) 
     let relevance = totem_core::relevance_from_distance(distance);
     let weight = totem_core::category_weight(record.category);
     totem_core::combined_score(relevance, record.economics.value_score, currency, weight)
-}
-
-/// The scopes a reader may see, as the store's own predicate values.
-///
-/// Derived from the chain, never from a caller-supplied filter: the widest set
-/// a caller can ask for is the set it already had.
-fn readable_scopes(reader: &ScopeChain) -> Vec<String> {
-    reader
-        .scopes()
-        .iter()
-        .map(Scope::to_string)
-        .collect::<Vec<String>>()
-}
-
-fn objects(rows: Value) -> StoreResult<Vec<Object>> {
-    let rows = rows
-        .into_array()
-        .map_err(|_| StoreError::Row("query did not return an array".to_string()))?;
-    rows.iter()
-        .map(|row| {
-            row.clone()
-                .into_object()
-                .map_err(|_| StoreError::Row("query row is not an object".to_string()))
-        })
-        .collect()
 }
 
 /// The key two records must share to be the same fact held at two scopes.
