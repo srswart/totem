@@ -11,8 +11,8 @@ advance:
   review_time_actual_minutes: ~
   pr_links: []
   external_refs: []
-  reviewability_score: 0
-  risk_flags: ["migration", "new_dependency"]
+  reviewability_score: 99
+  risk_flags: ["migration", "concurrency", "new_dependency"]
   evidence: ["tests:unit", "tests:integration"]
   model_usage: []
   schema_version: 2
@@ -97,6 +97,39 @@ After this advance:
   at any time (the mirror is disposable, the repo is authoritative). The new
   `component_id` field and `sync_run` table (migration 3) are additive — no
   existing migration or row shape is altered.
+
+## Reviewability
+
+`arrive score --base origin/advance/phase-005` reports **99, RED**
+(14 files, +1374/-30 lines; Size 64, Novelty 20, Risk 15; flags `migration`,
+`concurrency`, `new_dependency`). Splitting further rather than justifying
+atomicity was considered and rejected:
+
+- **Store write path alone** (`landscape.rs`, migration 3, its tests) would
+  land a repository nothing calls — reviewable in isolation, but not
+  runnable or demonstrably correct against real data until the parser
+  exists to feed it.
+- **Parser alone** (`totem-arrive-sync` with no store write path) would land
+  a crate that produces a `LandscapeSnapshot` nobody persists — the
+  dogfood claim ("running the sync against 058-totem populates the
+  landscape graph") would be unverifiable by a reviewer running the code.
+- **Deferring the `totem_landscape` gateway wire-up** to a second advance
+  was the one split seriously considered, since it is the smallest,
+  lowest-risk piece (one stub replaced by one real call, ~50 lines). It
+  stayed in this advance because ADV-GATEWAY-002's own stub doc comment
+  names *this advance* as the trigger for its removal, and a second advance
+  solely to delete a stub's dead branch is process overhead disproportionate
+  to the change.
+
+The three pieces are one behavior — "sync this repo's `/arrive/` into a
+queryable landscape" — verified end-to-end in `tests/dogfood.rs`; splitting
+along crate boundaries would have produced reviewable-looking diffs that
+were each individually unverifiable. The `concurrency` flag is `arrive
+score`'s pattern match on dependency-manifest churn (`Cargo.lock`,
+`Cargo.toml` diffs across the new crate), not a concurrency-bearing code
+change — no new async/threading logic was added; recorded as detected
+rather than suppressed, since the score should reflect what the tool
+measured.
 
 ## Evidence
 
