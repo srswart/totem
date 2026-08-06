@@ -187,6 +187,18 @@ Submitted as one sub-PR anyway rather than split further:
   native build is a stub printing how to build for the real target
 - crates/totem-console/src/lib.rs: wire the `api` module in (wasm32-only)
 
+### 2026-08-06 - fix: address Copilot review on PR #22 (api.rs input hygiene)
+- crates/totem-console/src/api.rs: `fetch_landscape` now trims and
+  percent-encodes `repo` before it reaches the fetch URL (an untrimmed or
+  `/`-containing value previously changed which route the browser actually
+  requested); `fetch_memories` trims `actor`/`project` and requests a
+  bounded `RECALL_LIMIT` (200) instead of an unbounded `limit: null`;
+  `RootApp`'s refresh closure clears `error` at the start of every refresh
+  and clears `memories` when the actor/project fields are blank, instead of
+  leaving stale error/result state on screen
+- crates/totem-console/Cargo.toml: `percent-encoding` as a wasm32-only
+  target dependency
+
 ## Check for Understanding
 
 1. `GET /landscape/:repo` and the MCP tool `totem_landscape` both end up
