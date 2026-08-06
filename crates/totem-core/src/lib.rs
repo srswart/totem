@@ -68,8 +68,8 @@ pub use promotion::{
 };
 pub use provenance::{Author, Harness, Provenance};
 pub use record::{
-    Content, Economics, Governance, LifecycleError, MemoryRecord, MemoryStatus, ReviewState,
-    SubjectKind, SubjectRef,
+    Content, Economics, Governance, GovernanceError, LifecycleError, MemoryRecord, MemoryStatus,
+    ReviewState, SubjectKind, SubjectRef,
 };
 pub use scope::{Scope, ScopeChain, ScopeParseError};
 pub use scoring::{
