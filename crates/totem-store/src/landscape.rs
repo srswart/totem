@@ -433,6 +433,40 @@ impl<'a, C: Connection> LandscapeRepository<'a, C> {
         })
     }
 
+    /// One advance's current status, read directly by id (ADV-GATEWAY-004
+    /// gap-fill: `totem_advance_status`).
+    ///
+    /// Advance ids are globally unique by ARRIVE convention
+    /// ([`AdvanceArtifact::id`]'s own doc), so — unlike [`view`](Self::view),
+    /// which is scoped to a repo because systems and components are not
+    /// addressable the same way — no repo qualifier is needed to address one.
+    /// `None` means the id has never been synced, the same "not yet enrolled
+    /// is a normal state, not a fault" convention `view` already establishes.
+    pub async fn advance(&self, id: &str) -> StoreResult<Option<AdvanceView>> {
+        let mut response = self
+            .db
+            .query(
+                "SELECT *, ->impacts->component.component_id AS impacted_component_ids \
+                 FROM $id",
+            )
+            .bind(("id", advance_thing(id)))
+            .await?
+            .check()?;
+
+        objects(response.take(0)?)?
+            .first()
+            .map(|row| -> StoreResult<AdvanceView> {
+                Ok(AdvanceView {
+                    id: record_key(row)?,
+                    system: linked_key(row, "system")?,
+                    title: row::string(row, "title")?,
+                    status: opt_row_string(row, "status")?,
+                    components: strings(row, "impacted_component_ids")?,
+                })
+            })
+            .transpose()
+    }
+
     /// Every sync run recorded so far, oldest first — the provenance trail
     /// `arrive-sync.yaml` requires ("every ingestion records sync
     /// provenance").
