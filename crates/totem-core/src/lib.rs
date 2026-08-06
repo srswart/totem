@@ -53,6 +53,7 @@ mod ids;
 mod provenance;
 mod record;
 mod scope;
+mod scoring;
 
 pub use access_log::{AccessLogEntry, AccessOperation};
 pub use category::{CategoryLifecycle, MemoryCategory, Mutability, ReviewPolicy};
@@ -63,3 +64,7 @@ pub use record::{
     SubjectKind, SubjectRef,
 };
 pub use scope::{Scope, ScopeChain, ScopeParseError};
+pub use scoring::{
+    DEFAULT_CURRENCY_HALF_LIFE, category_weight, combined_score, decay_currency,
+    effective_currency, relevance_from_distance,
+};
