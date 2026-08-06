@@ -118,6 +118,34 @@ DEFINE TABLE depends_on SCHEMALESS TYPE RELATION IN component OUT component;
 DEFINE TABLE owned_by SCHEMALESS TYPE RELATION IN component OUT actor;
 "#;
 
+/// Migration 2 — the access log (ADV-GATEWAY-001).
+///
+/// Every read and write appends one row here (docs/project-brief.md G3). Like
+/// episodic memory, an audit trail that could be rewritten would not be an
+/// audit trail: the two `EVENT`s below refuse `UPDATE` and `DELETE` at the
+/// database level, so no future code path — not a curator job, not a
+/// "harmless" backfill — can alter or remove an access record.
+pub(crate) const ACCESS_LOG_SCHEMA_V2: &str = r#"
+DEFINE TABLE access_log SCHEMAFULL;
+
+DEFINE FIELD actor ON access_log TYPE string ASSERT $value != '';
+DEFINE FIELD harness ON access_log TYPE string ASSERT $value != '';
+DEFINE FIELD session ON access_log TYPE string ASSERT $value != '';
+DEFINE FIELD turn ON access_log TYPE option<int>;
+DEFINE FIELD operation ON access_log TYPE string ASSERT $value IN ['recall', 'save'];
+DEFINE FIELD endpoint ON access_log TYPE string ASSERT $value != '';
+DEFINE FIELD memory_id ON access_log TYPE option<record<memory>>;
+DEFINE FIELD result_count ON access_log TYPE option<int>;
+DEFINE FIELD at ON access_log TYPE datetime;
+
+DEFINE EVENT access_log_no_update ON TABLE access_log
+    WHEN $event = 'UPDATE'
+    THEN { THROW 'the access log is append-only and cannot be updated'; };
+DEFINE EVENT access_log_no_delete ON TABLE access_log
+    WHEN $event = 'DELETE'
+    THEN { THROW 'the access log is append-only and cannot be deleted'; };
+"#;
+
 #[cfg(test)]
 mod tests {
     //! Enforcement the repository API cannot be trusted to provide.
@@ -261,6 +289,80 @@ mod tests {
             .check()
             .expect("knowledge is revisable");
         assert_eq!(body_of(&store, "memory:note").await, "revised");
+    }
+
+    const ACCESS_LOG_ENTRY: &str = r#"
+        CREATE access_log CONTENT {
+            actor: 'ada', harness: 'claude_code', session: 's1',
+            operation: 'recall', endpoint: '/recall', result_count: 3,
+            at: d'2026-08-05T06:00:00Z'
+        }
+    "#;
+
+    #[tokio::test]
+    async fn the_database_refuses_to_update_an_access_log_row() {
+        let store = migrated().await;
+        let mut response = store
+            .connection()
+            .query(ACCESS_LOG_ENTRY)
+            .await
+            .expect("sent")
+            .check()
+            .expect("the entry is written");
+        let created: Value = response.take(0).expect("created row");
+        let id = created
+            .into_array()
+            .expect("an array")
+            .into_iter()
+            .next()
+            .and_then(|row| row.into_object().ok())
+            .and_then(|row| row.get("id").cloned())
+            .expect("the created row has an id");
+
+        let refused = store
+            .connection()
+            .query("UPDATE $id SET endpoint = '/tampered'")
+            .bind(("id", id))
+            .await
+            .expect("sent")
+            .check();
+        assert!(
+            refused.is_err(),
+            "a raw UPDATE rewrote an access log entry: {refused:?}",
+        );
+    }
+
+    #[tokio::test]
+    async fn the_database_refuses_to_delete_an_access_log_row() {
+        let store = migrated().await;
+        store
+            .connection()
+            .query(ACCESS_LOG_ENTRY)
+            .await
+            .expect("sent")
+            .check()
+            .expect("the entry is written");
+
+        let refused = store
+            .connection()
+            .query("DELETE access_log")
+            .await
+            .expect("sent")
+            .check();
+        assert!(
+            refused.is_err(),
+            "a raw DELETE removed an access log entry: {refused:?}",
+        );
+
+        let mut response = store
+            .connection()
+            .query("SELECT VALUE endpoint FROM access_log")
+            .await
+            .expect("sent")
+            .check()
+            .expect("select succeeded");
+        let rows: Value = response.take(0).expect("rows");
+        assert_eq!(rows.into_array().expect("an array").len(), 1);
     }
 
     #[tokio::test]
