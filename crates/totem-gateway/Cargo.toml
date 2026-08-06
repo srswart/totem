@@ -1,0 +1,38 @@
+[package]
+name = "totem-gateway"
+version = "0.1.0"
+description = "Axum REST API exposing recall/save with provenance and an access log"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "totem-gateway"
+path = "src/main.rs"
+
+[dependencies]
+# TD-009 (docs/tech-direction/surrealdb.md §5): the gateway's own SurrealDB
+# connection must be embedded or WebSocket, never HTTP, or live queries are
+# refused. `axum = "0.8"` matches the pin ADV-GATEWAY-005 measured rmcp's
+# server feature against, so ADV-GATEWAY-002 mounts on the same router with no
+# version reconciliation.
+axum = "0.8"
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+# Named directly only for the embedded engine's `Db` connection type
+# (`AppState`'s field type); every query goes through `totem-store`'s
+# repositories, never a raw `Surreal<C>` this crate holds itself.
+surrealdb = { workspace = true, features = ["kv-mem"] }
+thiserror.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net"] }
+totem-core = { path = "../totem-core" }
+totem-store = { path = "../totem-store" }
+
+[dev-dependencies]
+http-body-util = "0.1"
+tower = { version = "0.5", features = ["util"] }
+
+[lints]
+workspace = true

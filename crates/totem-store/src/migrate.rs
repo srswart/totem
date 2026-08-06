@@ -6,7 +6,7 @@
 
 use chrono::{DateTime, Utc};
 
-use crate::schema::MEMORY_SCHEMA_V1;
+use crate::schema::{ACCESS_LOG_SCHEMA_V2, MEMORY_SCHEMA_V1};
 
 /// One forward-only schema change.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -23,11 +23,18 @@ pub struct Migration {
 ///
 /// Append only: editing a migration that has already run somewhere leaves that
 /// database on a schema no entry describes.
-pub const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    name: "typed_memory_and_landscape",
-    statements: MEMORY_SCHEMA_V1,
-}];
+pub const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        name: "typed_memory_and_landscape",
+        statements: MEMORY_SCHEMA_V1,
+    },
+    Migration {
+        version: 2,
+        name: "access_log",
+        statements: ACCESS_LOG_SCHEMA_V2,
+    },
+];
 
 /// A migration this database has already run.
 #[derive(Debug, Clone, PartialEq, Eq)]

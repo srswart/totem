@@ -5732,6 +5732,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "totem-gateway"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "chrono",
+ "http-body-util",
+ "serde",
+ "serde_json",
+ "surrealdb",
+ "thiserror",
+ "tokio",
+ "totem-core",
+ "totem-store",
+ "tower",
+]
+
+[[package]]
 name = "totem-mcp-spike"
 version = "0.1.0"
 dependencies = [

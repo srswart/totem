@@ -47,12 +47,14 @@
 
 #![warn(missing_docs)]
 
+mod access_log;
 mod category;
 mod ids;
 mod provenance;
 mod record;
 mod scope;
 
+pub use access_log::{AccessLogEntry, AccessOperation};
 pub use category::{CategoryLifecycle, MemoryCategory, Mutability, ReviewPolicy};
 pub use ids::{ActorId, IdError, MemoryId, RepoId, SessionId, TeamId};
 pub use provenance::{Author, Harness, Provenance};
