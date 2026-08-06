@@ -1,0 +1,23 @@
+component:
+  id: infra
+  name: "Totem Infra"
+  type: infra
+  owners:
+    - team: 058-totem
+  stage: incubating
+  description: "Deployment topology, durable storage wiring, backup/restore, packaging and observability of Totem itself"
+
+selectors:
+  paths:
+    - "infra/**"
+    - "docs/tech-direction/deployment.md"
+  build_modules: []
+  tags: []
+  contracts: []
+
+interfaces: []
+
+invariants:
+  - "The gateway is the sole owner of the store: no second process ever opens the data directory or connects to the database directly (DEP-001; enforced physically by the embedded engine's lock)"
+  - "The memory estate is backed up before any destructive operation, and backups are restorable — Totem is the team's memory and audit substrate; losing its data loses both"
+  - "The durable engine stays behind the store's optional cargo feature; default test builds remain in-memory and lean"
