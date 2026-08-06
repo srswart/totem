@@ -7,11 +7,11 @@ advance:
   components: ["console", "gateway", "core", "store"]
   started_at: "2026-08-05T04:39:35Z"
   implementation_completed_at: "2026-08-06T18:30:00Z"
-  review_time_estimate_minutes: 120
+  review_time_estimate_minutes: 156
   review_time_actual_minutes: ~
   pr_links: []
   external_refs: []
-  reviewability_score: 0
+  reviewability_score: 86
   risk_flags: ["auth", "migration", "public_api"]
   evidence: ["tidy:preparatory", "tests:unit", "tests:integration"]
   model_usage: []
@@ -148,9 +148,10 @@ disclosed here rather than silently dropped:
 
 ## Reviewability
 
-`arrive score` reports **PLACEHOLDER — see journey report for the number
-actually read back after Step 7** [BAND]. Not split, for the same two
-reasons ADV-GATEWAY-004 gave for its own four-endpoint gap-fill: this run
+`arrive score` reports **86 [RED]** (Size 72, Novelty 4, Risk 10; flag:
+`migration`) over 10 unpushed commits, a review-time estimate of 155.8
+minutes. Not split, for the same two reasons ADV-GATEWAY-004 gave for its
+own four-endpoint gap-fill (which scored 91 RED): this run
 implements exactly one advance per the phase-per-run protocol, and the six
 new endpoints (three promotion, two Uncertainty, one audit) do not
 decompose cleanly — each pairs one thin `ops.rs` function with one REST
