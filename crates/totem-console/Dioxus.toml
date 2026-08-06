@@ -1,0 +1,15 @@
+[application]
+
+# Dev-server proxies: the console calls the gateway with relative URLs
+# (/landscape, /recall), so `dx serve` forwards those paths to a locally
+# running `totem-gateway` (port 8787). Production serves the console from
+# the gateway itself, making the relative URLs first-party.
+
+[[web.proxy]]
+backend = "http://127.0.0.1:8787/landscape"
+
+[[web.proxy]]
+backend = "http://127.0.0.1:8787/recall"
+
+[[web.proxy]]
+backend = "http://127.0.0.1:8787/save"
