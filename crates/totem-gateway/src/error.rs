@@ -49,12 +49,56 @@ impl IntoResponse for GatewayError {
             // client mistake.
             GatewayError::Store(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
-        (
-            status,
-            Json(ErrorBody {
-                error: self.to_string(),
-            }),
-        )
-            .into_response()
+        // A 4xx/409 message is safe to return verbatim — it names a rule the
+        // caller can act on (a denied scope, a missing record). A 5xx message
+        // wraps a StoreError::Row/Embedding/Database detail that was never
+        // meant for a client — a decode failure or a database error string —
+        // so it is replaced with a generic message instead of forwarded.
+        let message = if status.is_server_error() {
+            "internal error".to_string()
+        } else {
+            self.to_string()
+        };
+        (status, Json(ErrorBody { error: message })).into_response()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use http_body_util::BodyExt;
+    use totem_core::MemoryId;
+
+    use super::*;
+
+    async fn body_string(response: Response) -> String {
+        let bytes = response
+            .into_body()
+            .collect()
+            .await
+            .expect("body collects")
+            .to_bytes();
+        String::from_utf8(bytes.to_vec()).expect("body is utf-8")
+    }
+
+    #[tokio::test]
+    async fn a_server_error_never_forwards_the_underlying_detail() {
+        let error = GatewayError::Store(StoreError::Row("secret internal detail".to_string()));
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let body = body_string(response).await;
+        assert!(!body.contains("secret internal detail"), "leaked: {body}");
+        assert!(body.contains("internal error"), "got: {body}");
+    }
+
+    #[tokio::test]
+    async fn a_client_error_still_names_the_rule_it_violated() {
+        let error = GatewayError::Store(StoreError::NotFound(MemoryId::new()));
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let body = body_string(response).await;
+        assert!(
+            body.contains("is not present in the caller's scope chain"),
+            "got: {body}"
+        );
     }
 }
