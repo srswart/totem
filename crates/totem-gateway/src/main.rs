@@ -1,14 +1,14 @@
-//! The gateway binary: an embedded, in-memory store behind the authenticated
-//! application — REST plus MCP over streamable HTTP, every route behind a
-//! bearer credential (ADV-GATEWAY-003).
+//! The gateway binary: the one long-running Totem process (DEP-001), serving
+//! the authenticated application — REST plus MCP over streamable HTTP, every
+//! route behind a bearer credential (ADV-GATEWAY-003).
 //!
-//! In-memory and non-persistent on purpose, for now: production deployment
-//! topology (embedded vs. server SurrealDB, where state survives a restart)
-//! is an open question (docs/solution-intent.md §9), and this advance's scope
-//! is the API surface, not that decision. Whoever resolves the topology
-//! question wires `Store::from_connection` onto a durable engine in
-//! [`AppState::in_memory`]'s place — and gives the credential registry the
-//! same durability, since it is process-local for the same reason.
+//! With `TOTEM_DATA_DIR` set (and the `rocksdb` feature compiled in), the
+//! gateway owns an embedded on-disk store at that directory — the durable
+//! shared instance every other surface talks to. The engine's lock makes the
+//! gateway the store's sole owner physically: a second process opening the
+//! same directory fails to start. Without `TOTEM_DATA_DIR` the gateway runs
+//! the embedded in-memory engine — explicitly labelled EPHEMERAL — which is
+//! the demo/test mode, not a deployment.
 //!
 //! # The bootstrap credential
 //!
@@ -18,15 +18,69 @@
 //! configured. One credential can be seeded from the environment to get an
 //! operator in; issuing the rest is the console's and CLI's job
 //! (ADV-CONSOLE-002, ADV-CLI-001).
+//!
+//! Credentials do **not** yet get DEP-001's durability: the registry is
+//! process-local, so a restart of this durable gateway still forgets every
+//! credential and needs its bootstrap credential re-seeded. Giving the
+//! registry the same on-disk home as the store is follow-up work, called out
+//! in ADV-GATEWAY-003's residual risks.
 
 use std::env;
 
+use surrealdb::engine::local::Db;
 use totem_gateway::{AppState, AuthError, TokenGrant, TokenRegistry};
+use totem_store::Store;
 
 const TOKEN_VAR: &str = "TOTEM_BOOTSTRAP_TOKEN";
 const REPO_VAR: &str = "TOTEM_BOOTSTRAP_REPO";
 const SCOPE_VAR: &str = "TOTEM_BOOTSTRAP_SCOPE";
 const ACTOR_VAR: &str = "TOTEM_BOOTSTRAP_ACTOR";
+
+/// Connect the store per DEP-001: durable when configured, loudly ephemeral
+/// otherwise — and a hard refusal when configured for durability the binary
+/// cannot deliver.
+async fn connect_store() -> Store<Db> {
+    match env::var("TOTEM_DATA_DIR") {
+        Ok(dir) => {
+            #[cfg(feature = "rocksdb")]
+            {
+                let store = Store::on_disk(std::path::Path::new(&dir))
+                    .await
+                    .unwrap_or_else(|err| {
+                        eprintln!(
+                            "totem-gateway: cannot open the data directory at {dir}: {err}\n\
+                             If another gateway is running against it, that lock is DEP-001's \
+                             single-owner rule doing its job."
+                        );
+                        std::process::exit(1);
+                    });
+                println!("totem-gateway store: durable (RocksDB at {dir})");
+                store
+            }
+            #[cfg(not(feature = "rocksdb"))]
+            {
+                eprintln!(
+                    "totem-gateway: TOTEM_DATA_DIR is set ({dir}) but this binary was built \
+                     without the `rocksdb` feature. Refusing to start: an in-memory gateway \
+                     that looks configured for durability would lose the team's memory on \
+                     exit. Rebuild with `--features rocksdb`, or unset TOTEM_DATA_DIR to run \
+                     explicitly ephemeral."
+                );
+                std::process::exit(1);
+            }
+        }
+        Err(_) => {
+            let store = Store::in_memory()
+                .await
+                .expect("the embedded engine connects");
+            println!(
+                "totem-gateway store: EPHEMERAL in-memory — memories are lost on exit \
+                 (set TOTEM_DATA_DIR with a rocksdb-featured build for durability)"
+            );
+            store
+        }
+    }
+}
 
 /// Register the credential named by the environment, if one is named.
 ///
@@ -72,9 +126,9 @@ fn bootstrap(tokens: &TokenRegistry) -> Result<Option<TokenGrant>, AuthError> {
 
 #[tokio::main]
 async fn main() {
-    let state = AppState::in_memory()
-        .await
-        .expect("the embedded engine connects and migrations apply");
+    let store = connect_store().await;
+    store.migrate().await.expect("migrations apply");
+    let state = AppState::over(store);
 
     match bootstrap(&state.tokens) {
         Ok(Some(grant)) => println!(

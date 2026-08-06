@@ -42,6 +42,22 @@ impl Store<Db> {
         db.use_ns(NAMESPACE).use_db(DATABASE).await?;
         Ok(Self { db })
     }
+
+    /// Connect the embedded on-disk RocksDB engine at `data_dir` (DEP-001).
+    ///
+    /// The engine takes an exclusive lock on the directory: a second process
+    /// (or a second `Store`) opening the same path fails, which is what makes
+    /// the gateway the sole owner of the store physically rather than by
+    /// convention. Data survives drop/reopen; callers still run [`migrate`]
+    /// on every start-up.
+    ///
+    /// [`migrate`]: Store::migrate
+    #[cfg(feature = "rocksdb")]
+    pub async fn on_disk(data_dir: &std::path::Path) -> StoreResult<Self> {
+        let db = Surreal::new::<surrealdb::engine::local::RocksDb>(data_dir).await?;
+        db.use_ns(NAMESPACE).use_db(DATABASE).await?;
+        Ok(Self { db })
+    }
 }
 
 impl<C: Connection> Store<C> {

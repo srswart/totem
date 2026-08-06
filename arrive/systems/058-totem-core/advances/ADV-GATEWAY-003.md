@@ -112,11 +112,17 @@ a Cursor session or a reachable environment to confirm.
   desktop deployment, and it is what every pre-existing test uses — but
   binding *it* to a public listener bypasses everything this advance adds.
   That is prevented by naming and documentation, not by the type system.
-- Residual risk: credentials are process-local and non-persistent, matching
-  the in-memory store. A restart forgets every credential, and a
-  multi-instance deployment does not share them. Durable credential storage
-  belongs with the durable deployment (ADV-INFRA-001), which is the plan item
-  immediately before this one and is `WORKSTATION`-designated.
+- Residual risk, and it sharpened while this advance was in flight:
+  **credentials are process-local and non-persistent.** That was merely
+  symmetrical when the gateway's store was in-memory too — but ADV-INFRA-001
+  merged into `advance/phase-007` during this run, so the gateway now *does*
+  have a durable store (RocksDB at `TOTEM_DATA_DIR`, DEP-001) while its
+  credential registry still evaporates on restart. A durable gateway that
+  forgets every credential when it restarts needs its bootstrap credential
+  re-seeded to come back up, and a multi-instance deployment does not share
+  credentials at all. Giving the registry the same on-disk home as the store
+  is follow-up work; it is called out in `main.rs`'s module doc so an operator
+  meets it before it surprises them.
 
 ## Evidence
 
@@ -154,18 +160,35 @@ a Cursor session or a reachable environment to confirm.
  right: 7
 ```
 
-The repo has eight components; the test still expects the seven that existed
+The repo has eight components; the test still expected the seven that existed
 before `infra` was added (commit `d661bb5`, "pin DEP-001 deployment topology
-and author ADV-INFRA-001"). **This reproduces exactly at `origin/master`** —
+and author ADV-INFRA-001"). **This reproduced exactly at `origin/master`** —
 verified by checking `crates/` and `arrive/` out at master and re-running the
-target — so it predates this branch and is unrelated to it: this advance adds
+target — so it predated this branch and was unrelated to it: this advance adds
 no component and touches no component artifact.
 
-Deliberately **not** fixed here. The fix is a one-line expectation update in
-the `arrive-sync` component, and folding it into a security advance for the
-`gateway` component would widen this advance's declared footprint to hide an
-unrelated breakage inside it. It wants its own change. Flagged so whoever
-reviews this sub-PR knows the red target is inherited, not introduced.
+It was deliberately **not** fixed here, on the grounds that a one-line
+expectation update in the `arrive-sync` component does not belong inside a
+`gateway` security advance where it would hide an unrelated breakage.
+
+**Resolved independently, and the judgement held.** PR #33
+(`fix/dogfood-infra-component`) landed that exact fix on master while this
+advance was in flight, and it arrived here through the phase branch — see the
+merge note below. Nothing was needed from this advance.
+
+### Merged the phase branch mid-flight
+
+`advance/phase-007` moved while this work was in progress: ADV-INFRA-001 (PR
+#34) merged into it, carrying master's dogfood fix along. Merging it into this
+sub-branch produced one real conflict, in `crates/totem-gateway/src/main.rs`,
+where both advances rewrote the binary's startup — ADV-INFRA-001 to choose a
+durable or ephemeral engine per `TOTEM_DATA_DIR`, this advance to seed a
+bootstrap credential and serve the authenticated application. Both are needed
+and neither wins: the resolution keeps `connect_store()` intact, hands its
+store to a new `AppState::over(store)` constructor, and then runs the
+credential bootstrap. `AppState::in_memory()` is now `over()` plus connect and
+migrate, and is what `mcp_stdio` and the integration tests use — the gateway
+binary makes its own engine choice, as DEP-001 intends.
 
 ## What this advance establishes only partially
 

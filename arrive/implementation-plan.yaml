@@ -191,7 +191,7 @@ passes:
           - id: "ADV-INFRA-001"
             advance_id: "ADV-INFRA-001"
             title: "Durable shared instance: RocksDB-backed gateway, backup/restore, client re-pointing"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-GATEWAY-001", "ADV-STORE-006"]
             notes: >-
@@ -206,7 +206,7 @@ passes:
             title: "Streamable-HTTP MCP + auth for cloud agents"
             status: done
             owner: "058-totem"
-            dependencies: ["ADV-GATEWAY-002"]
+            dependencies: ["ADV-GATEWAY-002", "ADV-INFRA-001"]
             notes: "Security-critical: least-privilege tokens bound to repo + scope. MODEL: claude-opus-5"
           - id: "ADV-CORE-003"
             advance_id: "ADV-CORE-003"

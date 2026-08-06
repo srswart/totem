@@ -35,22 +35,15 @@ pub struct AppState {
 }
 
 impl AppState {
-    /// State over a fresh, migrated, embedded in-memory store, with the
-    /// deterministic embedder.
+    /// State over an already-connected, already-migrated store.
     ///
-    /// Both binaries (`totem-gateway`, `mcp_stdio`) and the integration tests
-    /// need exactly this, and had each spelled it out: three places to keep in
-    /// step every time the state gains a field.
-    ///
-    /// In-memory and non-persistent on purpose, for now: production deployment
-    /// topology (embedded vs. server SurrealDB, where state survives a restart)
-    /// is an open question (docs/solution-intent.md §9). Whoever resolves it
-    /// adds the durable constructor beside this one rather than changing what
-    /// this one means.
-    pub async fn in_memory() -> StoreResult<Self> {
-        let store = Store::in_memory().await?;
-        store.migrate().await?;
-        Ok(Self {
+    /// The engine is the caller's choice — DEP-001 leaves the gateway binary
+    /// to pick durable (RocksDB at `TOTEM_DATA_DIR`) or ephemeral
+    /// (ADV-INFRA-001) — but everything *else* the state holds is decided
+    /// here, in one place, so a new field does not have to be threaded through
+    /// every construction site by hand.
+    pub fn over(store: Store<Db>) -> Self {
+        Self {
             store,
             // The deterministic, non-semantic embedder: real quality
             // (BGE-small-en-v1.5 via `fastembed`, EMB-004) needs a model
@@ -58,8 +51,22 @@ impl AppState {
             // the store's off-by-default `fastembed` feature until a
             // workstation or CI runner with hub access builds with it enabled.
             embedder: Arc::new(DeterministicEmbedder::new()),
+            // Empty: a gateway that has been given no credentials refuses
+            // every remote request rather than serving them unauthenticated.
             tokens: TokenRegistry::new(),
-        })
+        }
+    }
+
+    /// State over a fresh, migrated, embedded in-memory store.
+    ///
+    /// The convenience the `mcp_stdio` binary and the integration tests want,
+    /// each of which had spelled the sequence out for itself. The gateway
+    /// binary does not use it: DEP-001 gives that process a store choice to
+    /// make, so it connects its own and hands it to [`AppState::over`].
+    pub async fn in_memory() -> StoreResult<Self> {
+        let store = Store::in_memory().await?;
+        store.migrate().await?;
+        Ok(Self::over(store))
     }
 }
 
