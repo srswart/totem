@@ -255,7 +255,7 @@ passes:
           - id: "ADV-GATEWAY-008"
             advance_id: "ADV-GATEWAY-008"
             title: "Enablement: evaluation harness (workload driver + recall-quality scorer)"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-GATEWAY-002", "ADV-STORE-005"]
             notes: "Proven with negative/positive control runs before any evaluation uses it."
