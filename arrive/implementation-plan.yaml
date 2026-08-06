@@ -162,7 +162,7 @@ passes:
           - id: "ADV-CORE-004"
             advance_id: "ADV-CORE-004"
             title: "Investigation: value-attribution proxy experiment"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-GATEWAY-002"]
             notes: "Needs real recall/save traffic shapes to construct sample sessions; picks the v1 signal set."
