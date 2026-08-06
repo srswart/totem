@@ -182,7 +182,10 @@ impl<'a, C: Connection> MemoryRepository<'a, C> {
     /// in. The boost only ever reaches a source the *writer's own chain* can
     /// see — a citation naming an id outside it is silently a no-op, the same
     /// as any other write this repository refuses to let cross a scope
-    /// boundary.
+    /// boundary. The insert and the citation boost commit as one transaction
+    /// (TD-006) so a failure in the citation update can never leave the new
+    /// record inserted without it — `save` stays all-or-nothing rather than
+    /// risking a duplicate insert on a caller's retry.
     pub async fn save(&self, writer: &ScopeChain, record: &MemoryRecord) -> StoreResult<()> {
         if !writer.contains(&record.scope) {
             return Err(StoreError::ScopeDenied {
@@ -193,14 +196,38 @@ impl<'a, C: Connection> MemoryRepository<'a, C> {
             check_dimensions(embedding)?;
         }
 
+        if record.provenance.derived_from.is_empty() {
+            self.db
+                .query(format!("INSERT INTO {MEMORY_TABLE} $row"))
+                .bind(("row", row::to_row(record)))
+                .await?
+                .check()?;
+            return Ok(());
+        }
+
+        let ids: Vec<Value> = record
+            .provenance
+            .derived_from
+            .iter()
+            .copied()
+            .map(|id| row::memory_thing(id).into_value())
+            .collect();
+        let sql = format!(
+            "BEGIN TRANSACTION;\n\
+             INSERT INTO {MEMORY_TABLE} $row;\n\
+             UPDATE {MEMORY_TABLE} SET economics.value_score += $boost \
+                 WHERE id IN $ids AND scope IN $scopes AND category != $episodic;\n\
+             COMMIT TRANSACTION;"
+        );
         self.db
-            .query(format!("INSERT INTO {MEMORY_TABLE} $row"))
+            .query(sql)
             .bind(("row", row::to_row(record)))
+            .bind(("ids", ids))
+            .bind(("boost", CITATION_BOOST))
+            .bind(("scopes", readable_scopes(writer)))
+            .bind(("episodic", row::category_key(MemoryCategory::Episodic)))
             .await?
             .check()?;
-
-        self.record_citations(writer, &record.provenance.derived_from)
-            .await?;
         Ok(())
     }
 
@@ -378,35 +405,6 @@ impl<'a, C: Connection> MemoryRepository<'a, C> {
 
         let mut response = request.await?.check()?;
         Ok(response.take(0)?)
-    }
-
-    /// Raise `value_score` for each cited source that is both non-episodic
-    /// and inside the writer's own chain. Filtered on both counts here,
-    /// server-side, rather than trusted to the caller: episodic rows would
-    /// throw on `UPDATE` (schema.rs), and a scope outside the writer's chain
-    /// must never move regardless of what a caller's `derived_from` claims.
-    async fn record_citations(&self, writer: &ScopeChain, cited: &[MemoryId]) -> StoreResult<()> {
-        if cited.is_empty() {
-            return Ok(());
-        }
-        let ids: Vec<Value> = cited
-            .iter()
-            .copied()
-            .map(|id| row::memory_thing(id).into_value())
-            .collect();
-
-        self.db
-            .query(format!(
-                "UPDATE {MEMORY_TABLE} SET economics.value_score += $boost
-                 WHERE id IN $ids AND scope IN $scopes AND category != $episodic"
-            ))
-            .bind(("ids", ids))
-            .bind(("boost", CITATION_BOOST))
-            .bind(("scopes", readable_scopes(writer)))
-            .bind(("episodic", row::category_key(MemoryCategory::Episodic)))
-            .await?
-            .check()?;
-        Ok(())
     }
 
     /// Meter a recall: `use_count` up by one, `last_used_at` to `at`,

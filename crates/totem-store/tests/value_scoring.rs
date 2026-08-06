@@ -287,13 +287,15 @@ async fn recall_ranks_a_cited_record_above_an_uncited_one_of_equal_relevance() {
 }
 
 #[tokio::test]
-async fn recall_ranks_a_recently_reinforced_decaying_record_above_a_stale_one() {
+async fn recall_ranks_a_recently_written_decaying_record_above_a_stale_one() {
     let store = store().await;
     let memories = store.memories();
 
-    // Knowledge decays (category.rs); a record written long ago and never
-    // reread should rank behind one written moments ago, once currency
-    // enters the ranking.
+    // Knowledge decays (category.rs); currency is computed from elapsed time
+    // since last_used_at, falling back to created_at when a record has never
+    // been reinforced by a prior recall — as neither record here has. A
+    // record written long ago should therefore rank behind one written
+    // moments ago, once currency enters the ranking.
     let stale = written_at(
         MemoryCategory::Knowledge,
         Scope::Project(repo()),
