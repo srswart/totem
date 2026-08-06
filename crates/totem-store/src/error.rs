@@ -1,6 +1,9 @@
 //! What the store refuses, and why.
 
-use totem_core::{LifecycleError, MemoryId, Scope};
+use totem_core::{
+    CurationError, CurationId, GovernanceError, LifecycleError, MemoryId, PromotionError,
+    PromotionId, Scope,
+};
 
 /// The result of a store operation.
 pub type StoreResult<T> = Result<T, StoreError>;
@@ -26,6 +29,39 @@ pub enum StoreError {
     /// The record does not exist, or is not visible to this caller.
     #[error("memory {0} is not present in the caller's scope chain")]
     NotFound(MemoryId),
+    /// A policy rule refused a scope change.
+    #[error(transparent)]
+    Promotion(#[from] PromotionError),
+    /// The proposal does not exist, is already decided, or targets a scope this
+    /// caller cannot reach.
+    #[error("promotion {0} is not open to this caller")]
+    PromotionNotFound(PromotionId),
+    /// The proposal has already been approved or rejected; a second decision
+    /// would put a contradiction in the audit trail.
+    #[error("promotion {0} has already been decided")]
+    PromotionDecided(PromotionId),
+    /// A policy rule refused a curation.
+    #[error(transparent)]
+    Curation(#[from] CurationError),
+    /// The curation event does not exist, or happened at a scope this caller
+    /// cannot reach.
+    #[error("curation event {0} is not visible to this caller")]
+    CurationNotFound(CurationId),
+    /// The merge has already been rolled back; a second rollback would claim to
+    /// restore records that are already restored.
+    #[error("curation event {0} has already been rolled back")]
+    CurationRolledBack(CurationId),
+    /// A review decision was refused by [`Governance::resolve`](totem_core::Governance::resolve)
+    /// — not itself a decision, or the review is not `Pending`.
+    #[error(transparent)]
+    Governance(#[from] GovernanceError),
+    /// The database's own guard on the resolving `UPDATE` matched no rows
+    /// even though a pre-check on a fresh read passed — a review was decided
+    /// between that read and this write. Same shape as
+    /// [`StoreError::PromotionDecided`], and the same rare race it guards
+    /// against.
+    #[error("the review on memory {0} was already decided")]
+    ReviewDecided(MemoryId),
     /// An embedding did not match the dimension the vector index is pinned to.
     #[error("an embedding must have exactly {expected} dimensions, but this one has {actual}")]
     EmbeddingDimensions {

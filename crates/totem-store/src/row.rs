@@ -15,7 +15,8 @@ use chrono::{DateTime, Utc};
 use surrealdb::types::{Datetime, Number, Object, RecordId, RecordIdKey, SurrealValue, Value};
 use totem_core::{
     ActorId, Author, Content, Economics, Governance, Harness, MemoryCategory, MemoryId,
-    MemoryRecord, MemoryStatus, Provenance, ReviewState, Scope, SessionId, SubjectKind, SubjectRef,
+    MemoryRecord, MemoryStatus, Provenance, ReviewState, Scope, ScopeChain, SessionId, SubjectKind,
+    SubjectRef,
 };
 
 /// The table memory records live in.
@@ -137,7 +138,7 @@ pub(crate) fn harness_from(key: &str) -> Result<Harness, RowError> {
     }
 }
 
-fn status_key(status: MemoryStatus) -> &'static str {
+pub(crate) fn status_key(status: MemoryStatus) -> &'static str {
     match status {
         MemoryStatus::Active => "active",
         MemoryStatus::Contested => "contested",
@@ -145,7 +146,7 @@ fn status_key(status: MemoryStatus) -> &'static str {
     }
 }
 
-fn status_from(key: &str) -> Result<MemoryStatus, RowError> {
+pub(crate) fn status_from(key: &str) -> Result<MemoryStatus, RowError> {
     match key {
         "active" => Ok(MemoryStatus::Active),
         "contested" => Ok(MemoryStatus::Contested),
@@ -154,7 +155,7 @@ fn status_from(key: &str) -> Result<MemoryStatus, RowError> {
     }
 }
 
-fn review_key(review: ReviewState) -> &'static str {
+pub(crate) fn review_key(review: ReviewState) -> &'static str {
     match review {
         ReviewState::NotRequired => "not_required",
         ReviewState::Pending => "pending",
@@ -178,30 +179,103 @@ pub(crate) fn instant(value: DateTime<Utc>) -> Datetime {
     Datetime::from(value)
 }
 
-/// The stored shape of one memory record, ready to `INSERT`.
-pub(crate) fn to_row(record: &MemoryRecord) -> Object {
+/// The scopes a reader may see, as the store's own predicate values.
+///
+/// Derived from the chain, never from a caller-supplied filter: the widest set
+/// a caller can ask for is the set it already had. Every table that carries a
+/// scope binds its predicate from here, so there is one answer to "what may
+/// this caller see" rather than one per repository.
+pub(crate) fn readable_scopes(reader: &ScopeChain) -> Vec<String> {
+    reader
+        .scopes()
+        .iter()
+        .map(Scope::to_string)
+        .collect::<Vec<String>>()
+}
+
+/// Unpack a query result into its rows.
+pub(crate) fn objects(rows: Value) -> Result<Vec<Object>, RowError> {
+    let rows = rows
+        .into_array()
+        .map_err(|_| malformed("query did not return an array"))?;
+    rows.iter()
+        .map(|row| {
+            row.clone()
+                .into_object()
+                .map_err(|_| malformed("query row is not an object"))
+        })
+        .collect()
+}
+
+/// The stored shape of provenance, shared by every table that records it.
+///
+/// Extracted so a second recorded event cannot grow a second, subtly different
+/// spelling of the same audit fields: the persistence contract for "who wrote
+/// this, from where, when" is written once.
+pub(crate) fn provenance_to_row(value: &Provenance) -> Object {
     let mut provenance = Object::new();
-    provenance.insert("author_kind", author_kind_key(&record.provenance.author));
-    provenance.insert("author", record.provenance.author.actor().to_string());
-    provenance.insert("harness", harness_key(&record.provenance.harness));
-    provenance.insert("session", record.provenance.session.to_string());
+    provenance.insert("author_kind", author_kind_key(&value.author));
+    provenance.insert("author", value.author.actor().to_string());
+    provenance.insert("harness", harness_key(&value.harness));
+    provenance.insert("session", value.session.to_string());
     provenance.insert(
         "turn",
-        record
-            .provenance
+        value
             .turn
             .map_or(Value::None, |turn| i64::from(turn).into_value()),
     );
-    provenance.insert("created_at", instant(record.provenance.created_at));
+    provenance.insert("created_at", instant(value.created_at));
     provenance.insert(
         "derived_from",
-        record
-            .provenance
+        value
             .derived_from
             .iter()
             .map(|source| memory_thing(*source))
             .collect::<Vec<_>>(),
     );
+    provenance
+}
+
+/// Read stored provenance back into the domain type.
+pub(crate) fn provenance_from_row(provenance_row: &Object) -> Result<Provenance, RowError> {
+    let author = author_from(
+        &string(provenance_row, "author_kind")?,
+        ActorId::new(string(provenance_row, "author")?)
+            .map_err(|error| malformed(format!("stored author is invalid: {error}")))?,
+    )?;
+    let mut provenance = Provenance::new(
+        author,
+        harness_from(&string(provenance_row, "harness")?)?,
+        SessionId::new(string(provenance_row, "session")?)
+            .map_err(|error| malformed(format!("stored session is invalid: {error}")))?,
+        datetime(provenance_row, "created_at")?,
+    );
+    provenance.turn = match provenance_row.get("turn") {
+        None | Some(Value::None) | Some(Value::Null) => None,
+        Some(value) => Some(
+            number(value)
+                .and_then(|turn| u32::try_from(turn as i64).ok())
+                .ok_or_else(|| malformed("turn is not a non-negative integer"))?,
+        ),
+    };
+    provenance.derived_from = match provenance_row.get("derived_from") {
+        Some(Value::Array(values)) => values
+            .iter()
+            .map(|value| match value {
+                Value::RecordId(thing) => memory_id(thing),
+                other => Err(malformed(format!(
+                    "derived_from holds a non-record: {other:?}"
+                ))),
+            })
+            .collect::<Result<Vec<MemoryId>, RowError>>()?,
+        _ => Vec::new(),
+    };
+    Ok(provenance)
+}
+
+/// The stored shape of one memory record, ready to `INSERT`.
+pub(crate) fn to_row(record: &MemoryRecord) -> Object {
+    let provenance = provenance_to_row(&record.provenance);
 
     let mut economics = Object::new();
     economics.insert("use_count", record.economics.use_count as i64);
@@ -297,39 +371,7 @@ pub(crate) fn from_row(row: &Object) -> Result<MemoryRecord, RowError> {
     };
     content.tags = strings(row, "tags")?;
 
-    let provenance_row = object(row, "provenance")?;
-    let author = author_from(
-        &string(&provenance_row, "author_kind")?,
-        ActorId::new(string(&provenance_row, "author")?)
-            .map_err(|error| malformed(format!("stored author is invalid: {error}")))?,
-    )?;
-    let mut provenance = Provenance::new(
-        author,
-        harness_from(&string(&provenance_row, "harness")?)?,
-        SessionId::new(string(&provenance_row, "session")?)
-            .map_err(|error| malformed(format!("stored session is invalid: {error}")))?,
-        datetime(&provenance_row, "created_at")?,
-    );
-    provenance.turn = match provenance_row.get("turn") {
-        None | Some(Value::None) | Some(Value::Null) => None,
-        Some(value) => Some(
-            number(value)
-                .and_then(|turn| u32::try_from(turn as i64).ok())
-                .ok_or_else(|| malformed("turn is not a non-negative integer"))?,
-        ),
-    };
-    provenance.derived_from = match provenance_row.get("derived_from") {
-        Some(Value::Array(values)) => values
-            .iter()
-            .map(|value| match value {
-                Value::RecordId(thing) => memory_id(thing),
-                other => Err(malformed(format!(
-                    "derived_from holds a non-record: {other:?}"
-                ))),
-            })
-            .collect::<Result<Vec<MemoryId>, RowError>>()?,
-        _ => Vec::new(),
-    };
+    let provenance = provenance_from_row(&object(row, "provenance")?)?;
 
     let economics_row = object(row, "economics")?;
     let economics = Economics {

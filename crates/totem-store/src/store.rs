@@ -8,10 +8,12 @@ use surrealdb::types::{Number, RecordId, Value};
 use surrealdb::{Connection, Surreal};
 
 use crate::access_log::AccessLogRepository;
+use crate::curation::CurationRepository;
 use crate::error::{StoreError, StoreResult};
 use crate::landscape::LandscapeRepository;
 use crate::memory::MemoryRepository;
 use crate::migrate::{AppliedMigration, MIGRATIONS};
+use crate::promotion::PromotionRepository;
 use crate::row;
 use crate::schema::MIGRATION_LEDGER;
 
@@ -39,6 +41,22 @@ impl Store<Db> {
     /// yields an independent instance, so tests never share state.
     pub async fn in_memory() -> StoreResult<Self> {
         let db = Surreal::new::<Mem>(()).await?;
+        db.use_ns(NAMESPACE).use_db(DATABASE).await?;
+        Ok(Self { db })
+    }
+
+    /// Connect the embedded on-disk RocksDB engine at `data_dir` (DEP-001).
+    ///
+    /// The engine takes an exclusive lock on the directory: a second process
+    /// (or a second `Store`) opening the same path fails, which is what makes
+    /// the gateway the sole owner of the store physically rather than by
+    /// convention. Data survives drop/reopen; callers still run [`migrate`]
+    /// on every start-up.
+    ///
+    /// [`migrate`]: Store::migrate
+    #[cfg(feature = "rocksdb")]
+    pub async fn on_disk(data_dir: &std::path::Path) -> StoreResult<Self> {
+        let db = Surreal::new::<surrealdb::engine::local::RocksDb>(data_dir).await?;
         db.use_ns(NAMESPACE).use_db(DATABASE).await?;
         Ok(Self { db })
     }
@@ -153,6 +171,41 @@ impl<C: Connection> Store<C> {
     /// (docs/project-brief.md G3).
     pub fn access_log(&self) -> AccessLogRepository<'_, C> {
         AccessLogRepository::new(&self.db)
+    }
+
+    /// Scope promotions under the standing policy — the only way a record's
+    /// scope ever changes (docs/solution-intent.md §2.2).
+    pub fn promotions(&self) -> PromotionRepository<'_, C> {
+        self.promotions_with_policy(totem_core::PromotionPolicy::new())
+    }
+
+    /// Scope promotions under a policy of the caller's choosing.
+    ///
+    /// The configuration lever ADV-CORE-003's rollback plan names: pass
+    /// [`PromotionPolicy::human_gated_everywhere`] to put every category behind
+    /// a human without editing a category definition.
+    ///
+    /// [`PromotionPolicy::human_gated_everywhere`]: totem_core::PromotionPolicy::human_gated_everywhere
+    pub fn promotions_with_policy(
+        &self,
+        policy: totem_core::PromotionPolicy,
+    ) -> PromotionRepository<'_, C> {
+        PromotionRepository::new(&self.db, policy)
+    }
+
+    /// Curator merges and their rollbacks under the standing policy — the only
+    /// way a record is ever retired (`components/curator.yaml`: curation never
+    /// deletes).
+    pub fn curation(&self) -> CurationRepository<'_, C> {
+        self.curation_with_policy(totem_core::CurationPolicy::new())
+    }
+
+    /// Curation under a policy of the caller's choosing.
+    pub fn curation_with_policy(
+        &self,
+        policy: totem_core::CurationPolicy,
+    ) -> CurationRepository<'_, C> {
+        CurationRepository::new(&self.db, policy)
     }
 
     /// The landscape mirror — the only way to ingest or query an enrolled

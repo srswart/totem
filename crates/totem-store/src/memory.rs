@@ -9,15 +9,15 @@
 use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
-use surrealdb::types::{Object, SurrealValue, Value};
+use surrealdb::types::{SurrealValue, Value};
 use surrealdb::{Connection, Surreal};
 use totem_core::{
-    Content, FeedbackSignal, LifecycleError, MemoryCategory, MemoryId, MemoryRecord, Scope,
+    Content, FeedbackSignal, LifecycleError, MemoryCategory, MemoryId, MemoryRecord, ReviewState,
     ScopeChain, SubjectKind,
 };
 
 use crate::error::{StoreError, StoreResult};
-use crate::row::{self, MEMORY_TABLE};
+use crate::row::{self, MEMORY_TABLE, objects, readable_scopes};
 use crate::schema::EMBEDDING_DIMENSIONS;
 
 /// How many rows a recall returns when the caller does not say.
@@ -128,6 +128,13 @@ impl RecallQuery {
             ));
         }
         sql.push_str("scope IN $scopes");
+        // Retired records are withdrawn from retrieval and kept for audit
+        // (`MemoryStatus::Retired`). Without this predicate a curator's
+        // supersession would be a label on a row that still competes for the
+        // agent's context window, and dedupe would never actually dedupe.
+        // Contested records stay: a contradiction the reader should see is not
+        // the same as a fact that has been withdrawn.
+        sql.push_str(" AND governance.status != $retired");
         if !self.categories.is_empty() {
             sql.push_str(" AND category IN $categories");
         }
@@ -151,7 +158,7 @@ impl RecallQuery {
     }
 }
 
-fn check_dimensions(embedding: &[f32]) -> StoreResult<()> {
+pub(crate) fn check_dimensions(embedding: &[f32]) -> StoreResult<()> {
     if embedding.len() == EMBEDDING_DIMENSIONS {
         return Ok(());
     }
@@ -348,6 +355,77 @@ impl<'a, C: Connection> MemoryRepository<'a, C> {
         Ok(record)
     }
 
+    /// Records of `category` awaiting a human decision, oldest first — the
+    /// queue ADV-CONSOLE-002 renders (its own use is
+    /// [`MemoryCategory::Uncertainty`]); scope-filtered to the reader's chain
+    /// the same way every other read here is.
+    pub async fn pending_review(
+        &self,
+        reader: &ScopeChain,
+        category: MemoryCategory,
+    ) -> StoreResult<Vec<MemoryRecord>> {
+        let mut response = self
+            .db
+            .query(format!(
+                "SELECT * FROM {MEMORY_TABLE} WHERE category = $category \
+                 AND governance.review = $pending AND scope IN $scopes \
+                 ORDER BY provenance.created_at ASC"
+            ))
+            .bind(("category", row::category_key(category).to_string()))
+            .bind(("pending", row::review_key(ReviewState::Pending).to_string()))
+            .bind(("scopes", readable_scopes(reader)))
+            .await?
+            .check()?;
+        objects(response.take(0)?)?
+            .iter()
+            .map(|row| row::from_row(row).map_err(StoreError::from))
+            .collect()
+    }
+
+    /// Record a human's decision on a pending review — approve or reject
+    /// (ADV-CONSOLE-002: the Uncertainty queue's resolution step, and equally
+    /// usable on any other human-gated category's record).
+    ///
+    /// Refused for a record the resolver cannot see ([`StoreError::NotFound`],
+    /// never forbidden, same as [`revise`](Self::revise)), and refused unless
+    /// the record's review is currently `Pending`
+    /// ([`totem_core::GovernanceError`] via [`totem_core::Governance::resolve`]).
+    /// The resolving `UPDATE` repeats that `governance.review = 'pending'`
+    /// guard at the database, so a decision that raced this one between the
+    /// read above and this write is refused too
+    /// ([`StoreError::ReviewDecided`]) rather than silently overwritten —
+    /// the same defence-in-depth [`totem_core::PromotionEvent`]'s decision
+    /// guard applies, and the same unserialised-race residual it discloses.
+    pub async fn resolve_review(
+        &self,
+        resolver: &ScopeChain,
+        id: MemoryId,
+        decision: ReviewState,
+    ) -> StoreResult<MemoryRecord> {
+        let Some(mut record) = self.get(resolver, id).await? else {
+            return Err(StoreError::NotFound(id));
+        };
+        record.governance = record.governance.resolve(decision)?;
+
+        let mut response = self
+            .db
+            .query(format!(
+                "UPDATE {MEMORY_TABLE} SET governance.review = $decision \
+                 WHERE id = $id AND scope IN $scopes AND governance.review = $pending"
+            ))
+            .bind(("id", row::memory_thing(id)))
+            .bind(("scopes", readable_scopes(resolver)))
+            .bind(("decision", row::review_key(decision).to_string()))
+            .bind(("pending", row::review_key(ReviewState::Pending).to_string()))
+            .await?
+            .check()?;
+        let moved = objects(response.take(0)?)?;
+        if moved.len() != 1 {
+            return Err(StoreError::ReviewDecided(id));
+        }
+        Ok(record)
+    }
+
     /// The merged, deduplicated view across the reader's whole chain, ranked
     /// by combined score — relevance × value × currency, weighted per
     /// category (docs/solution-intent.md §4) — and not merely by the
@@ -427,6 +505,10 @@ impl<'a, C: Connection> MemoryRepository<'a, C> {
             .db
             .query(sql)
             .bind(("scopes", readable_scopes(reader)))
+            .bind((
+                "retired",
+                row::status_key(totem_core::MemoryStatus::Retired).to_string(),
+            ))
             .bind((
                 "categories",
                 query
@@ -515,31 +597,6 @@ fn rank_score(record: &MemoryRecord, distance: Option<f64>, now: DateTime<Utc>) 
     let relevance = totem_core::relevance_from_distance(distance);
     let weight = totem_core::category_weight(record.category);
     totem_core::combined_score(relevance, record.economics.value_score, currency, weight)
-}
-
-/// The scopes a reader may see, as the store's own predicate values.
-///
-/// Derived from the chain, never from a caller-supplied filter: the widest set
-/// a caller can ask for is the set it already had.
-fn readable_scopes(reader: &ScopeChain) -> Vec<String> {
-    reader
-        .scopes()
-        .iter()
-        .map(Scope::to_string)
-        .collect::<Vec<String>>()
-}
-
-fn objects(rows: Value) -> StoreResult<Vec<Object>> {
-    let rows = rows
-        .into_array()
-        .map_err(|_| StoreError::Row("query did not return an array".to_string()))?;
-    rows.iter()
-        .map(|row| {
-            row.clone()
-                .into_object()
-                .map_err(|_| StoreError::Row("query row is not an object".to_string()))
-        })
-        .collect()
 }
 
 /// The key two records must share to be the same fact held at two scopes.

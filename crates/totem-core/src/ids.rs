@@ -103,37 +103,58 @@ string_id!(
     "session"
 );
 
-/// The identity of a single memory record.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct MemoryId(Uuid);
+/// A machine-minted identifier: no caller supplies its value, so there is
+/// nothing to validate — only a stable text form to round-trip through the
+/// store.
+macro_rules! uuid_id {
+    ($(#[$meta:meta])* $name:ident) => {
+        $(#[$meta])*
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+        #[serde(transparent)]
+        pub struct $name(Uuid);
 
-impl MemoryId {
-    /// Mint a fresh identifier for a new record.
-    pub fn new() -> Self {
-        Self(Uuid::new_v4())
-    }
+        impl $name {
+            /// Mint a fresh identifier.
+            pub fn new() -> Self {
+                Self(Uuid::new_v4())
+            }
+        }
+
+        impl Default for $name {
+            fn default() -> Self {
+                Self::new()
+            }
+        }
+
+        impl fmt::Display for $name {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, "{}", self.0)
+            }
+        }
+
+        impl FromStr for $name {
+            type Err = uuid::Error;
+
+            fn from_str(value: &str) -> Result<Self, Self::Err> {
+                Ok(Self(Uuid::parse_str(value)?))
+            }
+        }
+    };
 }
 
-impl Default for MemoryId {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl fmt::Display for MemoryId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl FromStr for MemoryId {
-    type Err = uuid::Error;
-
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        Ok(Self(Uuid::parse_str(value)?))
-    }
-}
+uuid_id!(
+    /// The identity of a single memory record.
+    MemoryId
+);
+uuid_id!(
+    /// The identity of one recorded step in a memory's scope history
+    /// (a proposal, a decision, or a demotion).
+    PromotionId
+);
+uuid_id!(
+    /// The identity of one recorded curator action (a merge or its rollback).
+    CurationId
+);
 
 #[cfg(test)]
 mod tests {

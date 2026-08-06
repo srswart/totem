@@ -1,0 +1,27 @@
+[package]
+name = "totem-curator"
+version = "0.1.0"
+description = "Background curation jobs that supersede memory rather than delete it"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+chrono.workspace = true
+# The curator holds no connection of its own: it reaches the store through the
+# same scope-resolved repositories every other caller uses, so `Connection` is
+# the only surrealdb surface it names.
+surrealdb = { workspace = true }
+totem-core = { path = "../totem-core" }
+totem-store = { path = "../totem-store" }
+
+[dev-dependencies]
+# `kv-mem` for the crate's own tests only: the embedded engine is the test
+# substrate (docs/tech-direction/surrealdb.md §4), not something the library
+# chooses on a caller's behalf.
+surrealdb = { workspace = true, features = ["kv-mem"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

@@ -46,16 +46,19 @@
 #![warn(missing_docs)]
 
 mod access_log;
+mod curation;
 mod embedding;
 mod error;
 mod landscape;
 mod memory;
 mod migrate;
+mod promotion;
 mod row;
 mod schema;
 mod store;
 
 pub use access_log::AccessLogRepository;
+pub use curation::CurationRepository;
 #[cfg(feature = "fastembed")]
 pub use embedding::fastembed_embedder::FastembedEmbedder;
 pub use embedding::{DeterministicEmbedder, Embedder, embed};
@@ -67,5 +70,6 @@ pub use landscape::{
 };
 pub use memory::{MemoryRepository, RecallQuery};
 pub use migrate::{AppliedMigration, MIGRATIONS, Migration};
+pub use promotion::{PromotionOutcome, PromotionRepository};
 pub use schema::EMBEDDING_DIMENSIONS;
 pub use store::Store;

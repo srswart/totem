@@ -191,7 +191,7 @@ passes:
           - id: "ADV-INFRA-001"
             advance_id: "ADV-INFRA-001"
             title: "Durable shared instance: RocksDB-backed gateway, backup/restore, client re-pointing"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-GATEWAY-001", "ADV-STORE-006"]
             notes: >-
@@ -204,31 +204,38 @@ passes:
           - id: "ADV-GATEWAY-003"
             advance_id: "ADV-GATEWAY-003"
             title: "Streamable-HTTP MCP + auth for cloud agents"
-            status: planned
+            status: done
             owner: "058-totem"
-            dependencies: ["ADV-GATEWAY-002"]
+            dependencies: ["ADV-GATEWAY-002", "ADV-INFRA-001"]
             notes: "Security-critical: least-privilege tokens bound to repo + scope. MODEL: claude-opus-5"
           - id: "ADV-CORE-003"
             advance_id: "ADV-CORE-003"
             title: "Scope promotion policy engine"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-STORE-001"]
             notes: "Security-critical: the one sanctioned path across scope boundaries. MODEL: claude-opus-5"
           - id: "ADV-CURATOR-001"
             advance_id: "ADV-CURATOR-001"
             title: "First curator job (dedupe) with supersede/rollback"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-STORE-002", "ADV-CORE-002"]
             notes: "Establishes the supersede-never-delete curator framework. MODEL: claude-opus-5"
           - id: "ADV-CONSOLE-002"
             advance_id: "ADV-CONSOLE-002"
             title: "Audit trails, Uncertainty queue, promotion approvals"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-CONSOLE-001", "ADV-CORE-003", "ADV-GATEWAY-004"]
-            notes: "Approval UI fronts the promotion engine; Uncertainty queue needs the contest path."
+            notes: >-
+              Approval UI fronts the promotion engine; Uncertainty queue
+              needs the contest path. Scope corrected 2026-08-06: audit
+              trail, Uncertainty queue + resolution, and promotion
+              propose/approve/reject delivered; value/usage reports + the
+              "retire?" queue, plus demote/MCP exposure for promotion, are
+              deferred as unassigned gaps (see ADV-CONSOLE-002.md's Scope
+              Correction).
 
   - id: "pass-006"
     title: "Pass 6: Evaluation and hardening"
@@ -252,6 +259,27 @@ passes:
             owner: "058-totem"
             dependencies: ["ADV-GATEWAY-002", "ADV-STORE-005"]
             notes: "Proven with negative/positive control runs before any evaluation uses it."
+          - id: "ADV-GATEWAY-009"
+            advance_id: "ADV-GATEWAY-009"
+            title: "Repo-bind enroll and landscape reads; unify the repo id spaces"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-GATEWAY-003"]
+            notes: >-
+              Closes the enumeration residual ADV-GATEWAY-003 disclosed: any
+              valid credential can enroll/read any repo's landscape. Must land
+              before multi-repo sync (reserved ADV-ARRIVE-SYNC-002) and before
+              the security evaluation grades the boundary.
+          - id: "ADV-CORE-006"
+            advance_id: "ADV-CORE-006"
+            title: "Auth refusals join the access log"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-GATEWAY-001", "ADV-GATEWAY-003"]
+            notes: >-
+              Closes the audit residual ADV-GATEWAY-003 disclosed: refused
+              requests currently leave no trace. Refuse first, log
+              best-effort; new AccessOperation variant in core.
           - id: "ADV-CONSOLE-003"
             advance_id: "ADV-CONSOLE-003"
             title: "Live landscape updates: gateway event relay + console subscription"
@@ -264,6 +292,18 @@ passes:
               the browser (SSE preferred); console patches signals in place,
               Refresh becomes fallback. Relay must go through store-enforced
               scope resolution and append to the access log.
+          - id: "ADV-CONSOLE-004"
+            advance_id: "ADV-CONSOLE-004"
+            title: "Console visual design system (Tailwind preferred, vanilla CSS fallback)"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-CONSOLE-001"]
+            notes: >-
+              First 'humans observe' surface gets a real visual design: app
+              shell, status badges, card/table presentation. Tailwind v4 via
+              dx's native integration if the sandbox can fetch the CLI;
+              committed vanilla stylesheet fallback otherwise — the outcome
+              is the spec, the vehicle is recorded honestly.
       - id: "phase-009"
         title: "Evaluations (quality, security, performance)"
         order: 2
@@ -273,7 +313,7 @@ passes:
             title: "Security evaluation: scope isolation, auth, promotion boundaries"
             status: planned
             owner: "058-totem"
-            dependencies: ["ADV-GATEWAY-003", "ADV-CORE-003", "ADV-STORE-005"]
+            dependencies: ["ADV-GATEWAY-003", "ADV-CORE-003", "ADV-STORE-005", "ADV-GATEWAY-009", "ADV-CORE-006"]
             notes: "Should gate store/gateway promotion from incubating to candidate. MODEL: claude-opus-5"
           - id: "ADV-CORE-005"
             advance_id: "ADV-CORE-005"

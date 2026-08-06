@@ -49,8 +49,10 @@
 
 mod access_log;
 mod category;
+mod curation;
 mod feedback;
 mod ids;
+mod promotion;
 mod provenance;
 mod record;
 mod scope;
@@ -58,12 +60,16 @@ mod scoring;
 
 pub use access_log::{AccessLogEntry, AccessOperation};
 pub use category::{CategoryLifecycle, MemoryCategory, Mutability, ReviewPolicy};
+pub use curation::{CurationError, CurationEvent, CurationEventKind, CurationPolicy, Supersession};
 pub use feedback::{FeedbackSignal, apply_feedback};
-pub use ids::{ActorId, IdError, MemoryId, RepoId, SessionId, TeamId};
+pub use ids::{ActorId, CurationId, IdError, MemoryId, PromotionId, RepoId, SessionId, TeamId};
+pub use promotion::{
+    PromotionError, PromotionEvent, PromotionEventKind, PromotionPath, PromotionPolicy,
+};
 pub use provenance::{Author, Harness, Provenance};
 pub use record::{
-    Content, Economics, Governance, LifecycleError, MemoryRecord, MemoryStatus, ReviewState,
-    SubjectKind, SubjectRef,
+    Content, Economics, Governance, GovernanceError, LifecycleError, MemoryRecord, MemoryStatus,
+    ReviewState, SubjectKind, SubjectRef,
 };
 pub use scope::{Scope, ScopeChain, ScopeParseError};
 pub use scoring::{

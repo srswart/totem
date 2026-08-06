@@ -96,7 +96,7 @@ reserved here so they can be created when ready.
    invalid, force-push history rewrite).
 5. **Console human authentication.** Open question (§9) — likely
    reverse-proxy/SSO initially. When decided, record it and implement under
-   `gateway` (suggest `ADV-GATEWAY-009`) or the `infra` component.
+   `gateway` (suggest `ADV-GATEWAY-010`; `ADV-GATEWAY-009` is now the repo-binding advance) or the `infra` component.
 6. **Tech-direction records.** CLAUDE.md expects major decisions in
    `docs/tech-direction/`, which doesn't exist yet. The decisions already made
    or pending deserve entries: SurrealDB choice (made, §7), embedding provider

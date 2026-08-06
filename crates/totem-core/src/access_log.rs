@@ -25,6 +25,17 @@ pub enum AccessOperation {
     /// (ADV-GATEWAY-004 gap-fill) — distinct from [`AccessOperation::Save`]
     /// because it revises a record's economics rather than writing a new one.
     Feedback,
+    /// A scope promotion or demotion was asked for (ADV-CONSOLE-002): the
+    /// write side of `promotion_event`, distinct from [`AccessOperation::Save`]
+    /// because the memory it names already existed.
+    Propose,
+    /// A human decided a queued promotion proposal, approving or rejecting it
+    /// (ADV-CONSOLE-002).
+    PromotionDecision,
+    /// A human resolved a pending Uncertainty review, approving or rejecting
+    /// it (ADV-CONSOLE-002) — the governance-state twin of
+    /// [`AccessOperation::Feedback`].
+    Resolve,
 }
 
 /// Who touched memory, from where, when, and via which surface.

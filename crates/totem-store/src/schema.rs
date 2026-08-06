@@ -194,6 +194,112 @@ DEFINE FIELD OVERWRITE operation ON access_log TYPE string
     ASSERT $value IN ['recall', 'save', 'feedback'];
 "#;
 
+/// Migration 5 — recorded scope promotions (ADV-CORE-003).
+///
+/// Promotion is the one sanctioned path across a scope boundary
+/// (docs/solution-intent.md §2.2), so its trail is held to the same standard as
+/// the access log: the two `EVENT`s refuse `UPDATE` and `DELETE`, and
+/// `provenance` is a required object with required members. An event that could
+/// be rewritten, removed, or written anonymously would make the project's
+/// highest-severity operation unauditable.
+///
+/// `recorded_at` is assigned by the store, not by the caller. `provenance.
+/// created_at` is whatever the calling harness reported, so ordering the trail
+/// by it would let a caller with a wrong — or deliberately backdated — clock
+/// reorder the record of who decided what, and when.
+pub(crate) const PROMOTION_SCHEMA_V5: &str = r#"
+DEFINE TABLE promotion_event SCHEMAFULL;
+
+DEFINE FIELD memory ON promotion_event TYPE record<memory>;
+DEFINE FIELD kind ON promotion_event TYPE string
+    ASSERT $value IN ['proposed', 'auto_approved', 'approved', 'rejected', 'demoted'];
+DEFINE FIELD from_scope ON promotion_event TYPE string ASSERT $value != '';
+DEFINE FIELD to_scope ON promotion_event TYPE string ASSERT $value != '';
+DEFINE FIELD proposal ON promotion_event TYPE option<record<promotion_event>>;
+DEFINE FIELD reason ON promotion_event TYPE option<string>;
+DEFINE FIELD recorded_at ON promotion_event TYPE datetime;
+
+DEFINE FIELD provenance ON promotion_event TYPE object;
+DEFINE FIELD provenance.author_kind ON promotion_event TYPE string
+    ASSERT $value IN ['human', 'agent', 'curator'];
+DEFINE FIELD provenance.author ON promotion_event TYPE string ASSERT $value != '';
+DEFINE FIELD provenance.harness ON promotion_event TYPE string ASSERT $value != '';
+DEFINE FIELD provenance.session ON promotion_event TYPE string ASSERT $value != '';
+DEFINE FIELD provenance.turn ON promotion_event TYPE option<int>;
+DEFINE FIELD provenance.created_at ON promotion_event TYPE datetime;
+DEFINE FIELD provenance.derived_from ON promotion_event TYPE array<record<memory>> DEFAULT [];
+
+DEFINE EVENT promotion_event_no_update ON TABLE promotion_event
+    WHEN $event = 'UPDATE'
+    THEN { THROW 'a promotion event is append-only and cannot be updated'; };
+DEFINE EVENT promotion_event_no_delete ON TABLE promotion_event
+    WHEN $event = 'DELETE'
+    THEN { THROW 'a promotion event is append-only and cannot be deleted'; };
+"#;
+
+/// Migration 6 — recorded curator actions (ADV-CURATOR-001).
+///
+/// The curator is the first writer that touches records it did not author, and
+/// its whole safety argument is that every action is reversible. That argument
+/// rests on this table, so it is held to the same standard as the access log
+/// and the promotion trail: the two `EVENT`s refuse `UPDATE` and `DELETE`, and
+/// `provenance` is a required object with required members. A rollback is
+/// reconstructed from the event alone — including `superseded.*.prior_status`,
+/// the status each original held *before* the merge — so an event that could be
+/// rewritten or removed would leave a merge with nothing to undo it by.
+///
+/// `scope` is the one scope every record in the event sits at: a merge may not
+/// cross a scope boundary (`totem_core::CurationPolicy`), which is what lets
+/// the trail be scope-filtered on a single column rather than by joining back
+/// to each record.
+///
+/// `recorded_at` is assigned by the store for the same reason it is on
+/// `promotion_event`: `provenance.created_at` is whatever the calling job
+/// reported, and ordering an audit trail by a caller's clock lets a wrong one
+/// rearrange history.
+pub(crate) const CURATION_SCHEMA_V6: &str = r#"
+DEFINE TABLE curation_event SCHEMAFULL;
+
+DEFINE FIELD kind ON curation_event TYPE string
+    ASSERT $value IN ['merged', 'rolled_back'];
+DEFINE FIELD merged ON curation_event TYPE record<memory>;
+DEFINE FIELD scope ON curation_event TYPE string ASSERT $value != '';
+DEFINE FIELD superseded ON curation_event TYPE array<object>;
+DEFINE FIELD superseded.*.memory ON curation_event TYPE record<memory>;
+DEFINE FIELD superseded.*.prior_status ON curation_event TYPE string
+    ASSERT $value IN ['active', 'contested', 'retired'];
+DEFINE FIELD rolls_back ON curation_event TYPE option<record<curation_event>>;
+DEFINE FIELD reason ON curation_event TYPE option<string>;
+DEFINE FIELD recorded_at ON curation_event TYPE datetime;
+
+DEFINE FIELD provenance ON curation_event TYPE object;
+DEFINE FIELD provenance.author_kind ON curation_event TYPE string
+    ASSERT $value IN ['human', 'agent', 'curator'];
+DEFINE FIELD provenance.author ON curation_event TYPE string ASSERT $value != '';
+DEFINE FIELD provenance.harness ON curation_event TYPE string ASSERT $value != '';
+DEFINE FIELD provenance.session ON curation_event TYPE string ASSERT $value != '';
+DEFINE FIELD provenance.turn ON curation_event TYPE option<int>;
+DEFINE FIELD provenance.created_at ON curation_event TYPE datetime;
+DEFINE FIELD provenance.derived_from ON curation_event TYPE array<record<memory>> DEFAULT [];
+
+DEFINE EVENT curation_event_no_update ON TABLE curation_event
+    WHEN $event = 'UPDATE'
+    THEN { THROW 'a curation event is append-only and cannot be updated'; };
+DEFINE EVENT curation_event_no_delete ON TABLE curation_event
+    WHEN $event = 'DELETE'
+    THEN { THROW 'a curation event is append-only and cannot be deleted'; };
+"#;
+
+/// Migration 7 — the `propose`, `promotion_decision`, and `resolve`
+/// access-log operations (ADV-CONSOLE-002).
+///
+/// Same `OVERWRITE` technique migration 4 established: existing rows are
+/// unaffected, and only the assertion a new row must satisfy widens.
+pub(crate) const ACCESS_LOG_GOVERNANCE_SCHEMA_V7: &str = r#"
+DEFINE FIELD OVERWRITE operation ON access_log TYPE string
+    ASSERT $value IN ['recall', 'save', 'feedback', 'propose', 'promotion_decision', 'resolve'];
+"#;
+
 #[cfg(test)]
 mod tests {
     //! Enforcement the repository API cannot be trusted to provide.
@@ -475,6 +581,213 @@ mod tests {
             .expect("select succeeded");
         let rows: Value = response.take(0).expect("rows");
         assert_eq!(rows.into_array().expect("an array").len(), 1);
+    }
+
+    const PROMOTION_EVENT: &str = r#"
+        CREATE promotion_event:proposal CONTENT {
+            memory: memory:episode, kind: 'proposed',
+            from_scope: 'actor:ada', to_scope: 'project:srswart/totem',
+            recorded_at: d'2026-08-06T06:00:00Z',
+            provenance: { author_kind: 'human', author: 'ada', harness: 'console',
+                          session: 's1', created_at: d'2026-08-06T06:00:00Z', derived_from: [] }
+        }
+    "#;
+
+    #[tokio::test]
+    async fn the_database_refuses_to_update_a_promotion_event() {
+        // A promotion event is the record that a scope boundary was crossed.
+        // If it could be rewritten, the audit trail of the project's
+        // highest-severity operation would be worth nothing.
+        let store = migrated().await;
+        store
+            .connection()
+            .query(PROMOTION_EVENT)
+            .await
+            .expect("sent")
+            .check()
+            .expect("the event is written");
+
+        let refused = store
+            .connection()
+            .query("UPDATE promotion_event:proposal SET kind = 'approved'")
+            .await
+            .expect("sent")
+            .check();
+        assert!(
+            refused.is_err(),
+            "a raw UPDATE rewrote a promotion event: {refused:?}",
+        );
+    }
+
+    #[tokio::test]
+    async fn the_database_refuses_to_delete_a_promotion_event() {
+        let store = migrated().await;
+        store
+            .connection()
+            .query(PROMOTION_EVENT)
+            .await
+            .expect("sent")
+            .check()
+            .expect("the event is written");
+
+        let refused = store
+            .connection()
+            .query("DELETE promotion_event")
+            .await
+            .expect("sent")
+            .check();
+        assert!(
+            refused.is_err(),
+            "a raw DELETE removed a promotion event: {refused:?}",
+        );
+
+        let mut response = store
+            .connection()
+            .query("SELECT VALUE kind FROM promotion_event")
+            .await
+            .expect("sent")
+            .check()
+            .expect("select succeeded");
+        let rows: Value = response.take(0).expect("rows");
+        assert_eq!(rows.into_array().expect("an array").len(), 1);
+    }
+
+    #[tokio::test]
+    async fn the_database_refuses_a_promotion_event_without_provenance() {
+        let store = migrated().await;
+        let refused = store
+            .connection()
+            .query(
+                "CREATE promotion_event CONTENT {
+                    memory: memory:episode, kind: 'proposed',
+                    from_scope: 'actor:ada', to_scope: 'project:srswart/totem',
+                    recorded_at: d'2026-08-06T06:00:00Z'
+                }",
+            )
+            .await
+            .expect("sent")
+            .check();
+        assert!(
+            refused.is_err(),
+            "an unattributable promotion event was accepted: {refused:?}",
+        );
+    }
+
+    #[tokio::test]
+    async fn the_database_refuses_a_scope_edit_on_an_episodic_row() {
+        // Defence in depth behind PromotionPolicy: even if the policy were
+        // loosened by mistake, the append-only EVENT still refuses to move an
+        // episodic record.
+        let store = migrated().await;
+        store
+            .connection()
+            .query(EPISODE)
+            .await
+            .expect("sent")
+            .check()
+            .expect("the episode is written");
+
+        let refused = store
+            .connection()
+            .query("UPDATE memory:episode SET scope = 'platform'")
+            .await
+            .expect("sent")
+            .check();
+        assert!(
+            refused.is_err(),
+            "a raw UPDATE promoted an episodic record: {refused:?}",
+        );
+    }
+
+    const CURATION_EVENT: &str = r#"
+        CREATE curation_event:merge CONTENT {
+            kind: 'merged', merged: memory:survivor, scope: 'project:srswart/totem',
+            superseded: [{ memory: memory:first, prior_status: 'active' }],
+            recorded_at: d'2026-08-06T08:00:00Z',
+            provenance: { author_kind: 'curator', author: 'totem-curator', harness: 'curator',
+                          session: 'curate-1', created_at: d'2026-08-06T08:00:00Z', derived_from: [] }
+        }
+    "#;
+
+    #[tokio::test]
+    async fn the_database_refuses_to_update_a_curation_event() {
+        // A curation event is the record that a curator retired somebody's
+        // memory, and the only thing a rollback can be reconstructed from. If
+        // it could be rewritten, "reversible" would be a claim with nothing
+        // behind it.
+        let store = migrated().await;
+        store
+            .connection()
+            .query(CURATION_EVENT)
+            .await
+            .expect("sent")
+            .check()
+            .expect("the event is written");
+
+        let refused = store
+            .connection()
+            .query("UPDATE curation_event:merge SET kind = 'rolled_back'")
+            .await
+            .expect("sent")
+            .check();
+        assert!(
+            refused.is_err(),
+            "a raw UPDATE rewrote a curation event: {refused:?}",
+        );
+    }
+
+    #[tokio::test]
+    async fn the_database_refuses_to_delete_a_curation_event() {
+        let store = migrated().await;
+        store
+            .connection()
+            .query(CURATION_EVENT)
+            .await
+            .expect("sent")
+            .check()
+            .expect("the event is written");
+
+        let refused = store
+            .connection()
+            .query("DELETE curation_event")
+            .await
+            .expect("sent")
+            .check();
+        assert!(
+            refused.is_err(),
+            "a raw DELETE removed a curation event: {refused:?}",
+        );
+
+        let mut response = store
+            .connection()
+            .query("SELECT VALUE kind FROM curation_event")
+            .await
+            .expect("sent")
+            .check()
+            .expect("select succeeded");
+        let rows: Value = response.take(0).expect("rows");
+        assert_eq!(rows.into_array().expect("an array").len(), 1);
+    }
+
+    #[tokio::test]
+    async fn the_database_refuses_a_curation_event_without_provenance() {
+        let store = migrated().await;
+        let refused = store
+            .connection()
+            .query(
+                "CREATE curation_event CONTENT {
+                    kind: 'merged', merged: memory:survivor, scope: 'project:srswart/totem',
+                    superseded: [{ memory: memory:first, prior_status: 'active' }],
+                    recorded_at: d'2026-08-06T08:00:00Z'
+                }",
+            )
+            .await
+            .expect("sent")
+            .check();
+        assert!(
+            refused.is_err(),
+            "an unattributable curation event was accepted: {refused:?}",
+        );
     }
 
     #[tokio::test]

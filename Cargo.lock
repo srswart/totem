@@ -6428,6 +6428,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "totem-curator"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "surrealdb",
+ "tokio",
+ "totem-core",
+ "totem-store",
+]
+
+[[package]]
 name = "totem-embedding-spike"
 version = "0.1.0"
 dependencies = [
@@ -6446,12 +6457,14 @@ dependencies = [
  "rmcp",
  "serde",
  "serde_json",
+ "sha2",
  "surrealdb",
  "thiserror 2.0.19",
  "tokio",
  "totem-core",
  "totem-store",
  "tower",
+ "uuid",
 ]
 
 [[package]]
@@ -6474,6 +6487,7 @@ dependencies = [
  "fastembed",
  "serde",
  "surrealdb",
+ "tempfile",
  "thiserror 2.0.19",
  "tokio",
  "totem-core",

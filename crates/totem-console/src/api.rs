@@ -18,10 +18,13 @@
 use dioxus::prelude::*;
 use gloo_net::http::Request;
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
-use totem_core::MemoryRecord;
+use totem_core::{MemoryId, MemoryRecord, PromotionEvent, PromotionId, ReviewState};
 
 use crate::app::App;
-use crate::view_model::{LandscapeViewModel, ViewModelError, parse_landscape, parse_memories};
+use crate::view_model::{
+    AuditTrailViewModel, LandscapeViewModel, ViewModelError, parse_audit_trail, parse_landscape,
+    parse_memories, parse_promotion_queue, parse_uncertainty_queue,
+};
 
 /// `POST /recall`'s cap on this browser's own requests, in the absence of
 /// any pagination UI (review feedback on PR #22: an unbounded `limit` risks
@@ -98,6 +101,145 @@ pub async fn fetch_memories(actor: &str, project: &str) -> Result<Vec<MemoryReco
     Ok(parse_memories(&body)?)
 }
 
+/// `POST` a JSON body and return the response text, or a [`FetchError`] for a
+/// non-2xx status — the boilerplate every governance read/write below shares
+/// (`fetch_landscape`/`fetch_memories` predate this helper and are left as
+/// they are rather than churned for a pattern they only used once each).
+async fn post_json(path: &str, body: serde_json::Value) -> Result<String, FetchError> {
+    let response = Request::post(path)
+        .header("content-type", "application/json")
+        .body(body.to_string())
+        .map_err(|error| FetchError::Request(error.to_string()))?
+        .send()
+        .await
+        .map_err(|error| FetchError::Request(error.to_string()))?;
+    let status = response.status();
+    let text = response
+        .text()
+        .await
+        .map_err(|error| FetchError::Request(error.to_string()))?;
+    if !(200..300).contains(&status) {
+        return Err(FetchError::Status { status, body: text });
+    }
+    Ok(text)
+}
+
+/// `POST /promotions/pending`, scoped to one actor's readable chain within
+/// one project (ADV-CONSOLE-002).
+pub async fn fetch_promotion_queue(
+    actor: &str,
+    project: &str,
+) -> Result<Vec<PromotionEvent>, FetchError> {
+    let body = serde_json::json!({
+        "actor": actor.trim(),
+        "project": project.trim(),
+        "teams": [],
+        "harness": "console",
+        "session": "console-session",
+        "turn": null,
+    });
+    Ok(parse_promotion_queue(
+        &post_json("/promotions/pending", body).await?,
+    )?)
+}
+
+/// `POST /promotions/:id/approve`, deciding as `actor` (ADV-CONSOLE-002).
+pub async fn approve_promotion(
+    actor: &str,
+    project: &str,
+    proposal: PromotionId,
+) -> Result<(), FetchError> {
+    decide_promotion(actor, project, proposal, "approve").await
+}
+
+/// `POST /promotions/:id/reject`, deciding as `actor` (ADV-CONSOLE-002).
+pub async fn reject_promotion(
+    actor: &str,
+    project: &str,
+    proposal: PromotionId,
+) -> Result<(), FetchError> {
+    decide_promotion(actor, project, proposal, "reject").await
+}
+
+async fn decide_promotion(
+    actor: &str,
+    project: &str,
+    proposal: PromotionId,
+    decision: &str,
+) -> Result<(), FetchError> {
+    let body = serde_json::json!({
+        "project": project.trim(),
+        "teams": [],
+        "author": { "kind": "human", "actor": actor.trim() },
+        "harness": "console",
+        "session": "console-session",
+        "turn": null,
+        "reason": null,
+    });
+    post_json(&format!("/promotions/{proposal}/{decision}"), body).await?;
+    Ok(())
+}
+
+/// `POST /uncertainty/pending`, scoped to one actor's readable chain within
+/// one project (ADV-CONSOLE-002).
+pub async fn fetch_uncertainty_queue(
+    actor: &str,
+    project: &str,
+) -> Result<Vec<MemoryRecord>, FetchError> {
+    let body = serde_json::json!({
+        "actor": actor.trim(),
+        "project": project.trim(),
+        "teams": [],
+        "harness": "console",
+        "session": "console-session",
+        "turn": null,
+    });
+    Ok(parse_uncertainty_queue(
+        &post_json("/uncertainty/pending", body).await?,
+    )?)
+}
+
+/// `POST /uncertainty/:id/resolve`, deciding as `actor` (ADV-CONSOLE-002).
+pub async fn resolve_uncertainty(
+    actor: &str,
+    project: &str,
+    memory_id: MemoryId,
+    decision: ReviewState,
+) -> Result<(), FetchError> {
+    let body = serde_json::json!({
+        "actor": actor.trim(),
+        "project": project.trim(),
+        "teams": [],
+        "decision": serde_json::to_value(decision).expect("ReviewState serialises"),
+        "harness": "console",
+        "session": "console-session",
+        "turn": null,
+    });
+    post_json(&format!("/uncertainty/{memory_id}/resolve"), body).await?;
+    Ok(())
+}
+
+/// `POST /audit/:id`, scoped to one actor's readable chain within one
+/// project (ADV-CONSOLE-002).
+pub async fn fetch_audit_trail(
+    actor: &str,
+    project: &str,
+    memory_id: &str,
+) -> Result<AuditTrailViewModel, FetchError> {
+    let memory_id = utf8_percent_encode(memory_id.trim(), NON_ALPHANUMERIC).to_string();
+    let body = serde_json::json!({
+        "actor": actor.trim(),
+        "project": project.trim(),
+        "teams": [],
+        "harness": "console",
+        "session": "console-session",
+        "turn": null,
+    });
+    Ok(parse_audit_trail(
+        &post_json(&format!("/audit/{memory_id}"), body).await?,
+    )?)
+}
+
 /// The wasm entry point's root component: a repo/actor/project form over
 /// [`App`], with a manual "Refresh" button in place of the live-query
 /// auto-update the advance names as a stretch goal (see module docs).
@@ -106,9 +248,13 @@ pub fn RootApp() -> Element {
     let mut repo = use_signal(|| "058-totem".to_string());
     let mut actor = use_signal(|| "".to_string());
     let mut project = use_signal(|| "".to_string());
+    let mut audit_query = use_signal(|| "".to_string());
     let error = use_signal(|| Option::<String>::None);
     let landscape = use_signal(LandscapeViewModel::default);
     let memories = use_signal(Vec::<MemoryRecord>::new);
+    let promotions = use_signal(Vec::<PromotionEvent>::new);
+    let uncertainty = use_signal(Vec::<MemoryRecord>::new);
+    let audit = use_signal(|| Option::<AuditTrailViewModel>::None);
 
     let refresh = move || {
         let repo_value = repo.read().clone();
@@ -116,6 +262,8 @@ pub fn RootApp() -> Element {
         let project_value = project.read().clone();
         let mut landscape = landscape;
         let mut memories = memories;
+        let mut promotions = promotions;
+        let mut uncertainty = uncertainty;
         let mut error = error;
         spawn(async move {
             // Cleared up front (review feedback on PR #22): otherwise a
@@ -130,12 +278,75 @@ pub fn RootApp() -> Element {
                 // Cleared, not left stale: an actor/project the form no
                 // longer names should not keep showing that actor's memories.
                 memories.set(Vec::new());
+                promotions.set(Vec::new());
+                uncertainty.set(Vec::new());
             } else {
                 match fetch_memories(&actor_value, &project_value).await {
                     Ok(records) => memories.set(records),
                     Err(err) => error.set(Some(err.to_string())),
                 }
+                match fetch_promotion_queue(&actor_value, &project_value).await {
+                    Ok(events) => promotions.set(events),
+                    Err(err) => error.set(Some(err.to_string())),
+                }
+                match fetch_uncertainty_queue(&actor_value, &project_value).await {
+                    Ok(records) => uncertainty.set(records),
+                    Err(err) => error.set(Some(err.to_string())),
+                }
             }
+        });
+    };
+
+    let lookup_audit = move || {
+        let actor_value = actor.read().clone();
+        let project_value = project.read().clone();
+        let query_value = audit_query.read().clone();
+        let mut audit = audit;
+        let mut error = error;
+        spawn(async move {
+            error.set(None);
+            match fetch_audit_trail(&actor_value, &project_value, &query_value).await {
+                Ok(trail) => audit.set(Some(trail)),
+                Err(err) => error.set(Some(err.to_string())),
+            }
+        });
+    };
+
+    let on_approve_promotion = move |proposal: PromotionId| {
+        let actor_value = actor.read().clone();
+        let project_value = project.read().clone();
+        let mut error = error;
+        spawn(async move {
+            if let Err(err) = approve_promotion(&actor_value, &project_value, proposal).await {
+                error.set(Some(err.to_string()));
+            }
+            refresh();
+        });
+    };
+
+    let on_reject_promotion = move |proposal: PromotionId| {
+        let actor_value = actor.read().clone();
+        let project_value = project.read().clone();
+        let mut error = error;
+        spawn(async move {
+            if let Err(err) = reject_promotion(&actor_value, &project_value, proposal).await {
+                error.set(Some(err.to_string()));
+            }
+            refresh();
+        });
+    };
+
+    let on_resolve_uncertainty = move |(memory_id, decision): (MemoryId, ReviewState)| {
+        let actor_value = actor.read().clone();
+        let project_value = project.read().clone();
+        let mut error = error;
+        spawn(async move {
+            if let Err(err) =
+                resolve_uncertainty(&actor_value, &project_value, memory_id, decision).await
+            {
+                error.set(Some(err.to_string()));
+            }
+            refresh();
         });
     };
 
@@ -164,6 +375,24 @@ pub fn RootApp() -> Element {
                 p { class: "totem-console__error", "{message}" }
             }
         }
-        App { landscape: landscape.read().clone(), memories: memories.read().clone() }
+        div { class: "totem-console__audit-lookup",
+            label { "Memory id "
+                input {
+                    value: "{audit_query}",
+                    oninput: move |event| audit_query.set(event.value()),
+                }
+            }
+            button { onclick: move |_| lookup_audit(), "Look up audit trail" }
+        }
+        App {
+            landscape: landscape.read().clone(),
+            memories: memories.read().clone(),
+            promotions: promotions.read().clone(),
+            on_approve_promotion,
+            on_reject_promotion,
+            uncertainty: uncertainty.read().clone(),
+            on_resolve_uncertainty,
+            audit: audit.read().clone(),
+        }
     }
 }
