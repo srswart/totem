@@ -636,6 +636,97 @@ mod tests {
         );
     }
 
+    const CURATION_EVENT: &str = r#"
+        CREATE curation_event:merge CONTENT {
+            kind: 'merged', merged: memory:survivor, scope: 'project:srswart/totem',
+            superseded: [{ memory: memory:first, prior_status: 'active' }],
+            recorded_at: d'2026-08-06T08:00:00Z',
+            provenance: { author_kind: 'curator', author: 'totem-curator', harness: 'curator',
+                          session: 'curate-1', created_at: d'2026-08-06T08:00:00Z', derived_from: [] }
+        }
+    "#;
+
+    #[tokio::test]
+    async fn the_database_refuses_to_update_a_curation_event() {
+        // A curation event is the record that a curator retired somebody's
+        // memory, and the only thing a rollback can be reconstructed from. If
+        // it could be rewritten, "reversible" would be a claim with nothing
+        // behind it.
+        let store = migrated().await;
+        store
+            .connection()
+            .query(CURATION_EVENT)
+            .await
+            .expect("sent")
+            .check()
+            .expect("the event is written");
+
+        let refused = store
+            .connection()
+            .query("UPDATE curation_event:merge SET kind = 'rolled_back'")
+            .await
+            .expect("sent")
+            .check();
+        assert!(
+            refused.is_err(),
+            "a raw UPDATE rewrote a curation event: {refused:?}",
+        );
+    }
+
+    #[tokio::test]
+    async fn the_database_refuses_to_delete_a_curation_event() {
+        let store = migrated().await;
+        store
+            .connection()
+            .query(CURATION_EVENT)
+            .await
+            .expect("sent")
+            .check()
+            .expect("the event is written");
+
+        let refused = store
+            .connection()
+            .query("DELETE curation_event")
+            .await
+            .expect("sent")
+            .check();
+        assert!(
+            refused.is_err(),
+            "a raw DELETE removed a curation event: {refused:?}",
+        );
+
+        let mut response = store
+            .connection()
+            .query("SELECT VALUE kind FROM curation_event")
+            .await
+            .expect("sent")
+            .check()
+            .expect("select succeeded");
+        let rows: Value = response.take(0).expect("rows");
+        assert_eq!(rows.into_array().expect("an array").len(), 1);
+    }
+
+    #[tokio::test]
+    async fn the_database_refuses_a_curation_event_without_provenance() {
+        let store = migrated().await;
+        let refused = store
+            .connection()
+            .query(
+                "CREATE curation_event CONTENT {
+                    kind: 'merged', merged: memory:survivor, scope: 'project:srswart/totem',
+                    superseded: [{ memory: memory:first, prior_status: 'active' }],
+                    recorded_at: d'2026-08-06T08:00:00Z'
+                }",
+            )
+            .await
+            .expect("sent")
+            .check();
+        assert!(
+            refused.is_err(),
+            "an unattributable curation event was accepted: {refused:?}",
+        );
+    }
+
     #[tokio::test]
     async fn the_vector_index_is_pinned_to_the_measured_dimension_and_distance() {
         let store = migrated().await;

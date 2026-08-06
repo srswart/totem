@@ -6428,6 +6428,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "totem-curator"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "surrealdb",
+ "tokio",
+ "totem-core",
+ "totem-store",
+]
+
+[[package]]
 name = "totem-embedding-spike"
 version = "0.1.0"
 dependencies = [
