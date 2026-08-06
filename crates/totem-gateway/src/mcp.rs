@@ -225,7 +225,9 @@ impl TotemMcp {
 #[tool_router(server_handler)]
 impl TotemMcp {
     /// `totem_recall` — merged, scope-resolved context for a query, returned
-    /// as a JSON-encoded `RecallResponse`-shaped array of records.
+    /// as a JSON-encoded array of memory records (not `RecallResponse`'s
+    /// `{"records": [...]}` object shape — REST wraps the array, this tool
+    /// returns it bare).
     #[tool(
         description = "Recall merged, scope-resolved memory for a query: relevant Knowledge, Instructions, Context, and other typed memories the caller's scope chain can see, ranked by vector proximity when `query` is given. Returns a JSON array of memory records."
     )]
