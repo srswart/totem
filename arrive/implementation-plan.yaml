@@ -218,7 +218,7 @@ passes:
           - id: "ADV-CURATOR-001"
             advance_id: "ADV-CURATOR-001"
             title: "First curator job (dedupe) with supersede/rollback"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-STORE-002", "ADV-CORE-002"]
             notes: "Establishes the supersede-never-delete curator framework. MODEL: claude-opus-5"
