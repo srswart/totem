@@ -7,11 +7,11 @@ advance:
   components: ["cli", "gateway", "arrive-sync", "store"]
   started_at: "2026-08-05T04:39:35Z"
   implementation_completed_at: "2026-08-06T06:27:28Z"
-  review_time_estimate_minutes: 40
+  review_time_estimate_minutes: 186
   review_time_actual_minutes: ~
   pr_links: []
   external_refs: []
-  reviewability_score: 0
+  reviewability_score: 102
   risk_flags: ["auth", "public_api", "new_dependency"]
   evidence:
     - "tidy:preparatory"
@@ -236,3 +236,36 @@ After this advance:
    entirely. What does `cargo test -p totem-cli -p totem-gateway` report for
    `a_malformed_enroll_body_never_reaches_the_store` in that red state, and
    why does it pass even though `handlers::enroll`'s body never runs?
+
+## Reviewability
+
+`arrive score --base origin/advance/phase-005` reports **102 [RED]** (Size 67,
+Novelty 20, Risk 15 — `auth`, `concurrency`). Split was considered and
+rejected in favor of documenting atomicity:
+
+- **The size is a new crate, not a large change to an existing one.** 10 of
+  the 17 touched files are brand-new `crates/totem-cli/*` files; of those, 5
+  are test files (`tests/{credential,hook,enroll}.rs` plus the gateway's
+  `tests/enroll.rs`) and 1 is a 12-line `main.rs`. A from-scratch crate's
+  `Cargo.toml`, `lib.rs`, and clap wiring are unavoidable fixed overhead no
+  matter how the two behaviors inside it are split.
+- **`enroll` and `credential create` share that overhead and nothing else** —
+  splitting them would duplicate the crate scaffold (`Cargo.toml`, `lib.rs`,
+  `main.rs`'s clap dispatch) across two PRs, then need a third merge to
+  reconcile it, which is worse for a reviewer than one coherent "here is the
+  new crate" diff. They were already one plan item (`ADV-CLI-001`) before
+  this run started, each named as half the same Objective ("`totem enroll`
+  ... and actor enrollment").
+- **The `auth` risk flag is `credential.rs` alone** (`+10` of the pattern
+  match) — a reviewer can read that one file in isolation; nothing in
+  `enroll.rs`/`hook.rs` depends on it or vice versa.
+- **`concurrency` (`+5`) is `Cargo.lock` noise**, not a concurrency change in
+  this advance's own code — the pattern matched new transitive dependencies
+  (`clap`, `reqwest`, `tokio` feature growth), not new async/threading logic
+  beyond the `#[tokio::test]`/`#[tokio::main]` this crate's dependencies
+  already required.
+
+Chosen: **documented as atomic**, not split. A reviewer working through the
+sub-PR should expect roughly 3 hours per the estimate above; the `tidy: →
+test: (red) → feat: (green)` commit series is structured so each commit can
+be read independently even though the PR lands as one review unit.
