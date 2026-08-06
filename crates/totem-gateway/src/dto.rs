@@ -11,11 +11,11 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use totem_core::{
-    ActorId, Author, Harness, MemoryCategory, MemoryId, MemoryRecord, RepoId, Scope, SessionId,
-    SubjectRef, TeamId,
+    ActorId, Author, FeedbackSignal, Harness, MemoryCategory, MemoryId, MemoryRecord, RepoId,
+    Scope, SessionId, SubjectRef, TeamId,
 };
 use totem_store::LandscapeSnapshot;
-pub use totem_store::LandscapeView;
+pub use totem_store::{AdvanceView, LandscapeView};
 
 /// `POST /save` — a write with provenance auto-attached from the caller's own
 /// identity (the objective's phrase; ADV-GATEWAY-003 will replace `author` /
@@ -93,6 +93,128 @@ pub struct RecallResponse {
     /// The records the reader's chain permits, ranked or ordered per the
     /// request.
     pub records: Vec<MemoryRecord>,
+}
+
+/// `POST /feedback` — an explicit value signal about an existing memory
+/// (ADV-GATEWAY-004 gap-fill): the input side of the value loop the
+/// automatic citation boost and usage reinforcement (ADV-CORE-002) feed
+/// alongside.
+#[derive(Debug, Clone, Deserialize)]
+pub struct FeedbackRequest {
+    /// The reader's own identity — the target memory must be visible to this
+    /// actor's resolved chain.
+    pub actor: ActorId,
+    /// The reader's project membership, if any.
+    pub project: Option<RepoId>,
+    /// The reader's team memberships, if any.
+    #[serde(default)]
+    pub teams: Vec<TeamId>,
+    /// The memory the signal is about.
+    pub memory_id: MemoryId,
+    /// The signal itself: `used`, `wrong`, or `stale`.
+    pub signal: FeedbackSignal,
+    /// Which harness the signal arrived through.
+    pub harness: Harness,
+    /// The harness session the signal belongs to.
+    pub session: SessionId,
+    /// The turn within that session, when the harness reports one.
+    pub turn: Option<u32>,
+}
+
+/// `POST /feedback` response: the record's economics after the signal
+/// applied.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FeedbackResponse {
+    /// The updated record.
+    pub record: MemoryRecord,
+}
+
+/// `POST /contest` — file an Uncertainty record against an existing memory
+/// (ADV-GATEWAY-004 gap-fill), preserving both claims instead of overwriting:
+/// the contested memory is never revised, and the new claim lands as its own
+/// record, linked back to it by `subject`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ContestRequest {
+    /// The writer's own project membership, if any.
+    pub project: Option<RepoId>,
+    /// The writer's team memberships, if any.
+    #[serde(default)]
+    pub teams: Vec<TeamId>,
+    /// The memory being contested. Refused if the writer's chain cannot see
+    /// it — an Uncertainty record naming an id the writer cannot see would
+    /// leak that the id exists.
+    pub memory_id: MemoryId,
+    /// Where the new Uncertainty record is written. Refused if the writer's
+    /// resolved chain does not contain it, same as `/save`.
+    pub scope: Scope,
+    /// The conflicting claim, preserved alongside the original rather than
+    /// replacing it.
+    pub claim: String,
+    /// Free-form tags.
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// Who is filing the contest.
+    pub author: Author,
+    /// Which harness the contest arrived through.
+    pub harness: Harness,
+    /// The harness session the contest belongs to.
+    pub session: SessionId,
+    /// The turn within that session, when the harness reports one.
+    pub turn: Option<u32>,
+}
+
+/// `POST /contest` response: the identity of the new Uncertainty record.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContestResponse {
+    /// The new record's id.
+    pub id: MemoryId,
+}
+
+/// `POST /advance/log` — append a process-attuned log entry about an
+/// advance (ADV-GATEWAY-004 gap-fill). Writes to Totem's own mirror/memory
+/// only; `/arrive/` files in the repo stay authoritative
+/// (`arrive-sync.yaml`'s invariant) — this is a session log, not a substitute
+/// for the advance's own `## Changes Made`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AdvanceLogRequest {
+    /// The writer's own project membership, if any.
+    pub project: Option<RepoId>,
+    /// The writer's team memberships, if any.
+    #[serde(default)]
+    pub teams: Vec<TeamId>,
+    /// The advance the entry concerns (`ADV-<COMPONENT>-<SEQ>`).
+    pub advance_id: String,
+    /// Where the log entry is written. Refused if the writer's resolved
+    /// chain does not contain it, same as `/save`.
+    pub scope: Scope,
+    /// The entry itself.
+    pub body: String,
+    /// Free-form tags.
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// Who is writing.
+    pub author: Author,
+    /// Which harness the write arrived through.
+    pub harness: Harness,
+    /// The harness session the write belongs to.
+    pub session: SessionId,
+    /// The turn within that session, when the harness reports one.
+    pub turn: Option<u32>,
+}
+
+/// `POST /advance/log` response: the identity of the record just written.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvanceLogResponse {
+    /// The new record's id.
+    pub id: MemoryId,
+}
+
+/// `GET /advance/:id/status` response: one advance's current status, read
+/// from the landscape mirror (ADV-GATEWAY-004 gap-fill: `totem_advance_status`).
+#[derive(Debug, Clone, Serialize)]
+pub struct AdvanceStatusResponse {
+    /// The advance, or `None` if this id has never been synced.
+    pub advance: Option<AdvanceView>,
 }
 
 /// `POST /enroll` — register or re-sync one repo's ARRIVE landscape (`totem

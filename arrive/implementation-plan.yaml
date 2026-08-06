@@ -161,21 +161,21 @@ passes:
           - id: "ADV-CORE-004"
             advance_id: "ADV-CORE-004"
             title: "Investigation: value-attribution proxy experiment"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-GATEWAY-002"]
             notes: "Needs real recall/save traffic shapes to construct sample sessions; picks the v1 signal set."
           - id: "ADV-CORE-002"
             advance_id: "ADV-CORE-002"
             title: "Metering + value/currency scoring in retrieval ranking"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-CORE-004", "ADV-STORE-002"]
             notes: "Ranking = relevance × value × currency, weighted per category."
           - id: "ADV-GATEWAY-004"
             advance_id: "ADV-GATEWAY-004"
             title: "MCP tools: feedback, contest, advance_status/advance_log"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-GATEWAY-002", "ADV-CORE-002"]
             notes: "totem_feedback feeds the value loop; totem_contest is the Uncertainty write path."

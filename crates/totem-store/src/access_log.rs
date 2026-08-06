@@ -19,6 +19,7 @@ fn operation_key(operation: AccessOperation) -> &'static str {
     match operation {
         AccessOperation::Recall => "recall",
         AccessOperation::Save => "save",
+        AccessOperation::Feedback => "feedback",
     }
 }
 
@@ -26,6 +27,7 @@ fn operation_from(key: &str) -> Result<AccessOperation, RowError> {
     match key {
         "recall" => Ok(AccessOperation::Recall),
         "save" => Ok(AccessOperation::Save),
+        "feedback" => Ok(AccessOperation::Feedback),
         other => Err(row::malformed(format!(
             "unknown access log operation: {other}"
         ))),

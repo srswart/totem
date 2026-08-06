@@ -49,13 +49,16 @@
 
 mod access_log;
 mod category;
+mod feedback;
 mod ids;
 mod provenance;
 mod record;
 mod scope;
+mod scoring;
 
 pub use access_log::{AccessLogEntry, AccessOperation};
 pub use category::{CategoryLifecycle, MemoryCategory, Mutability, ReviewPolicy};
+pub use feedback::{FeedbackSignal, apply_feedback};
 pub use ids::{ActorId, IdError, MemoryId, RepoId, SessionId, TeamId};
 pub use provenance::{Author, Harness, Provenance};
 pub use record::{
@@ -63,3 +66,7 @@ pub use record::{
     SubjectKind, SubjectRef,
 };
 pub use scope::{Scope, ScopeChain, ScopeParseError};
+pub use scoring::{
+    DEFAULT_CURRENCY_HALF_LIFE, category_weight, combined_score, decay_currency,
+    effective_currency, relevance_from_distance,
+};

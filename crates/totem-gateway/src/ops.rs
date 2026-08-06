@@ -9,10 +9,11 @@
 
 use chrono::{DateTime, Utc};
 use totem_core::{
-    AccessLogEntry, AccessOperation, ActorId, Author, Content, Harness, MemoryCategory, MemoryId,
-    MemoryRecord, Provenance, RepoId, Scope, ScopeChain, SessionId, SubjectRef, TeamId,
+    AccessLogEntry, AccessOperation, ActorId, Author, Content, FeedbackSignal, Harness,
+    MemoryCategory, MemoryId, MemoryRecord, Provenance, RepoId, Scope, ScopeChain, SessionId,
+    SubjectKind, SubjectRef, TeamId,
 };
-use totem_store::RecallQuery;
+use totem_store::{AdvanceView, RecallQuery};
 
 use crate::error::GatewayError;
 use crate::state::AppState;
@@ -161,4 +162,204 @@ pub async fn recall(
     state.store.access_log().record(&entry).await?;
 
     Ok(records)
+}
+
+/// Everything a feedback signal needs, independent of transport.
+#[derive(Debug, Clone)]
+pub struct FeedbackInput {
+    /// The reader's own identity — the target memory must be visible to this
+    /// actor's resolved chain.
+    pub actor: ActorId,
+    /// The reader's project membership, if any.
+    pub project: Option<RepoId>,
+    /// The reader's team memberships, if any.
+    pub teams: Vec<TeamId>,
+    /// The memory the signal is about.
+    pub memory_id: MemoryId,
+    /// The signal itself.
+    pub signal: FeedbackSignal,
+    /// Which harness the signal arrived through.
+    pub harness: Harness,
+    /// The harness session the signal belongs to.
+    pub session: SessionId,
+    /// The turn within that session, when the harness reports one.
+    pub turn: Option<u32>,
+}
+
+/// Apply an explicit feedback signal and append one
+/// [`AccessOperation::Feedback`] access-log entry — the input side of the
+/// value loop ADV-CORE-002's automatic citation boost and usage
+/// reinforcement feed alongside (ADV-GATEWAY-004 gap-fill).
+pub async fn feedback(
+    state: &AppState,
+    input: FeedbackInput,
+    endpoint: &str,
+) -> Result<MemoryRecord, GatewayError> {
+    let chain = ScopeChain::resolve(&input.actor, input.project.as_ref(), &input.teams);
+    let record = state
+        .store
+        .memories()
+        .apply_feedback(&chain, input.memory_id, input.signal)
+        .await?;
+
+    let now = Utc::now();
+    let mut entry = AccessLogEntry::new(
+        input.actor,
+        input.harness,
+        input.session,
+        AccessOperation::Feedback,
+        endpoint,
+        now,
+    )
+    .for_memory(record.id);
+    if let Some(turn) = input.turn {
+        entry = entry.at_turn(turn);
+    }
+    state.store.access_log().record(&entry).await?;
+
+    Ok(record)
+}
+
+/// Everything a contest needs, independent of transport.
+#[derive(Debug, Clone)]
+pub struct ContestInput {
+    /// The writer's own project membership, if any.
+    pub project: Option<RepoId>,
+    /// The writer's team memberships, if any.
+    pub teams: Vec<TeamId>,
+    /// The memory being contested.
+    pub memory_id: MemoryId,
+    /// Where the new Uncertainty record is written.
+    pub scope: Scope,
+    /// The conflicting claim.
+    pub claim: String,
+    /// Free-form tags.
+    pub tags: Vec<String>,
+    /// Who is filing the contest.
+    pub author: Author,
+    /// Which harness the contest arrived through.
+    pub harness: Harness,
+    /// The harness session the contest belongs to.
+    pub session: SessionId,
+    /// The turn within that session, when the harness reports one.
+    pub turn: Option<u32>,
+}
+
+/// File an Uncertainty record against an existing memory, preserving both
+/// claims instead of overwriting (ADV-GATEWAY-004 gap-fill): the contested
+/// record is never revised, and the new claim lands as its own record,
+/// linked back to it by `subject`.
+///
+/// Refused when the contested memory is not visible to the writer's own
+/// chain — an Uncertainty record naming an id the writer cannot see would
+/// leak that the id exists, the same information-leak concern
+/// [`MemoryRepository::get`](totem_store::MemoryRepository::get) already
+/// avoids for an ordinary read.
+///
+/// Delegates to [`save`] once the target is confirmed visible: an
+/// Uncertainty record is, mechanically, just a save — the category and
+/// subject are the only choices this function makes that a caller does not.
+pub async fn contest(
+    state: &AppState,
+    input: ContestInput,
+    endpoint: &str,
+) -> Result<MemoryId, GatewayError> {
+    let chain = ScopeChain::resolve(input.author.actor(), input.project.as_ref(), &input.teams);
+    if state
+        .store
+        .memories()
+        .get(&chain, input.memory_id)
+        .await?
+        .is_none()
+    {
+        return Err(GatewayError::from(totem_store::StoreError::NotFound(
+            input.memory_id,
+        )));
+    }
+
+    let subject = SubjectRef::new(SubjectKind::Memory, input.memory_id.to_string())
+        .expect("a memory id's string form is always a valid subject id");
+
+    let save_input = SaveInput {
+        project: input.project,
+        teams: input.teams,
+        category: MemoryCategory::Uncertainty,
+        scope: input.scope,
+        subject: Some(subject),
+        body: input.claim,
+        tags: input.tags,
+        author: input.author,
+        harness: input.harness,
+        session: input.session,
+        turn: input.turn,
+    };
+    save(state, save_input, endpoint).await
+}
+
+/// Everything an advance log entry needs, independent of transport.
+#[derive(Debug, Clone)]
+pub struct AdvanceLogInput {
+    /// The writer's own project membership, if any.
+    pub project: Option<RepoId>,
+    /// The writer's team memberships, if any.
+    pub teams: Vec<TeamId>,
+    /// The advance the entry concerns.
+    pub advance_id: String,
+    /// Where the log entry is written.
+    pub scope: Scope,
+    /// The entry itself.
+    pub body: String,
+    /// Free-form tags.
+    pub tags: Vec<String>,
+    /// Who is writing.
+    pub author: Author,
+    /// Which harness the write arrived through.
+    pub harness: Harness,
+    /// The harness session the write belongs to.
+    pub session: SessionId,
+    /// The turn within that session, when the harness reports one.
+    pub turn: Option<u32>,
+}
+
+/// Append a process-attuned log entry about an advance (ADV-GATEWAY-004
+/// gap-fill). Writes to Totem's own mirror/memory only — `/arrive/` files in
+/// the repo stay authoritative (`arrive-sync.yaml`'s invariant); this is a
+/// session log, not a substitute for the advance's own `## Changes Made`.
+///
+/// Episodic, and not caller-chosen: an appended log entry is, by its own
+/// nature, something nobody should later revise.
+pub async fn advance_log(
+    state: &AppState,
+    input: AdvanceLogInput,
+    endpoint: &str,
+) -> Result<MemoryId, GatewayError> {
+    let subject = SubjectRef::new(SubjectKind::Advance, input.advance_id)
+        .map_err(|error| GatewayError::InvalidRequest(error.to_string()))?;
+
+    let save_input = SaveInput {
+        project: input.project,
+        teams: input.teams,
+        category: MemoryCategory::Episodic,
+        scope: input.scope,
+        subject: Some(subject),
+        body: input.body,
+        tags: input.tags,
+        author: input.author,
+        harness: input.harness,
+        session: input.session,
+        turn: input.turn,
+    };
+    save(state, save_input, endpoint).await
+}
+
+/// One advance's current status, read from the landscape mirror
+/// (ADV-GATEWAY-004 gap-fill). Not scoped memory, so — like
+/// [`totem_landscape`](crate::mcp::TotemMcp) — this reads the landscape
+/// directly rather than resolving a [`ScopeChain`] or appending to the
+/// access log, the same precedent `handlers::landscape` already sets.
+pub async fn advance_status(
+    state: &AppState,
+    advance_id: &str,
+) -> Result<Option<AdvanceView>, GatewayError> {
+    Ok(state.store.landscape().advance(advance_id).await?)
 }
