@@ -18,11 +18,12 @@ use axum::Json;
 use axum::extract::{Path, State};
 
 use crate::dto::{
-    EnrollRequest, EnrollResponse, LandscapeView, RecallRequest, RecallResponse, SaveRequest,
-    SaveResponse,
+    AdvanceLogRequest, AdvanceLogResponse, AdvanceStatusResponse, ContestRequest, ContestResponse,
+    EnrollRequest, EnrollResponse, FeedbackRequest, FeedbackResponse, LandscapeView, RecallRequest,
+    RecallResponse, SaveRequest, SaveResponse,
 };
 use crate::error::GatewayError;
-use crate::ops::{self, RecallInput, SaveInput};
+use crate::ops::{self, AdvanceLogInput, ContestInput, FeedbackInput, RecallInput, SaveInput};
 use crate::state::AppState;
 
 pub(crate) async fn save(
@@ -68,6 +69,79 @@ pub(crate) async fn recall(
     let records = ops::recall(&state, input, "/recall").await?;
 
     Ok(Json(RecallResponse { records }))
+}
+
+pub(crate) async fn feedback(
+    State(state): State<AppState>,
+    Json(request): Json<FeedbackRequest>,
+) -> Result<Json<FeedbackResponse>, GatewayError> {
+    let input = FeedbackInput {
+        actor: request.actor,
+        project: request.project,
+        teams: request.teams,
+        memory_id: request.memory_id,
+        signal: request.signal,
+        harness: request.harness,
+        session: request.session,
+        turn: request.turn,
+    };
+
+    let record = ops::feedback(&state, input, "/feedback").await?;
+
+    Ok(Json(FeedbackResponse { record }))
+}
+
+pub(crate) async fn contest(
+    State(state): State<AppState>,
+    Json(request): Json<ContestRequest>,
+) -> Result<Json<ContestResponse>, GatewayError> {
+    let input = ContestInput {
+        project: request.project,
+        teams: request.teams,
+        memory_id: request.memory_id,
+        scope: request.scope,
+        claim: request.claim,
+        tags: request.tags,
+        author: request.author,
+        harness: request.harness,
+        session: request.session,
+        turn: request.turn,
+    };
+
+    let id = ops::contest(&state, input, "/contest").await?;
+
+    Ok(Json(ContestResponse { id }))
+}
+
+pub(crate) async fn advance_log(
+    State(state): State<AppState>,
+    Json(request): Json<AdvanceLogRequest>,
+) -> Result<Json<AdvanceLogResponse>, GatewayError> {
+    let input = AdvanceLogInput {
+        project: request.project,
+        teams: request.teams,
+        advance_id: request.advance_id,
+        scope: request.scope,
+        body: request.body,
+        tags: request.tags,
+        author: request.author,
+        harness: request.harness,
+        session: request.session,
+        turn: request.turn,
+    };
+
+    let id = ops::advance_log(&state, input, "/advance/log").await?;
+
+    Ok(Json(AdvanceLogResponse { id }))
+}
+
+pub(crate) async fn advance_status(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<AdvanceStatusResponse>, GatewayError> {
+    let advance = ops::advance_status(&state, &id).await?;
+
+    Ok(Json(AdvanceStatusResponse { advance }))
 }
 
 pub(crate) async fn enroll(

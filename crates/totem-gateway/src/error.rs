@@ -20,6 +20,13 @@ pub enum GatewayError {
     /// The store refused the operation.
     #[error(transparent)]
     Store(#[from] StoreError),
+    /// A request field parsed as JSON but failed a rule `totem-core`'s own
+    /// types could not enforce at deserialization time (e.g. an empty
+    /// `advance_id` — [`totem_core::SubjectRef::new`]'s validation, run
+    /// inside a handler rather than a field's own `Deserialize`, since
+    /// `SubjectRef` takes its kind from context, not the wire format).
+    #[error("{0}")]
+    InvalidRequest(String),
 }
 
 #[derive(Serialize)]
@@ -48,6 +55,9 @@ impl IntoResponse for GatewayError {
             // has not been taught about yet is a server-side gap, not a
             // client mistake.
             GatewayError::Store(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            // Named the same way a `StoreError` client refusal is: a rule the
+            // caller can act on, so its message is safe to return verbatim.
+            GatewayError::InvalidRequest(_) => StatusCode::BAD_REQUEST,
         };
         // A 4xx/409 message is safe to return verbatim — it names a rule the
         // caller can act on (a denied scope, a missing record). A 5xx message

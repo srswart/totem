@@ -26,11 +26,12 @@ use rmcp::{ErrorData, schemars, tool, tool_router};
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use totem_core::{
-    ActorId, Author, Harness, MemoryCategory, RepoId, Scope, SessionId, SubjectRef, TeamId,
+    ActorId, Author, FeedbackSignal, Harness, MemoryCategory, MemoryId, RepoId, Scope, SessionId,
+    SubjectRef, TeamId,
 };
 
 use crate::error::GatewayError;
-use crate::ops::{self, RecallInput, SaveInput};
+use crate::ops::{self, AdvanceLogInput, ContestInput, FeedbackInput, RecallInput, SaveInput};
 use crate::state::AppState;
 
 /// Parameters for `totem_recall`.
@@ -109,6 +110,93 @@ pub struct LandscapeParams {
     pub repo: Option<String>,
 }
 
+/// Parameters for `totem_feedback`.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct FeedbackParams {
+    /// The reader's own identity — the target memory must be visible to this
+    /// actor's resolved chain.
+    pub actor: String,
+    /// The reader's project membership, if any, as `owner/name`.
+    pub project: Option<String>,
+    /// The reader's team memberships, if any.
+    #[serde(default)]
+    pub teams: Vec<String>,
+    /// The memory the signal is about.
+    pub memory_id: String,
+    /// The signal: `used`, `wrong`, or `stale`.
+    pub signal: String,
+    /// Which harness this call arrived through.
+    pub harness: JsonValue,
+    /// The harness session this call belongs to.
+    pub session: String,
+    /// The turn within that session, when the harness reports one.
+    pub turn: Option<u32>,
+}
+
+/// Parameters for `totem_contest`.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ContestParams {
+    /// The writer's own project membership, if any.
+    pub project: Option<String>,
+    /// The writer's team memberships, if any.
+    #[serde(default)]
+    pub teams: Vec<String>,
+    /// The memory being contested. Refused if the writer's chain cannot see
+    /// it.
+    pub memory_id: String,
+    /// Where the new Uncertainty record is written, e.g. `"project:owner/name"`.
+    pub scope: String,
+    /// The conflicting claim, preserved alongside the original rather than
+    /// replacing it.
+    pub claim: String,
+    /// Free-form tags.
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// Who is filing the contest, e.g. `{"kind": "agent", "actor": "ada"}`.
+    pub author: JsonValue,
+    /// Which harness this call arrived through.
+    pub harness: JsonValue,
+    /// The harness session this call belongs to.
+    pub session: String,
+    /// The turn within that session, when the harness reports one.
+    pub turn: Option<u32>,
+}
+
+/// Parameters for `totem_advance_log`.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct AdvanceLogParams {
+    /// The writer's own project membership, if any.
+    pub project: Option<String>,
+    /// The writer's team memberships, if any.
+    #[serde(default)]
+    pub teams: Vec<String>,
+    /// The advance the entry concerns (`ADV-<COMPONENT>-<SEQ>`).
+    pub advance_id: String,
+    /// Where the log entry is written.
+    pub scope: String,
+    /// The entry itself.
+    pub body: String,
+    /// Free-form tags.
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// Who is writing.
+    pub author: JsonValue,
+    /// Which harness this call arrived through.
+    pub harness: JsonValue,
+    /// The harness session this call belongs to.
+    pub session: String,
+    /// The turn within that session, when the harness reports one.
+    pub turn: Option<u32>,
+}
+
+/// Parameters for `totem_advance_status`.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct AdvanceStatusParams {
+    /// The advance id to look up (`ADV-<COMPONENT>-<SEQ>`) — globally unique
+    /// by ARRIVE convention, so no repo qualifier is needed.
+    pub advance_id: String,
+}
+
 fn invalid_params(message: impl std::fmt::Display) -> ErrorData {
     ErrorData::invalid_params(message.to_string(), None)
 }
@@ -129,6 +217,7 @@ fn gateway_error(error: GatewayError) -> ErrorData {
             | totem_store::StoreError::Lifecycle(_),
         ) => invalid_params(error),
         GatewayError::Store(_) => ErrorData::internal_error("internal error", None),
+        GatewayError::InvalidRequest(_) => invalid_params(error),
     }
 }
 
@@ -203,6 +292,100 @@ fn parse_save_input(params: SaveParams) -> Result<SaveInput, ErrorData> {
         category,
         scope,
         subject,
+        body: params.body,
+        tags: params.tags,
+        author,
+        harness,
+        session,
+        turn: params.turn,
+    })
+}
+
+fn parse_feedback_input(params: FeedbackParams) -> Result<FeedbackInput, ErrorData> {
+    let actor = ActorId::new(params.actor).map_err(invalid_params)?;
+    let project = params
+        .project
+        .map(RepoId::new)
+        .transpose()
+        .map_err(invalid_params)?;
+    let teams = params
+        .teams
+        .into_iter()
+        .map(TeamId::new)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(invalid_params)?;
+    let memory_id: MemoryId = params.memory_id.parse().map_err(invalid_params)?;
+    let signal: FeedbackSignal =
+        serde_json::from_value(JsonValue::String(params.signal)).map_err(invalid_params)?;
+    let harness: Harness = serde_json::from_value(params.harness).map_err(invalid_params)?;
+    let session = SessionId::new(params.session).map_err(invalid_params)?;
+
+    Ok(FeedbackInput {
+        actor,
+        project,
+        teams,
+        memory_id,
+        signal,
+        harness,
+        session,
+        turn: params.turn,
+    })
+}
+
+fn parse_contest_input(params: ContestParams) -> Result<ContestInput, ErrorData> {
+    let project = params
+        .project
+        .map(RepoId::new)
+        .transpose()
+        .map_err(invalid_params)?;
+    let teams = params
+        .teams
+        .into_iter()
+        .map(TeamId::new)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(invalid_params)?;
+    let memory_id: MemoryId = params.memory_id.parse().map_err(invalid_params)?;
+    let scope: Scope = params.scope.parse().map_err(invalid_params)?;
+    let author: Author = serde_json::from_value(params.author).map_err(invalid_params)?;
+    let harness: Harness = serde_json::from_value(params.harness).map_err(invalid_params)?;
+    let session = SessionId::new(params.session).map_err(invalid_params)?;
+
+    Ok(ContestInput {
+        project,
+        teams,
+        memory_id,
+        scope,
+        claim: params.claim,
+        tags: params.tags,
+        author,
+        harness,
+        session,
+        turn: params.turn,
+    })
+}
+
+fn parse_advance_log_input(params: AdvanceLogParams) -> Result<AdvanceLogInput, ErrorData> {
+    let project = params
+        .project
+        .map(RepoId::new)
+        .transpose()
+        .map_err(invalid_params)?;
+    let teams = params
+        .teams
+        .into_iter()
+        .map(TeamId::new)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(invalid_params)?;
+    let scope: Scope = params.scope.parse().map_err(invalid_params)?;
+    let author: Author = serde_json::from_value(params.author).map_err(invalid_params)?;
+    let harness: Harness = serde_json::from_value(params.harness).map_err(invalid_params)?;
+    let session = SessionId::new(params.session).map_err(invalid_params)?;
+
+    Ok(AdvanceLogInput {
+        project,
+        teams,
+        advance_id: params.advance_id,
+        scope,
         body: params.body,
         tags: params.tags,
         author,
@@ -292,5 +475,77 @@ impl TotemMcp {
             .map_err(GatewayError::from)
             .map_err(gateway_error)?;
         serde_json::to_string(&view).map_err(internal_error)
+    }
+
+    /// `totem_feedback` — an explicit value signal (`used` / `wrong` /
+    /// `stale`) about an existing memory: the input side of the value loop
+    /// ADV-CORE-002's automatic citation boost and usage reinforcement feed
+    /// alongside. Returns the record's economics after the signal applied,
+    /// as JSON.
+    #[tool(
+        description = "Signal explicit feedback about an existing memory: `used` (it held up, raises value_score), `wrong` (it was incorrect, lowers value_score), or `stale` (out of date, resets currency). Refused if the memory is not visible to the caller's scope chain, or is an append-only (episodic) record. Returns the updated record as JSON."
+    )]
+    async fn totem_feedback(
+        &self,
+        Parameters(params): Parameters<FeedbackParams>,
+    ) -> Result<String, ErrorData> {
+        let input = parse_feedback_input(params)?;
+        let record = ops::feedback(&self.state, input, "mcp:totem_feedback")
+            .await
+            .map_err(gateway_error)?;
+        serde_json::to_string(&record).map_err(internal_error)
+    }
+
+    /// `totem_contest` — file an Uncertainty record against an existing
+    /// memory instead of overwriting it. Both claims survive: the contested
+    /// record is never revised, and the new claim lands as its own record,
+    /// linked back to it. Returns the new record's id as JSON.
+    #[tool(
+        description = "File a contradiction as an Uncertainty record instead of overwriting the memory it disagrees with. The contested memory is left untouched (both claims are preserved); the new record links back to it. Refused if the contested memory is not visible to the caller's scope chain. Returns the new record's id as JSON."
+    )]
+    async fn totem_contest(
+        &self,
+        Parameters(params): Parameters<ContestParams>,
+    ) -> Result<String, ErrorData> {
+        let input = parse_contest_input(params)?;
+        let id = ops::contest(&self.state, input, "mcp:totem_contest")
+            .await
+            .map_err(gateway_error)?;
+        serde_json::to_string(&serde_json::json!({ "id": id })).map_err(internal_error)
+    }
+
+    /// `totem_advance_log` — append a process-attuned log entry about an
+    /// advance. Writes to Totem's own mirror/memory only; `/arrive/` files in
+    /// the repo stay authoritative. Returns the new record's id as JSON.
+    #[tool(
+        description = "Append a log entry about an ARRIVE advance to Totem's memory, making a session process-attuned to the advance it is working. This writes to Totem's own mirror only — the advance's own `## Changes Made` in `/arrive/` stays authoritative. Returns the new record's id as JSON."
+    )]
+    async fn totem_advance_log(
+        &self,
+        Parameters(params): Parameters<AdvanceLogParams>,
+    ) -> Result<String, ErrorData> {
+        let input = parse_advance_log_input(params)?;
+        let id = ops::advance_log(&self.state, input, "mcp:totem_advance_log")
+            .await
+            .map_err(gateway_error)?;
+        serde_json::to_string(&serde_json::json!({ "id": id })).map_err(internal_error)
+    }
+
+    /// `totem_advance_status` — one advance's current status, read from the
+    /// landscape mirror populated by `totem-arrive-sync`'s ingestion. Returns
+    /// `{"advance": null}` rather than an error when the id has never been
+    /// synced, the same "not yet enrolled is a normal state" convention
+    /// `totem_landscape` already establishes.
+    #[tool(
+        description = "The current status of one ARRIVE advance (ADV-<COMPONENT>-<SEQ>), read from the landscape mirror: title, status (planned/in_progress/complete/cancelled), and the components it impacts. Returns `{\"advance\": null}` if the id has never been synced, not an error."
+    )]
+    async fn totem_advance_status(
+        &self,
+        Parameters(params): Parameters<AdvanceStatusParams>,
+    ) -> Result<String, ErrorData> {
+        let advance = ops::advance_status(&self.state, &params.advance_id)
+            .await
+            .map_err(gateway_error)?;
+        serde_json::to_string(&serde_json::json!({ "advance": advance })).map_err(internal_error)
     }
 }
