@@ -169,7 +169,7 @@ passes:
           - id: "ADV-CORE-002"
             advance_id: "ADV-CORE-002"
             title: "Metering + value/currency scoring in retrieval ranking"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-CORE-004", "ADV-STORE-002"]
             notes: "Ranking = relevance × value × currency, weighted per category."
