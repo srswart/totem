@@ -37,6 +37,10 @@ git show origin/advance/phase-<NNN>:arrive/implementation-plan.yaml
 
   GATED: advance/phase-<NNN> is complete and awaiting merge into master. No implementation done this run.
 
+- **Any item in the phase has `status: in_progress`** → a previous run deliberately recorded partial completion. This is a human decision point, not agent work: a human must either accept the corrected scope (advance → complete, plan item → done, residuals deferred to a new planned advance) or re-scope the item. Do not implement past it, do not mark it done yourself, do not pick a later planned item. Report exactly, then stop:
+
+  GATED (plan inconsistency): advance/phase-<NNN> has <ADV-ID> at status: in_progress — awaiting a human scope decision. No work done this run.
+
 - **Otherwise** → find the FIRST item in the phase (plan order) with `status: planned` and apply the model gate (Step 4). Match → continue to Step 2 in CONTINUE mode targeting that advance. No match → report exactly, then stop:
 
   MODEL-GATED: <ADV-ID> on advance/phase-<NNN> is designated for <model>. Waiting for that routine. No work done this run.
@@ -77,7 +81,7 @@ Read in this order:
 
 **CONTINUE mode.** The phase and target advance were already determined in Step 1. Verify the target advance's dependencies are `done` on the phase branch; if not, STOP and report why.
 
-Either way: implement exactly ONE advance this run.
+Either way: implement exactly ONE advance this run. This is a hard invariant, not a target — after your sub-PR is opened (or your outcome is otherwise concluded), the run ENDS. Never loop back to Step 1 for another advance, even if the gate has since opened (for example, your sub-PR was reviewed and merged while you were still writing reports). The next advance belongs to the next run.
 
 If no phase qualifies, STOP and report why (all done, or everything blocked). Do not invent work. If the plan file is unexpectedly missing, STOP and report that instead of improvising an order.
 
@@ -91,7 +95,18 @@ CONTINUE: git checkout -b advance/phase-<NNN> origin/advance/phase-<NNN>
 Then:     git checkout -b advance/sub/phase-<NNN>/<ADV-ID>
 ```
 
+**Claim first.** Immediately after creating the sub-branch — before reading the advance spec, before any implementation — push it with an empty claim commit:
+
+```
+git commit --allow-empty -m "chore: [<ADV-ID>] claim"
+git push -u origin advance/sub/phase-<NNN>/<ADV-ID>
+```
+
+The Step 1 gate blocks on unmerged sub-branches, so the claim shrinks the window in which two concurrent runs can select the same advance from the length of an implementation (30+ minutes) to seconds. A claim branch whose last push is hours old with no sub-PR is probably a dead run — still GATE on it, note the suspicion in your report, and leave cleanup to a human; no run ever deletes or overwrites another's branch.
+
 ALL commits for the advance go on the sub-branch. Never commit directly to the phase branch, never push to master, and never force-push any branch that has been pushed — a rewritten branch breaks its open PR and the other routine.
+
+**On push collision.** If a push to the sub-branch is rejected because it already exists on origin with someone else's commits, two runs selected the same advance inside the claim window. Do NOT force-push, do NOT open a competing sub-PR, do NOT try to merge the two implementations. The first push owns the advance. Preserve your full commit series on a fresh ref `journey/<UTC-timestamp>-<ADV-ID>-collision`, push that, and report the collision plainly (outcome: blocked) — the preserved branch is comparison material for whoever reviews the surviving sub-PR.
 
 The advance file at `arrive/systems/058-totem-core/advances/<ADV-ID>.md` is the specification. Its Objective, Behavioral Change/Outcome, and Planned Implementation Tasks describe what to build. Follow them.
 
