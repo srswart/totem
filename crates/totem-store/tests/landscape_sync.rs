@@ -161,6 +161,41 @@ async fn re_syncing_is_idempotent_and_drops_stale_edges() {
 }
 
 #[tokio::test]
+async fn advance_reads_one_advance_by_id_without_a_repo_qualifier() {
+    let store = common::store().await;
+    store
+        .landscape()
+        .sync(&snapshot(), "test")
+        .await
+        .expect("sync succeeds");
+
+    let advance = store
+        .landscape()
+        .advance("ADV-STORE-001")
+        .await
+        .expect("advance lookup succeeds")
+        .expect("the advance was synced");
+    assert_eq!(advance.id, "ADV-STORE-001");
+    assert_eq!(advance.system, "058-totem-core");
+    assert_eq!(advance.status.as_deref(), Some("complete"));
+    let mut impacted = advance.components.clone();
+    impacted.sort();
+    assert_eq!(impacted, vec!["core".to_string(), "store".to_string()]);
+}
+
+#[tokio::test]
+async fn advance_for_an_unsynced_id_is_none_not_an_error() {
+    let store = common::store().await;
+
+    let advance = store
+        .landscape()
+        .advance("ADV-NEVER-SYNCED-999")
+        .await
+        .expect("advance lookup succeeds");
+    assert!(advance.is_none());
+}
+
+#[tokio::test]
 async fn every_sync_appends_a_provenance_row() {
     let store = common::store().await;
     let landscape = store.landscape();

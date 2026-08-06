@@ -176,7 +176,7 @@ passes:
           - id: "ADV-GATEWAY-004"
             advance_id: "ADV-GATEWAY-004"
             title: "MCP tools: feedback, contest, advance_status/advance_log"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-GATEWAY-002", "ADV-CORE-002"]
             notes: "totem_feedback feeds the value loop; totem_contest is the Uncertainty write path."

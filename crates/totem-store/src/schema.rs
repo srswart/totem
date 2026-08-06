@@ -179,6 +179,21 @@ DEFINE EVENT sync_run_no_delete ON TABLE sync_run
     THEN { THROW 'sync provenance is append-only and cannot be deleted'; };
 "#;
 
+/// Migration 4 — the `feedback` access-log operation (ADV-GATEWAY-004
+/// gap-fill).
+///
+/// `OVERWRITE` widens `operation`'s `ASSERT` set rather than replacing the
+/// field definition wholesale: existing rows (already one of `recall`/`save`)
+/// are unaffected, and only the assertion a new `feedback` row must satisfy
+/// changes. Plain `DEFINE FIELD` refuses to redefine a field that already
+/// exists (unlike `DEFINE TABLE`/`DEFINE FIELD IF NOT EXISTS` on the
+/// migration ledger, which only ever needs to *create*), so `OVERWRITE` is
+/// required here, not optional.
+pub(crate) const ACCESS_LOG_FEEDBACK_SCHEMA_V4: &str = r#"
+DEFINE FIELD OVERWRITE operation ON access_log TYPE string
+    ASSERT $value IN ['recall', 'save', 'feedback'];
+"#;
+
 #[cfg(test)]
 mod tests {
     //! Enforcement the repository API cannot be trusted to provide.

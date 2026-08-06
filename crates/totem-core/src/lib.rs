@@ -49,6 +49,7 @@
 
 mod access_log;
 mod category;
+mod feedback;
 mod ids;
 mod provenance;
 mod record;
@@ -57,6 +58,7 @@ mod scoring;
 
 pub use access_log::{AccessLogEntry, AccessOperation};
 pub use category::{CategoryLifecycle, MemoryCategory, Mutability, ReviewPolicy};
+pub use feedback::{FeedbackSignal, apply_feedback};
 pub use ids::{ActorId, IdError, MemoryId, RepoId, SessionId, TeamId};
 pub use provenance::{Author, Harness, Provenance};
 pub use record::{

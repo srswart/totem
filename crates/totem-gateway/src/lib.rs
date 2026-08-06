@@ -29,22 +29,30 @@ use axum::Router;
 use axum::routing::{get, post};
 
 pub use dto::{
-    EnrollRequest, EnrollResponse, LandscapeView, RecallRequest, RecallResponse, SaveRequest,
-    SaveResponse,
+    AdvanceLogRequest, AdvanceLogResponse, AdvanceStatusResponse, AdvanceView, ContestRequest,
+    ContestResponse, EnrollRequest, EnrollResponse, FeedbackRequest, FeedbackResponse,
+    LandscapeView, RecallRequest, RecallResponse, SaveRequest, SaveResponse,
 };
 pub use error::GatewayError;
 pub use mcp::TotemMcp;
 pub use state::AppState;
 
-/// Build the REST router. `POST /recall`, `POST /save`, `POST /enroll`, and
-/// `GET /landscape/:repo` are the only routes this crate adds; the MCP
-/// surface ([`TotemMcp`]: `totem_recall`, `totem_save`, `totem_landscape`)
-/// calls the same [`ops`] functions (or, for the landscape, the same
-/// `totem-store` call) rather than duplicating them.
+/// Build the REST router. `POST /recall`, `POST /save`, `POST /enroll`,
+/// `GET /landscape/:repo`, `POST /feedback`, `POST /contest`,
+/// `POST /advance/log`, and `GET /advance/:id/status` are the only routes
+/// this crate adds; the MCP surface ([`TotemMcp`]: `totem_recall`,
+/// `totem_save`, `totem_landscape`, `totem_feedback`, `totem_contest`,
+/// `totem_advance_status`, `totem_advance_log`) calls the same [`ops`]
+/// functions (or, for the landscape and advance-status reads, the same
+/// `totem-store` calls) rather than duplicating them.
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/recall", post(handlers::recall))
         .route("/save", post(handlers::save))
+        .route("/feedback", post(handlers::feedback))
+        .route("/contest", post(handlers::contest))
+        .route("/advance/log", post(handlers::advance_log))
+        .route("/advance/{id}/status", get(handlers::advance_status))
         .route("/enroll", post(handlers::enroll))
         .route("/landscape/{repo}", get(handlers::landscape))
         .with_state(state)

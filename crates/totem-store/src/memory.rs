@@ -11,7 +11,10 @@ use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use surrealdb::types::{Object, SurrealValue, Value};
 use surrealdb::{Connection, Surreal};
-use totem_core::{Content, MemoryCategory, MemoryId, MemoryRecord, Scope, ScopeChain, SubjectKind};
+use totem_core::{
+    Content, FeedbackSignal, LifecycleError, MemoryCategory, MemoryId, MemoryRecord, Scope,
+    ScopeChain, SubjectKind,
+};
 
 use crate::error::{StoreError, StoreResult};
 use crate::row::{self, MEMORY_TABLE};
@@ -301,6 +304,45 @@ impl<'a, C: Connection> MemoryRepository<'a, C> {
                     }),
             ))
             .bind(("tags", record.content.tags.clone()))
+            .await?
+            .check()?;
+        Ok(record)
+    }
+
+    /// Apply an explicit feedback signal to a record's economics
+    /// (docs/solution-intent.md §4; ADV-GATEWAY-004 gap-fill — the explicit
+    /// input side of the value loop the automatic citation boost (`save`) and
+    /// usage reinforcement (`recall`) feed alongside).
+    ///
+    /// Refused for append-only categories and for records the writer cannot
+    /// see, the same two refusals [`revise`](Self::revise) makes and for the
+    /// same reasons: the schema itself refuses `UPDATE` on an episodic row
+    /// (schema.rs), and a record outside the chain must read as absent, not
+    /// forbidden.
+    pub async fn apply_feedback(
+        &self,
+        writer: &ScopeChain,
+        id: MemoryId,
+        signal: FeedbackSignal,
+    ) -> StoreResult<MemoryRecord> {
+        let Some(mut record) = self.get(writer, id).await? else {
+            return Err(StoreError::NotFound(id));
+        };
+        if record.category.is_append_only() {
+            return Err(LifecycleError::AppendOnly(record.category).into());
+        }
+
+        record.economics = totem_core::apply_feedback(&record.economics, signal);
+
+        self.db
+            .query(format!(
+                "UPDATE {MEMORY_TABLE} SET economics.value_score = $value_score, \
+                 economics.currency = $currency WHERE id = $id AND scope IN $scopes"
+            ))
+            .bind(("id", row::memory_thing(id)))
+            .bind(("scopes", readable_scopes(writer)))
+            .bind(("value_score", f64::from(record.economics.value_score)))
+            .bind(("currency", f64::from(record.economics.currency)))
             .await?
             .check()?;
         Ok(record)
