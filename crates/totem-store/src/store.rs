@@ -9,6 +9,7 @@ use surrealdb::{Connection, Surreal};
 
 use crate::access_log::AccessLogRepository;
 use crate::error::{StoreError, StoreResult};
+use crate::landscape::LandscapeRepository;
 use crate::memory::MemoryRepository;
 use crate::migrate::{AppliedMigration, MIGRATIONS};
 use crate::row;
@@ -152,6 +153,12 @@ impl<C: Connection> Store<C> {
     /// (docs/project-brief.md G3).
     pub fn access_log(&self) -> AccessLogRepository<'_, C> {
         AccessLogRepository::new(&self.db)
+    }
+
+    /// The landscape mirror — the only way to ingest or query an enrolled
+    /// repo's ARRIVE artifacts (docs/solution-intent.md §2.3).
+    pub fn landscape(&self) -> LandscapeRepository<'_, C> {
+        LandscapeRepository::new(&self.db)
     }
 
     /// The raw connection.
