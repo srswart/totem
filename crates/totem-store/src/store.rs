@@ -7,6 +7,7 @@ use surrealdb::engine::local::{Db, Mem};
 use surrealdb::types::{Number, RecordId, Value};
 use surrealdb::{Connection, Surreal};
 
+use crate::access_log::AccessLogRepository;
 use crate::error::{StoreError, StoreResult};
 use crate::memory::MemoryRepository;
 use crate::migrate::{AppliedMigration, MIGRATIONS};
@@ -145,6 +146,12 @@ impl<C: Connection> Store<C> {
     /// The memory repository — the only way to read or write memory.
     pub fn memories(&self) -> MemoryRepository<'_, C> {
         MemoryRepository::new(&self.db)
+    }
+
+    /// The access log — the audit trail of every read and write
+    /// (docs/project-brief.md G3).
+    pub fn access_log(&self) -> AccessLogRepository<'_, C> {
+        AccessLogRepository::new(&self.db)
     }
 
     /// The raw connection.

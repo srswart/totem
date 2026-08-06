@@ -45,6 +45,7 @@
 
 #![warn(missing_docs)]
 
+mod access_log;
 mod embedding;
 mod error;
 mod memory;
@@ -53,6 +54,7 @@ mod row;
 mod schema;
 mod store;
 
+pub use access_log::AccessLogRepository;
 #[cfg(feature = "fastembed")]
 pub use embedding::fastembed_embedder::FastembedEmbedder;
 pub use embedding::{DeterministicEmbedder, Embedder, embed};

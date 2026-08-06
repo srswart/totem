@@ -104,14 +104,14 @@ passes:
           - id: "ADV-GATEWAY-001"
             advance_id: "ADV-GATEWAY-001"
             title: "Axum REST API: recall/save with provenance + access log"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-STORE-001", "ADV-STORE-002"]
             notes: "Access log starts here; every later surface routes through the same core API."
           - id: "ADV-GATEWAY-002"
             advance_id: "ADV-GATEWAY-002"
             title: "MCP server (stdio) exposing recall/save/landscape"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-GATEWAY-001", "ADV-GATEWAY-005"]
             notes: "First harness-facing surface (G1 for desktop agents)."
