@@ -81,14 +81,14 @@ passes:
           - id: "ADV-STORE-001"
             advance_id: "ADV-STORE-001"
             title: "SurrealDB schema + repositories + scope-isolation tests"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-CORE-001", "ADV-STORE-004"]
             notes: "Security-critical: scope isolation enforced at the store layer. MODEL: claude-opus-5"
           - id: "ADV-STORE-002"
             advance_id: "ADV-STORE-002"
             title: "Embedding pipeline + vector index"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-STORE-001", "ADV-STORE-003"]
             notes: "Implements the provider/placement decision from ADV-STORE-003."

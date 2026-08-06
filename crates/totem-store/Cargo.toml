@@ -1,0 +1,41 @@
+[package]
+name = "totem-store"
+version = "0.1.0"
+description = "SurrealDB schema, migrations, and scope-isolating repositories for Totem memory"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+default = []
+# The on-disk engine is opt-in. SurrealDB already dominates this workspace's
+# compile time (docs/tech-direction/surrealdb.md §3: 5m02s cold on the cloud
+# runner) and every test here uses the embedded `kv-mem` engine, so ephemeral
+# runners must not pay for RocksDB they never touch.
+rocksdb = ["surrealdb/kv-rocksdb"]
+# The production embedder (BGE-small-en-v1.5 via `fastembed`) is opt-in for
+# the same reason: first use downloads model weights, which this sandbox's
+# egress policy blocks (EMB-002/EMB-003, docs/tech-direction/embeddings.md).
+# Off by default so `cargo test --workspace` never attempts that download;
+# verify on a workstation with hub access, the ADV-STORE-006/007 split.
+fastembed = ["dep:fastembed"]
+
+[dependencies]
+chrono.workspace = true
+# Pinned exactly, matching totem-embedding-spike's ADV-STORE-007 pin: EMB-004
+# measured this exact version, and an upstream release changing inference
+# behavior mid-project must not silently re-open that finding.
+fastembed = { version = "=5.17.4", optional = true }
+# `kv-mem` is not optional: the embedded engine is the store's test substrate
+# and the console's live-query transport (TD-009). The exact version pin lives
+# in the workspace manifest.
+surrealdb = { workspace = true, features = ["kv-mem"] }
+thiserror.workspace = true
+totem-core = { path = "../totem-core" }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

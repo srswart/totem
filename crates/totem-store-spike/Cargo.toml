@@ -16,15 +16,15 @@ publish.workspace = true
 server-parity = ["surrealdb/protocol-ws", "surrealdb/protocol-http"]
 
 [dependencies]
-futures = "0.3.31"
-# Pinned exactly: this spike's findings (query plans, operator names, knn
-# syntax) are version-specific, and hourly cloud runs must not break because an
-# upstream release landed mid-project.
-surrealdb = { version = "=3.2.4", default-features = false, features = ["kv-mem"] }
-tokio = { version = "1.43.0", features = ["time"] }
+futures.workspace = true
+# The exact pin lives in the workspace manifest: this spike's findings (query
+# plans, operator names, knn syntax) are version-specific, and `totem-store`
+# must be built against the same version they were measured on.
+surrealdb = { workspace = true, features = ["kv-mem"] }
+tokio = { workspace = true, features = ["time"] }
 
 [dev-dependencies]
-tokio = { version = "1.43.0", features = ["macros", "rt-multi-thread", "time"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
 
 [lints]
 workspace = true
