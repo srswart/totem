@@ -8,9 +8,10 @@
 
 use surrealdb::types::{Object, SurrealValue, Value};
 use surrealdb::{Connection, Surreal};
-use totem_core::{AccessLogEntry, AccessOperation, ActorId, SessionId};
+use totem_core::{AccessLogEntry, AccessOperation, ActorId, MemoryId, ScopeChain, SessionId};
 
 use crate::error::{StoreError, StoreResult};
+use crate::memory::MemoryRepository;
 use crate::row::{self, RowError};
 
 const ACCESS_LOG_TABLE: &str = "access_log";
@@ -20,6 +21,9 @@ fn operation_key(operation: AccessOperation) -> &'static str {
         AccessOperation::Recall => "recall",
         AccessOperation::Save => "save",
         AccessOperation::Feedback => "feedback",
+        AccessOperation::Propose => "propose",
+        AccessOperation::PromotionDecision => "promotion_decision",
+        AccessOperation::Resolve => "resolve",
     }
 }
 
@@ -28,6 +32,9 @@ fn operation_from(key: &str) -> Result<AccessOperation, RowError> {
         "recall" => Ok(AccessOperation::Recall),
         "save" => Ok(AccessOperation::Save),
         "feedback" => Ok(AccessOperation::Feedback),
+        "propose" => Ok(AccessOperation::Propose),
+        "promotion_decision" => Ok(AccessOperation::PromotionDecision),
+        "resolve" => Ok(AccessOperation::Resolve),
         other => Err(row::malformed(format!(
             "unknown access log operation: {other}"
         ))),
@@ -128,19 +135,56 @@ impl<'a, C: Connection> AccessLogRepository<'a, C> {
             .query(format!("SELECT * FROM {ACCESS_LOG_TABLE} ORDER BY at ASC"))
             .await?
             .check()?;
-        let rows: Value = response.take(0)?;
-        let rows = rows
-            .into_array()
-            .map_err(|_| StoreError::Row("access log query did not return an array".to_string()))?;
-
-        let mut entries = Vec::with_capacity(rows.len());
-        for row in &rows {
-            let row = row
-                .clone()
-                .into_object()
-                .map_err(|_| StoreError::Row("access log row is not an object".to_string()))?;
-            entries.push(from_row(&row)?);
-        }
-        Ok(entries)
+        rows_to_entries(response.take(0)?)
     }
+
+    /// One memory's own access history, oldest first — the audit trail
+    /// viewer's read (ADV-CONSOLE-002).
+    ///
+    /// Refused when the reader cannot see the memory itself
+    /// ([`StoreError::NotFound`], never forbidden): an access-log entry
+    /// naming an id the reader cannot see would leak that the id exists, the
+    /// same concern [`crate::promotion::PromotionRepository::propose`] and
+    /// [`crate::curation::CurationRepository::merge`] already re-check via
+    /// [`MemoryRepository::get`] rather than trusting a caller's own prior
+    /// check.
+    pub async fn for_memory(
+        &self,
+        reader: &ScopeChain,
+        id: MemoryId,
+    ) -> StoreResult<Vec<AccessLogEntry>> {
+        if MemoryRepository::new(self.db)
+            .get(reader, id)
+            .await?
+            .is_none()
+        {
+            return Err(StoreError::NotFound(id));
+        }
+
+        let mut response = self
+            .db
+            .query(format!(
+                "SELECT * FROM {ACCESS_LOG_TABLE} WHERE memory_id = $id ORDER BY at ASC"
+            ))
+            .bind(("id", row::memory_thing(id)))
+            .await?
+            .check()?;
+        rows_to_entries(response.take(0)?)
+    }
+}
+
+fn rows_to_entries(rows: Value) -> StoreResult<Vec<AccessLogEntry>> {
+    let rows = rows
+        .into_array()
+        .map_err(|_| StoreError::Row("access log query did not return an array".to_string()))?;
+
+    let mut entries = Vec::with_capacity(rows.len());
+    for row in &rows {
+        let row = row
+            .clone()
+            .into_object()
+            .map_err(|_| StoreError::Row("access log row is not an object".to_string()))?;
+        entries.push(from_row(&row)?);
+    }
+    Ok(entries)
 }

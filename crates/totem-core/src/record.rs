@@ -144,6 +144,20 @@ pub enum ReviewState {
     Rejected,
 }
 
+/// A resolution that could not be recorded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum GovernanceError {
+    /// A decision must land on `Approved` or `Rejected`; nothing else answers
+    /// "what did the human decide?".
+    #[error("a review decision must be approved or rejected, not {0:?}")]
+    NotADecision(ReviewState),
+    /// The review is not open: either it never needed a human, or it was
+    /// already decided. A second decision would put a contradiction in the
+    /// record's own governance rather than a fresh fact.
+    #[error("only a pending review can be resolved, and this one is {0:?}")]
+    NotPending(ReviewState),
+}
+
 /// Review and status governing a memory.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Governance {
@@ -165,6 +179,28 @@ impl Governance {
             status: MemoryStatus::Active,
             review,
         }
+    }
+
+    /// Record a human's decision on a pending review (ADV-CONSOLE-002: the
+    /// Uncertainty queue's resolution).
+    ///
+    /// Refused unless the review is currently [`ReviewState::Pending`] — a
+    /// decision, once recorded, is not reopened, the same "no second
+    /// decision" rule [`crate::PromotionEvent`] enforces for a promotion
+    /// proposal — and unless `decision` is itself a decision
+    /// ([`ReviewState::Approved`] or [`ReviewState::Rejected`]), so a caller
+    /// cannot "resolve" a review back into `Pending` or `NotRequired`.
+    pub fn resolve(self, decision: ReviewState) -> Result<Self, GovernanceError> {
+        if !matches!(decision, ReviewState::Approved | ReviewState::Rejected) {
+            return Err(GovernanceError::NotADecision(decision));
+        }
+        if self.review != ReviewState::Pending {
+            return Err(GovernanceError::NotPending(self.review));
+        }
+        Ok(Self {
+            review: decision,
+            ..self
+        })
     }
 }
 
@@ -286,5 +322,55 @@ mod tests {
         assert!(SubjectRef::new(SubjectKind::Component, " core").is_err());
         assert!(SubjectRef::new(SubjectKind::Component, "core").is_ok());
         assert_eq!(record(MemoryCategory::Context).subject, None);
+    }
+
+    #[test]
+    fn a_pending_review_resolves_to_either_decision() {
+        for decision in [ReviewState::Approved, ReviewState::Rejected] {
+            let pending = Governance {
+                status: MemoryStatus::Active,
+                review: ReviewState::Pending,
+            };
+            let resolved = pending
+                .resolve(decision)
+                .expect("a pending review resolves");
+            assert_eq!(resolved.review, decision);
+            assert_eq!(
+                resolved.status, pending.status,
+                "resolving a review does not touch status"
+            );
+        }
+    }
+
+    #[test]
+    fn resolving_refuses_a_target_that_is_not_a_decision() {
+        let pending = Governance {
+            status: MemoryStatus::Active,
+            review: ReviewState::Pending,
+        };
+        for not_a_decision in [ReviewState::NotRequired, ReviewState::Pending] {
+            assert_eq!(
+                pending.resolve(not_a_decision),
+                Err(GovernanceError::NotADecision(not_a_decision))
+            );
+        }
+    }
+
+    #[test]
+    fn resolving_refuses_a_review_that_is_not_pending() {
+        for already in [
+            ReviewState::NotRequired,
+            ReviewState::Approved,
+            ReviewState::Rejected,
+        ] {
+            let governance = Governance {
+                status: MemoryStatus::Active,
+                review: already,
+            };
+            assert_eq!(
+                governance.resolve(ReviewState::Approved),
+                Err(GovernanceError::NotPending(already))
+            );
+        }
     }
 }

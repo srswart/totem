@@ -4,7 +4,7 @@
 
 mod common;
 
-use common::{ADA, chain, memory, store};
+use common::{ADA, GRACE, chain, memory, store};
 use totem_core::{AccessLogEntry, AccessOperation, Harness, MemoryCategory, Scope, SessionId};
 
 fn entry(operation: AccessOperation, endpoint: &str) -> AccessLogEntry {
@@ -53,6 +53,67 @@ async fn a_save_entry_carries_the_written_memory_id() {
     let entries = log.list().await.expect("list succeeds");
     assert_eq!(entries, vec![recorded]);
     assert_eq!(entries[0].memory_id, Some(note.id));
+}
+
+#[tokio::test]
+async fn for_memory_returns_only_that_records_entries_oldest_first() {
+    let store = store().await;
+    let memories = store.memories();
+    let log = store.access_log();
+
+    let note = memory(
+        MemoryCategory::Knowledge,
+        Scope::Actor(common::actor(ADA)),
+        "a note",
+    );
+    let other = memory(
+        MemoryCategory::Knowledge,
+        Scope::Actor(common::actor(ADA)),
+        "a different note",
+    );
+    memories.save(&chain(ADA), &note).await.expect("write");
+    memories.save(&chain(ADA), &other).await.expect("write");
+
+    let mut first = entry(AccessOperation::Save, "/save").for_memory(note.id);
+    first.at = common::at("2026-08-05T06:00:00Z");
+    let mut second = entry(AccessOperation::Recall, "/recall").for_memory(note.id);
+    second.at = common::at("2026-08-05T06:05:00Z");
+    let unrelated = entry(AccessOperation::Save, "/save").for_memory(other.id);
+
+    // Recorded out of order, so the ordering assertion below cannot pass by
+    // accident of insertion order.
+    log.record(&unrelated).await.expect("write");
+    log.record(&second).await.expect("write");
+    log.record(&first).await.expect("write");
+
+    let entries = log
+        .for_memory(&chain(ADA), note.id)
+        .await
+        .expect("for_memory succeeds");
+    assert_eq!(entries, vec![first, second]);
+}
+
+#[tokio::test]
+async fn for_memory_on_a_record_outside_the_readers_chain_reads_as_not_found() {
+    let store = store().await;
+    let memories = store.memories();
+    let log = store.access_log();
+
+    let graces = memory(
+        MemoryCategory::Knowledge,
+        Scope::Actor(common::actor(GRACE)),
+        "grace's working note",
+    );
+    memories.save(&chain(GRACE), &graces).await.expect("write");
+    log.record(&entry(AccessOperation::Save, "/save").for_memory(graces.id))
+        .await
+        .expect("write");
+
+    let refused = log.for_memory(&chain(ADA), graces.id).await;
+    assert!(
+        matches!(refused, Err(totem_store::StoreError::NotFound(_))),
+        "expected the record to read as absent, got {refused:?}",
+    );
 }
 
 #[tokio::test]

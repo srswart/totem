@@ -155,7 +155,7 @@ pub(crate) fn status_from(key: &str) -> Result<MemoryStatus, RowError> {
     }
 }
 
-fn review_key(review: ReviewState) -> &'static str {
+pub(crate) fn review_key(review: ReviewState) -> &'static str {
     match review {
         ReviewState::NotRequired => "not_required",
         ReviewState::Pending => "pending",

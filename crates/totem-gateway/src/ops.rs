@@ -16,11 +16,11 @@
 
 use chrono::{DateTime, Utc};
 use totem_core::{
-    AccessLogEntry, AccessOperation, ActorId, Author, Content, FeedbackSignal, Harness,
-    MemoryCategory, MemoryId, MemoryRecord, Provenance, RepoId, Scope, ScopeChain, SessionId,
-    SubjectKind, SubjectRef, TeamId,
+    AccessLogEntry, AccessOperation, ActorId, Author, Content, CurationEvent, FeedbackSignal,
+    Harness, MemoryCategory, MemoryId, MemoryRecord, PromotionEvent, PromotionId, Provenance,
+    RepoId, ReviewState, Scope, ScopeChain, SessionId, SubjectKind, SubjectRef, TeamId,
 };
-use totem_store::{AdvanceView, RecallQuery};
+use totem_store::{AdvanceView, PromotionOutcome, RecallQuery};
 
 use crate::auth::Caller;
 use crate::error::GatewayError;
@@ -388,4 +388,457 @@ pub async fn advance_status(
     advance_id: &str,
 ) -> Result<Option<AdvanceView>, GatewayError> {
     Ok(state.store.landscape().advance(advance_id).await?)
+}
+
+/// Everything a promotion proposal needs, independent of transport.
+#[derive(Debug, Clone)]
+pub struct ProposePromotionInput {
+    /// The proposer's own project membership, if any.
+    pub project: Option<RepoId>,
+    /// The proposer's team memberships, if any.
+    pub teams: Vec<TeamId>,
+    /// The record being proposed for a wider scope.
+    pub memory_id: MemoryId,
+    /// Where the proposal asks the record to move.
+    pub to: Scope,
+    /// Who is proposing.
+    pub author: Author,
+    /// Which harness the proposal arrived through.
+    pub harness: Harness,
+    /// The harness session the proposal belongs to.
+    pub session: SessionId,
+    /// The turn within that session, when the harness reports one.
+    pub turn: Option<u32>,
+}
+
+/// Ask for a record to move to a wider scope and append one
+/// [`AccessOperation::Propose`] access-log entry (ADV-CONSOLE-002).
+pub async fn propose_promotion(
+    state: &AppState,
+    input: ProposePromotionInput,
+    caller: &Caller,
+    endpoint: &str,
+) -> Result<PromotionOutcome, GatewayError> {
+    caller.authorize_identity(input.author.actor(), input.project.as_ref(), &input.teams)?;
+    caller.authorize_scope(&input.to)?;
+
+    let proposer = ScopeChain::resolve(input.author.actor(), input.project.as_ref(), &input.teams);
+
+    let now = Utc::now();
+    let mut provenance = Provenance::new(
+        input.author.clone(),
+        input.harness.clone(),
+        input.session.clone(),
+        now,
+    );
+    if let Some(turn) = input.turn {
+        provenance = provenance.at_turn(turn);
+    }
+
+    let outcome = state
+        .store
+        .promotions()
+        .propose(&proposer, input.memory_id, input.to, provenance)
+        .await?;
+
+    let mut entry = AccessLogEntry::new(
+        input.author.actor().clone(),
+        input.harness,
+        input.session,
+        AccessOperation::Propose,
+        endpoint,
+        now,
+    )
+    .for_memory(input.memory_id);
+    if let Some(turn) = input.turn {
+        entry = entry.at_turn(turn);
+    }
+    state.store.access_log().record(&entry).await?;
+
+    Ok(outcome)
+}
+
+/// Everything a promotion or Uncertainty queue read needs, independent of
+/// transport — the reader's identity, and what a harness reports about the
+/// read itself.
+#[derive(Debug, Clone)]
+pub struct QueueReadInput {
+    /// The reader's own identity.
+    pub actor: ActorId,
+    /// The reader's project membership, if any.
+    pub project: Option<RepoId>,
+    /// The reader's team memberships, if any.
+    pub teams: Vec<TeamId>,
+    /// Which harness the read arrived through.
+    pub harness: Harness,
+    /// The harness session the read belongs to.
+    pub session: SessionId,
+    /// The turn within that session, when the harness reports one.
+    pub turn: Option<u32>,
+}
+
+/// The open promotion proposals this reader may act on, oldest first, and
+/// append one [`AccessOperation::Recall`] access-log entry — a queue read is
+/// a read of scoped memory-adjacent state, logged the same way `/recall` is.
+pub async fn promotion_pending(
+    state: &AppState,
+    input: QueueReadInput,
+    caller: &Caller,
+    endpoint: &str,
+) -> Result<Vec<PromotionEvent>, GatewayError> {
+    caller.authorize_identity(&input.actor, input.project.as_ref(), &input.teams)?;
+    let reader = ScopeChain::resolve(&input.actor, input.project.as_ref(), &input.teams);
+
+    let pending = state.store.promotions().pending(&reader).await?;
+    log_queue_read(state, input, endpoint, pending.len() as u64).await?;
+    Ok(pending)
+}
+
+/// Uncertainty records awaiting a human decision this reader may see, oldest
+/// first, logged the same way [`promotion_pending`] is.
+pub async fn pending_uncertainty(
+    state: &AppState,
+    input: QueueReadInput,
+    caller: &Caller,
+    endpoint: &str,
+) -> Result<Vec<MemoryRecord>, GatewayError> {
+    caller.authorize_identity(&input.actor, input.project.as_ref(), &input.teams)?;
+    let reader = ScopeChain::resolve(&input.actor, input.project.as_ref(), &input.teams);
+
+    let pending = state
+        .store
+        .memories()
+        .pending_review(&reader, MemoryCategory::Uncertainty)
+        .await?;
+    log_queue_read(state, input, endpoint, pending.len() as u64).await?;
+    Ok(pending)
+}
+
+async fn log_queue_read(
+    state: &AppState,
+    input: QueueReadInput,
+    endpoint: &str,
+    result_count: u64,
+) -> Result<(), GatewayError> {
+    let now = Utc::now();
+    let mut entry = AccessLogEntry::new(
+        input.actor,
+        input.harness,
+        input.session,
+        AccessOperation::Recall,
+        endpoint,
+        now,
+    )
+    .with_result_count(result_count);
+    if let Some(turn) = input.turn {
+        entry = entry.at_turn(turn);
+    }
+    state.store.access_log().record(&entry).await?;
+    Ok(())
+}
+
+/// Everything reading one proposed record needs, independent of transport.
+#[derive(Debug, Clone)]
+pub struct ProposedRecordInput {
+    /// The reviewer's own identity.
+    pub actor: ActorId,
+    /// The reviewer's project membership, if any.
+    pub project: Option<RepoId>,
+    /// The reviewer's team memberships, if any.
+    pub teams: Vec<TeamId>,
+    /// The proposal to read the named record of.
+    pub proposal: PromotionId,
+    /// Which harness the read arrived through.
+    pub harness: Harness,
+    /// The harness session the read belongs to.
+    pub session: SessionId,
+    /// The turn within that session, when the harness reports one.
+    pub turn: Option<u32>,
+}
+
+/// The record a queued proposal names, for the reviewer deciding on it
+/// (ADV-CONSOLE-002) — `None` once the proposal is decided, or if this
+/// reviewer's chain cannot reach it.
+pub async fn proposed_record(
+    state: &AppState,
+    input: ProposedRecordInput,
+    caller: &Caller,
+    endpoint: &str,
+) -> Result<Option<MemoryRecord>, GatewayError> {
+    caller.authorize_identity(&input.actor, input.project.as_ref(), &input.teams)?;
+    let reviewer = ScopeChain::resolve(&input.actor, input.project.as_ref(), &input.teams);
+
+    let record = state
+        .store
+        .promotions()
+        .proposed_record(&reviewer, input.proposal)
+        .await?;
+
+    let now = Utc::now();
+    let mut entry = AccessLogEntry::new(
+        input.actor,
+        input.harness,
+        input.session,
+        AccessOperation::Recall,
+        endpoint,
+        now,
+    )
+    .with_result_count(u64::from(record.is_some()));
+    if let Some(id) = record.as_ref().map(|record| record.id) {
+        entry = entry.for_memory(id);
+    }
+    if let Some(turn) = input.turn {
+        entry = entry.at_turn(turn);
+    }
+    state.store.access_log().record(&entry).await?;
+
+    Ok(record)
+}
+
+/// Everything a promotion decision needs, independent of transport.
+#[derive(Debug, Clone)]
+pub struct PromotionDecisionInput {
+    /// The approver's own project membership, if any.
+    pub project: Option<RepoId>,
+    /// The approver's team memberships, if any.
+    pub teams: Vec<TeamId>,
+    /// The proposal being decided.
+    pub proposal: PromotionId,
+    /// Who is deciding.
+    pub author: Author,
+    /// Which harness the decision arrived through.
+    pub harness: Harness,
+    /// The harness session the decision belongs to.
+    pub session: SessionId,
+    /// The turn within that session, when the harness reports one.
+    pub turn: Option<u32>,
+    /// Why, in the words of whoever decided — only meaningful on a rejection.
+    pub reason: Option<String>,
+}
+
+/// Approve a queued proposal, moving the record, and append one
+/// [`AccessOperation::PromotionDecision`] access-log entry (ADV-CONSOLE-002).
+pub async fn approve_promotion(
+    state: &AppState,
+    input: PromotionDecisionInput,
+    caller: &Caller,
+    endpoint: &str,
+) -> Result<PromotionEvent, GatewayError> {
+    decide_promotion(state, input, caller, endpoint, true).await
+}
+
+/// Refuse a queued proposal — the record does not move — and append one
+/// [`AccessOperation::PromotionDecision`] access-log entry (ADV-CONSOLE-002).
+pub async fn reject_promotion(
+    state: &AppState,
+    input: PromotionDecisionInput,
+    caller: &Caller,
+    endpoint: &str,
+) -> Result<PromotionEvent, GatewayError> {
+    decide_promotion(state, input, caller, endpoint, false).await
+}
+
+async fn decide_promotion(
+    state: &AppState,
+    input: PromotionDecisionInput,
+    caller: &Caller,
+    endpoint: &str,
+    approve: bool,
+) -> Result<PromotionEvent, GatewayError> {
+    caller.authorize_identity(input.author.actor(), input.project.as_ref(), &input.teams)?;
+    let approver = ScopeChain::resolve(input.author.actor(), input.project.as_ref(), &input.teams);
+
+    let now = Utc::now();
+    let mut provenance = Provenance::new(
+        input.author.clone(),
+        input.harness.clone(),
+        input.session.clone(),
+        now,
+    );
+    if let Some(turn) = input.turn {
+        provenance = provenance.at_turn(turn);
+    }
+
+    let decision = if approve {
+        state
+            .store
+            .promotions()
+            .approve(&approver, input.proposal, provenance)
+            .await?
+    } else {
+        state
+            .store
+            .promotions()
+            .reject(&approver, input.proposal, provenance, input.reason)
+            .await?
+    };
+
+    let mut entry = AccessLogEntry::new(
+        input.author.actor().clone(),
+        input.harness,
+        input.session,
+        AccessOperation::PromotionDecision,
+        endpoint,
+        now,
+    )
+    .for_memory(decision.memory);
+    if let Some(turn) = input.turn {
+        entry = entry.at_turn(turn);
+    }
+    state.store.access_log().record(&entry).await?;
+
+    Ok(decision)
+}
+
+/// Everything an Uncertainty resolution needs, independent of transport.
+#[derive(Debug, Clone)]
+pub struct ResolveUncertaintyInput {
+    /// The resolver's own identity.
+    pub actor: ActorId,
+    /// The resolver's project membership, if any.
+    pub project: Option<RepoId>,
+    /// The resolver's team memberships, if any.
+    pub teams: Vec<TeamId>,
+    /// The contested record being resolved.
+    pub memory_id: MemoryId,
+    /// Approve or reject it.
+    pub decision: ReviewState,
+    /// Which harness the resolution arrived through.
+    pub harness: Harness,
+    /// The harness session the resolution belongs to.
+    pub session: SessionId,
+    /// The turn within that session, when the harness reports one.
+    pub turn: Option<u32>,
+}
+
+/// Record a human's decision on a contested memory and append one
+/// [`AccessOperation::Resolve`] access-log entry (ADV-CONSOLE-002: the
+/// Uncertainty queue's resolution step).
+pub async fn resolve_uncertainty(
+    state: &AppState,
+    input: ResolveUncertaintyInput,
+    caller: &Caller,
+    endpoint: &str,
+) -> Result<MemoryRecord, GatewayError> {
+    caller.authorize_identity(&input.actor, input.project.as_ref(), &input.teams)?;
+    let resolver = ScopeChain::resolve(&input.actor, input.project.as_ref(), &input.teams);
+
+    let record = state
+        .store
+        .memories()
+        .resolve_review(&resolver, input.memory_id, input.decision)
+        .await?;
+
+    let now = Utc::now();
+    let mut entry = AccessLogEntry::new(
+        input.actor,
+        input.harness,
+        input.session,
+        AccessOperation::Resolve,
+        endpoint,
+        now,
+    )
+    .for_memory(record.id);
+    if let Some(turn) = input.turn {
+        entry = entry.at_turn(turn);
+    }
+    state.store.access_log().record(&entry).await?;
+
+    Ok(record)
+}
+
+/// One memory's full audit trail (ADV-CONSOLE-002): its provenance, access
+/// history, curator lineage, and promotion history.
+#[derive(Debug, Clone)]
+pub struct AuditTrail {
+    /// The record itself.
+    pub record: MemoryRecord,
+    /// Every logged read or write naming this record.
+    pub access_log: Vec<AccessLogEntry>,
+    /// The merges (and rollbacks) this record took part in.
+    pub curation_history: Vec<CurationEvent>,
+    /// This record's whole scope history.
+    pub promotion_history: Vec<PromotionEvent>,
+}
+
+/// Everything an audit trail read needs, independent of transport.
+#[derive(Debug, Clone)]
+pub struct AuditInput {
+    /// The reader's own identity.
+    pub actor: ActorId,
+    /// The reader's project membership, if any.
+    pub project: Option<RepoId>,
+    /// The reader's team memberships, if any.
+    pub teams: Vec<TeamId>,
+    /// The record to reconstruct the audit trail of.
+    pub memory_id: MemoryId,
+    /// Which harness the read arrived through.
+    pub harness: Harness,
+    /// The harness session the read belongs to.
+    pub session: SessionId,
+    /// The turn within that session, when the harness reports one.
+    pub turn: Option<u32>,
+}
+
+/// Reconstruct one memory's audit trail and append one
+/// [`AccessOperation::Recall`] access-log entry.
+///
+/// Refused when the reader cannot see the record itself
+/// ([`totem_store::StoreError::NotFound`]), the same visibility-before-disclosure
+/// rule every other read here applies. Every sub-query
+/// ([`totem_store::AccessLogRepository::for_memory`],
+/// [`totem_store::CurationRepository::history`],
+/// [`totem_store::PromotionRepository::history`]) re-checks that visibility
+/// itself rather than trusting this function's own check.
+pub async fn audit_trail(
+    state: &AppState,
+    input: AuditInput,
+    caller: &Caller,
+    endpoint: &str,
+) -> Result<AuditTrail, GatewayError> {
+    caller.authorize_identity(&input.actor, input.project.as_ref(), &input.teams)?;
+    let reader = ScopeChain::resolve(&input.actor, input.project.as_ref(), &input.teams);
+
+    let Some(record) = state.store.memories().get(&reader, input.memory_id).await? else {
+        return Err(GatewayError::from(totem_store::StoreError::NotFound(
+            input.memory_id,
+        )));
+    };
+    let access_log = state
+        .store
+        .access_log()
+        .for_memory(&reader, input.memory_id)
+        .await?;
+    let curation_history = state
+        .store
+        .curation()
+        .history(&reader, input.memory_id)
+        .await?;
+    let promotion_history = state
+        .store
+        .promotions()
+        .history(&reader, input.memory_id)
+        .await?;
+
+    let now = Utc::now();
+    let mut entry = AccessLogEntry::new(
+        input.actor,
+        input.harness,
+        input.session,
+        AccessOperation::Recall,
+        endpoint,
+        now,
+    )
+    .for_memory(input.memory_id);
+    if let Some(turn) = input.turn {
+        entry = entry.at_turn(turn);
+    }
+    state.store.access_log().record(&entry).await?;
+
+    Ok(AuditTrail {
+        record,
+        access_log,
+        curation_history,
+        promotion_history,
+    })
 }

@@ -225,10 +225,17 @@ passes:
           - id: "ADV-CONSOLE-002"
             advance_id: "ADV-CONSOLE-002"
             title: "Audit trails, Uncertainty queue, promotion approvals"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-CONSOLE-001", "ADV-CORE-003", "ADV-GATEWAY-004"]
-            notes: "Approval UI fronts the promotion engine; Uncertainty queue needs the contest path."
+            notes: >-
+              Approval UI fronts the promotion engine; Uncertainty queue
+              needs the contest path. Scope corrected 2026-08-06: audit
+              trail, Uncertainty queue + resolution, and promotion
+              propose/approve/reject delivered; value/usage reports + the
+              "retire?" queue, plus demote/MCP exposure for promotion, are
+              deferred as unassigned gaps (see ADV-CONSOLE-002.md's Scope
+              Correction).
 
   - id: "pass-006"
     title: "Pass 6: Evaluation and hardening"

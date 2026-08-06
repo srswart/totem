@@ -23,16 +23,35 @@
 
 use axum::Json;
 use axum::extract::{Extension, Path, State};
+use totem_core::{MemoryId, PromotionId};
 
 use crate::auth::Caller;
 use crate::dto::{
-    AdvanceLogRequest, AdvanceLogResponse, AdvanceStatusResponse, ContestRequest, ContestResponse,
-    EnrollRequest, EnrollResponse, FeedbackRequest, FeedbackResponse, LandscapeView, RecallRequest,
-    RecallResponse, SaveRequest, SaveResponse,
+    AdvanceLogRequest, AdvanceLogResponse, AdvanceStatusResponse, AuditRequest, AuditTrailResponse,
+    ContestRequest, ContestResponse, EnrollRequest, EnrollResponse, FeedbackRequest,
+    FeedbackResponse, LandscapeView, PromotionDecisionRequest, PromotionDecisionResponse,
+    PromotionQueueRequest, PromotionQueueResponse, ProposePromotionRequest,
+    ProposePromotionResponse, ProposedRecordRequest, ProposedRecordResponse, RecallRequest,
+    RecallResponse, ResolveUncertaintyRequest, ResolveUncertaintyResponse, SaveRequest,
+    SaveResponse, UncertaintyQueueRequest, UncertaintyQueueResponse,
 };
 use crate::error::GatewayError;
-use crate::ops::{self, AdvanceLogInput, ContestInput, FeedbackInput, RecallInput, SaveInput};
+use crate::ops::{
+    self, AdvanceLogInput, AuditInput, ContestInput, FeedbackInput, PromotionDecisionInput,
+    ProposePromotionInput, ProposedRecordInput, QueueReadInput, RecallInput,
+    ResolveUncertaintyInput, SaveInput,
+};
 use crate::state::AppState;
+
+fn parse_memory_id(id: &str) -> Result<MemoryId, GatewayError> {
+    id.parse()
+        .map_err(|_| GatewayError::InvalidRequest(format!("{id} is not a valid memory id")))
+}
+
+fn parse_promotion_id(id: &str) -> Result<PromotionId, GatewayError> {
+    id.parse()
+        .map_err(|_| GatewayError::InvalidRequest(format!("{id} is not a valid promotion id")))
+}
 
 pub(crate) async fn save(
     State(state): State<AppState>,
@@ -187,4 +206,185 @@ pub(crate) async fn landscape(
         .map_err(GatewayError::from)?;
 
     Ok(Json(view))
+}
+
+pub(crate) async fn propose_promotion(
+    State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
+    Json(request): Json<ProposePromotionRequest>,
+) -> Result<Json<ProposePromotionResponse>, GatewayError> {
+    let input = ProposePromotionInput {
+        project: request.project,
+        teams: request.teams,
+        memory_id: request.memory_id,
+        to: request.to,
+        author: request.author,
+        harness: request.harness,
+        session: request.session,
+        turn: request.turn,
+    };
+
+    let outcome = ops::propose_promotion(&state, input, &caller, "/promotions").await?;
+
+    Ok(Json(match outcome {
+        totem_store::PromotionOutcome::Promoted { proposal, decision } => {
+            ProposePromotionResponse::Promoted { proposal, decision }
+        }
+        totem_store::PromotionOutcome::Pending { proposal } => {
+            ProposePromotionResponse::Pending { proposal }
+        }
+    }))
+}
+
+pub(crate) async fn promotion_pending(
+    State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
+    Json(request): Json<PromotionQueueRequest>,
+) -> Result<Json<PromotionQueueResponse>, GatewayError> {
+    let input = QueueReadInput {
+        actor: request.actor,
+        project: request.project,
+        teams: request.teams,
+        harness: request.harness,
+        session: request.session,
+        turn: request.turn,
+    };
+
+    let pending = ops::promotion_pending(&state, input, &caller, "/promotions/pending").await?;
+
+    Ok(Json(PromotionQueueResponse { pending }))
+}
+
+pub(crate) async fn proposed_record(
+    State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
+    Path(id): Path<String>,
+    Json(request): Json<ProposedRecordRequest>,
+) -> Result<Json<ProposedRecordResponse>, GatewayError> {
+    let input = ProposedRecordInput {
+        actor: request.actor,
+        project: request.project,
+        teams: request.teams,
+        proposal: parse_promotion_id(&id)?,
+        harness: request.harness,
+        session: request.session,
+        turn: request.turn,
+    };
+
+    let record = ops::proposed_record(&state, input, &caller, "/promotions/{id}/record").await?;
+
+    Ok(Json(ProposedRecordResponse { record }))
+}
+
+pub(crate) async fn approve_promotion(
+    State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
+    Path(id): Path<String>,
+    Json(request): Json<PromotionDecisionRequest>,
+) -> Result<Json<PromotionDecisionResponse>, GatewayError> {
+    let input = PromotionDecisionInput {
+        project: request.project,
+        teams: request.teams,
+        proposal: parse_promotion_id(&id)?,
+        author: request.author,
+        harness: request.harness,
+        session: request.session,
+        turn: request.turn,
+        reason: request.reason,
+    };
+
+    let decision =
+        ops::approve_promotion(&state, input, &caller, "/promotions/{id}/approve").await?;
+
+    Ok(Json(PromotionDecisionResponse { decision }))
+}
+
+pub(crate) async fn reject_promotion(
+    State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
+    Path(id): Path<String>,
+    Json(request): Json<PromotionDecisionRequest>,
+) -> Result<Json<PromotionDecisionResponse>, GatewayError> {
+    let input = PromotionDecisionInput {
+        project: request.project,
+        teams: request.teams,
+        proposal: parse_promotion_id(&id)?,
+        author: request.author,
+        harness: request.harness,
+        session: request.session,
+        turn: request.turn,
+        reason: request.reason,
+    };
+
+    let decision = ops::reject_promotion(&state, input, &caller, "/promotions/{id}/reject").await?;
+
+    Ok(Json(PromotionDecisionResponse { decision }))
+}
+
+pub(crate) async fn pending_uncertainty(
+    State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
+    Json(request): Json<UncertaintyQueueRequest>,
+) -> Result<Json<UncertaintyQueueResponse>, GatewayError> {
+    let input = QueueReadInput {
+        actor: request.actor,
+        project: request.project,
+        teams: request.teams,
+        harness: request.harness,
+        session: request.session,
+        turn: request.turn,
+    };
+
+    let pending = ops::pending_uncertainty(&state, input, &caller, "/uncertainty/pending").await?;
+
+    Ok(Json(UncertaintyQueueResponse { pending }))
+}
+
+pub(crate) async fn resolve_uncertainty(
+    State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
+    Path(id): Path<String>,
+    Json(request): Json<ResolveUncertaintyRequest>,
+) -> Result<Json<ResolveUncertaintyResponse>, GatewayError> {
+    let input = ResolveUncertaintyInput {
+        actor: request.actor,
+        project: request.project,
+        teams: request.teams,
+        memory_id: parse_memory_id(&id)?,
+        decision: request.decision,
+        harness: request.harness,
+        session: request.session,
+        turn: request.turn,
+    };
+
+    let record =
+        ops::resolve_uncertainty(&state, input, &caller, "/uncertainty/{id}/resolve").await?;
+
+    Ok(Json(ResolveUncertaintyResponse { record }))
+}
+
+pub(crate) async fn audit_trail(
+    State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
+    Path(id): Path<String>,
+    Json(request): Json<AuditRequest>,
+) -> Result<Json<AuditTrailResponse>, GatewayError> {
+    let input = AuditInput {
+        actor: request.actor,
+        project: request.project,
+        teams: request.teams,
+        memory_id: parse_memory_id(&id)?,
+        harness: request.harness,
+        session: request.session,
+        turn: request.turn,
+    };
+
+    let trail = ops::audit_trail(&state, input, &caller, "/audit/{id}").await?;
+
+    Ok(Json(AuditTrailResponse {
+        record: trail.record,
+        access_log: trail.access_log,
+        curation_history: trail.curation_history,
+        promotion_history: trail.promotion_history,
+    }))
 }

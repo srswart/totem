@@ -20,6 +20,8 @@
 //! and checking that the caller can reach either end of the move — is
 //! `totem-store`'s job.
 
+use serde::{Deserialize, Serialize};
+
 use crate::category::{MemoryCategory, ReviewPolicy};
 use crate::ids::{MemoryId, PromotionId};
 use crate::provenance::Provenance;
@@ -161,7 +163,8 @@ impl PromotionPolicy {
 }
 
 /// What a recorded promotion event says happened.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum PromotionEventKind {
     /// Someone asked for the record to move.
     Proposed,
@@ -192,7 +195,7 @@ impl PromotionEventKind {
 /// Constructed only through the methods below, so a decision can never name a
 /// different record, origin, or target than the proposal it answers — there is
 /// no constructor that takes those separately.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PromotionEvent {
     /// This event's identity.
     pub id: PromotionId,
@@ -339,5 +342,17 @@ mod tests {
             assert_eq!(decision.proposal, Some(proposal.id));
         }
         assert!(!proposal.kind.is_decision());
+    }
+
+    #[test]
+    fn a_promotion_event_round_trips_through_json() {
+        // ADV-CONSOLE-002 needs to serialize a `PromotionEvent` over the wire
+        // (the pending queue, one record's promotion history); this is the
+        // derive that makes that possible without a parallel gateway struct.
+        let event = PromotionEvent::propose(MemoryId::new(), private(), project(), provenance())
+            .with_reason("widening for the team to see");
+        let json = serde_json::to_string(&event).expect("serialises");
+        let back: PromotionEvent = serde_json::from_str(&json).expect("deserialises");
+        assert_eq!(back, event);
     }
 }

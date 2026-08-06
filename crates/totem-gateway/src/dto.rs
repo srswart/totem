@@ -11,8 +11,9 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use totem_core::{
-    ActorId, Author, FeedbackSignal, Harness, MemoryCategory, MemoryId, MemoryRecord, RepoId,
-    Scope, SessionId, SubjectRef, TeamId,
+    AccessLogEntry, ActorId, Author, CurationEvent, FeedbackSignal, Harness, MemoryCategory,
+    MemoryId, MemoryRecord, PromotionEvent, RepoId, ReviewState, Scope, SessionId, SubjectRef,
+    TeamId,
 };
 use totem_store::LandscapeSnapshot;
 pub use totem_store::{AdvanceView, LandscapeView};
@@ -245,4 +246,218 @@ pub struct EnrollResponse {
     pub components: usize,
     /// Advances written.
     pub advances: usize,
+}
+
+/// `POST /promotions` — ask for a record to move to a wider scope
+/// (ADV-CONSOLE-002: the write path the approval queue answers).
+#[derive(Debug, Clone, Deserialize)]
+pub struct ProposePromotionRequest {
+    /// The proposer's own project membership, if any.
+    pub project: Option<RepoId>,
+    /// The proposer's team memberships, if any.
+    #[serde(default)]
+    pub teams: Vec<TeamId>,
+    /// The record being proposed for a wider scope.
+    pub memory_id: MemoryId,
+    /// Where the proposal asks the record to move. Refused if the proposer's
+    /// resolved chain does not contain it, same as `/save`.
+    pub to: Scope,
+    /// Who is proposing.
+    pub author: Author,
+    /// Which harness the proposal arrived through.
+    pub harness: Harness,
+    /// The harness session the proposal belongs to.
+    pub session: SessionId,
+    /// The turn within that session, when the harness reports one.
+    pub turn: Option<u32>,
+}
+
+/// `POST /promotions` response: whether the move happened at once or is
+/// queued for a human.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "outcome", rename_all = "snake_case")]
+pub enum ProposePromotionResponse {
+    /// Policy allowed the move outright, and it already happened.
+    Promoted {
+        /// The recorded ask.
+        proposal: PromotionEvent,
+        /// The recorded decision that moved the record.
+        decision: Box<PromotionEvent>,
+    },
+    /// A human must decide; the record has not moved.
+    Pending {
+        /// The recorded ask, now in the queue.
+        proposal: PromotionEvent,
+    },
+}
+
+/// `POST /promotions/pending` — the queue a human decides from
+/// (ADV-CONSOLE-002).
+#[derive(Debug, Clone, Deserialize)]
+pub struct PromotionQueueRequest {
+    /// The reader's own identity.
+    pub actor: ActorId,
+    /// The reader's project membership, if any.
+    pub project: Option<RepoId>,
+    /// The reader's team memberships, if any.
+    #[serde(default)]
+    pub teams: Vec<TeamId>,
+    /// Which harness the read arrived through.
+    pub harness: Harness,
+    /// The harness session the read belongs to.
+    pub session: SessionId,
+    /// The turn within that session, when the harness reports one.
+    pub turn: Option<u32>,
+}
+
+/// `POST /promotions/pending` response: open proposals aimed at a scope the
+/// reader can reach, oldest first.
+#[derive(Debug, Clone, Serialize)]
+pub struct PromotionQueueResponse {
+    /// The open proposals.
+    pub pending: Vec<PromotionEvent>,
+}
+
+/// `POST /promotions/:id/record` — the record a queued proposal names, for
+/// the reviewer who must decide on it (ADV-CONSOLE-002).
+#[derive(Debug, Clone, Deserialize)]
+pub struct ProposedRecordRequest {
+    /// The reviewer's own identity.
+    pub actor: ActorId,
+    /// The reviewer's project membership, if any.
+    pub project: Option<RepoId>,
+    /// The reviewer's team memberships, if any.
+    #[serde(default)]
+    pub teams: Vec<TeamId>,
+    /// Which harness the read arrived through.
+    pub harness: Harness,
+    /// The harness session the read belongs to.
+    pub session: SessionId,
+    /// The turn within that session, when the harness reports one.
+    pub turn: Option<u32>,
+}
+
+/// `POST /promotions/:id/record` response: `None` once the proposal is
+/// decided or if it never named a record this reviewer may see.
+#[derive(Debug, Clone, Serialize)]
+pub struct ProposedRecordResponse {
+    /// The proposed record, while the proposal is still open.
+    pub record: Option<MemoryRecord>,
+}
+
+/// `POST /promotions/:id/approve` and `POST /promotions/:id/reject`
+/// (ADV-CONSOLE-002): a human's decision on a queued proposal.
+#[derive(Debug, Clone, Deserialize)]
+pub struct PromotionDecisionRequest {
+    /// The approver's own project membership, if any.
+    pub project: Option<RepoId>,
+    /// The approver's team memberships, if any.
+    #[serde(default)]
+    pub teams: Vec<TeamId>,
+    /// Who is deciding.
+    pub author: Author,
+    /// Which harness the decision arrived through.
+    pub harness: Harness,
+    /// The harness session the decision belongs to.
+    pub session: SessionId,
+    /// The turn within that session, when the harness reports one.
+    pub turn: Option<u32>,
+    /// Why, in the words of whoever decided — only meaningful on a rejection.
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
+/// `POST /promotions/:id/approve` / `POST /promotions/:id/reject` response.
+#[derive(Debug, Clone, Serialize)]
+pub struct PromotionDecisionResponse {
+    /// The recorded decision.
+    pub decision: PromotionEvent,
+}
+
+/// `POST /uncertainty/pending` — Uncertainty records awaiting a human
+/// decision (ADV-CONSOLE-002).
+#[derive(Debug, Clone, Deserialize)]
+pub struct UncertaintyQueueRequest {
+    /// The reader's own identity.
+    pub actor: ActorId,
+    /// The reader's project membership, if any.
+    pub project: Option<RepoId>,
+    /// The reader's team memberships, if any.
+    #[serde(default)]
+    pub teams: Vec<TeamId>,
+    /// Which harness the read arrived through.
+    pub harness: Harness,
+    /// The harness session the read belongs to.
+    pub session: SessionId,
+    /// The turn within that session, when the harness reports one.
+    pub turn: Option<u32>,
+}
+
+/// `POST /uncertainty/pending` response: open Uncertainty reviews the
+/// reader's chain can see, oldest first.
+#[derive(Debug, Clone, Serialize)]
+pub struct UncertaintyQueueResponse {
+    /// The open reviews.
+    pub pending: Vec<MemoryRecord>,
+}
+
+/// `POST /uncertainty/:id/resolve` — a human's decision on a contested
+/// memory (ADV-CONSOLE-002).
+#[derive(Debug, Clone, Deserialize)]
+pub struct ResolveUncertaintyRequest {
+    /// The resolver's own identity.
+    pub actor: ActorId,
+    /// The resolver's project membership, if any.
+    pub project: Option<RepoId>,
+    /// The resolver's team memberships, if any.
+    #[serde(default)]
+    pub teams: Vec<TeamId>,
+    /// Approve or reject the contested record. Refused unless the record's
+    /// review is currently pending.
+    pub decision: ReviewState,
+    /// Which harness the resolution arrived through.
+    pub harness: Harness,
+    /// The harness session the resolution belongs to.
+    pub session: SessionId,
+    /// The turn within that session, when the harness reports one.
+    pub turn: Option<u32>,
+}
+
+/// `POST /uncertainty/:id/resolve` response: the record after resolution.
+#[derive(Debug, Clone, Serialize)]
+pub struct ResolveUncertaintyResponse {
+    /// The updated record.
+    pub record: MemoryRecord,
+}
+
+/// `POST /audit/:id` — one memory's full audit trail (ADV-CONSOLE-002): its
+/// provenance, access history, curator lineage, and promotion history.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AuditRequest {
+    /// The reader's own identity.
+    pub actor: ActorId,
+    /// The reader's project membership, if any.
+    pub project: Option<RepoId>,
+    /// The reader's team memberships, if any.
+    #[serde(default)]
+    pub teams: Vec<TeamId>,
+    /// Which harness the read arrived through.
+    pub harness: Harness,
+    /// The harness session the read belongs to.
+    pub session: SessionId,
+    /// The turn within that session, when the harness reports one.
+    pub turn: Option<u32>,
+}
+
+/// `POST /audit/:id` response.
+#[derive(Debug, Clone, Serialize)]
+pub struct AuditTrailResponse {
+    /// The record itself.
+    pub record: MemoryRecord,
+    /// Every logged read or write naming this record.
+    pub access_log: Vec<AccessLogEntry>,
+    /// The merges (and rollbacks) this record took part in.
+    pub curation_history: Vec<CurationEvent>,
+    /// This record's whole scope history.
+    pub promotion_history: Vec<PromotionEvent>,
 }
