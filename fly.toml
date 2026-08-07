@@ -44,7 +44,7 @@ primary_region = "sin"
   TOTEM_OAUTH_SCOPE = "project:srswart/totem"
   # Console sign-in (ADV-GATEWAY-010). The client id is public by
   # construction — the console is a PKCE public client and holds no secret.
-  TOTEM_CONSOLE_CLIENT_ID = "client_01KZE45R1XKZSC1BX56H0R5V7A"
+  TOTEM_CONSOLE_CLIENT_ID = "client_01KZE1VFPDQ5EA6SBSRTNEGK3Q"
   TOTEM_CONSOLE_REDIRECT_URI = "https://totem-dev.fly.dev/callback"
   # Secrets (bootstrap credential, OAuth issuer/JWKS once ADV-GATEWAY-013
   # lands) are set with `fly secrets set` and never appear in this file.
