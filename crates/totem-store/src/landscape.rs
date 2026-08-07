@@ -547,12 +547,17 @@ impl<'a, C: Connection> LandscapeRepository<'a, C> {
     /// payload — see its own doc for why forwarding a raw notification would
     /// be the "filtered above the store" hazard this relay must avoid, and
     /// why an unfiltered *trigger* is not that hazard.
+    ///
+    /// Projects `id` only, not `*` (Copilot review, PR #46): every field
+    /// beyond it is discarded unread by the `map` below, so selecting the
+    /// full row would only add notification payload size and parse work for
+    /// data nothing here ever looks at.
     pub async fn watch(&self) -> StoreResult<LandscapeChanges> {
         let mut streams: Vec<Pin<Box<dyn Stream<Item = StoreResult<()>> + Send>>> = Vec::new();
         for table in [REPO_TABLE, SYSTEM_TABLE, COMPONENT_TABLE, ADVANCE_TABLE] {
             let stream = self
                 .db
-                .query(format!("LIVE SELECT * FROM {table}"))
+                .query(format!("LIVE SELECT id FROM {table}"))
                 .await?
                 .check()?
                 .stream::<Value>(0)?;

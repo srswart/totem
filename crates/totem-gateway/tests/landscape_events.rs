@@ -84,12 +84,20 @@ fn enroll_request(repo_id: &str, git_repo: &str, advance_id: &str) -> Value {
 /// deliberately not assuming one `http_body` frame equals one SSE event, so
 /// this stays correct even if the transport ever coalesces or splits writes
 /// differently than it does today.
-async fn next_sse_event(body: &mut Body, timeout: Duration) -> String {
-    let mut buf = Vec::new();
+///
+/// `carry` is caller-owned and threaded across calls on the same body
+/// (Copilot review, PR #46): if a single body chunk ever coalesced more than
+/// one event, discarding everything after the first blank line would drop
+/// the start of the next event and make a later call hang. Only the bytes
+/// belonging to the frame just returned are drained; anything already read
+/// past it stays in `carry` for the next call.
+async fn next_sse_event(body: &mut Body, carry: &mut Vec<u8>, timeout: Duration) -> String {
     tokio::time::timeout(timeout, async {
         loop {
-            if let Some(pos) = find_blank_line(&buf) {
-                return String::from_utf8(buf[..pos].to_vec()).expect("frame is utf-8");
+            if let Some(pos) = find_blank_line(carry) {
+                let frame = String::from_utf8(carry[..pos].to_vec()).expect("frame is utf-8");
+                carry.drain(..pos + 2);
+                return frame;
             }
             let frame = body
                 .frame()
@@ -97,7 +105,7 @@ async fn next_sse_event(body: &mut Body, timeout: Duration) -> String {
                 .expect("the stream must not end before an event arrives")
                 .expect("reading a body frame must not fail");
             if let Some(data) = frame.data_ref() {
-                buf.extend_from_slice(data);
+                carry.extend_from_slice(data);
             }
         }
     })
@@ -146,7 +154,8 @@ async fn connecting_delivers_the_current_landscape_immediately() {
     );
 
     let mut body = response.into_body();
-    let frame = next_sse_event(&mut body, Duration::from_secs(5)).await;
+    let mut carry = Vec::new();
+    let frame = next_sse_event(&mut body, &mut carry, Duration::from_secs(5)).await;
     assert!(frame.starts_with("event: landscape\n"), "got: {frame:?}");
     let data = event_data(&frame);
     assert_eq!(data["repo"]["id"], ARRIVE_ID);
@@ -183,8 +192,9 @@ async fn a_later_write_pushes_a_second_event_with_the_updated_view() {
     .await;
     assert_status(&response, StatusCode::OK);
     let mut body = response.into_body();
+    let mut carry = Vec::new();
 
-    let first = next_sse_event(&mut body, Duration::from_secs(5)).await;
+    let first = next_sse_event(&mut body, &mut carry, Duration::from_secs(5)).await;
     assert_eq!(advance_ids(&event_data(&first)), vec!["ADV-A-001"]);
 
     // `sync` never deletes an advance absent from a later snapshot (only the
@@ -205,7 +215,7 @@ async fn a_later_write_pushes_a_second_event_with_the_updated_view() {
         StatusCode::OK,
     );
 
-    let second = next_sse_event(&mut body, Duration::from_secs(5)).await;
+    let second = next_sse_event(&mut body, &mut carry, Duration::from_secs(5)).await;
     let ids = advance_ids(&event_data(&second));
     assert!(
         ids.contains(&"ADV-A-002".to_string()),
@@ -233,7 +243,8 @@ async fn every_delivered_event_appends_one_access_log_entry() {
     )
     .await;
     let mut body = response.into_body();
-    next_sse_event(&mut body, Duration::from_secs(5)).await;
+    let mut carry = Vec::new();
+    next_sse_event(&mut body, &mut carry, Duration::from_secs(5)).await;
 
     assert_status(
         &common::post(
@@ -244,7 +255,7 @@ async fn every_delivered_event_appends_one_access_log_entry() {
         .await,
         StatusCode::OK,
     );
-    next_sse_event(&mut body, Duration::from_secs(5)).await;
+    next_sse_event(&mut body, &mut carry, Duration::from_secs(5)).await;
 
     let entries = store.access_log().list().await.expect("list succeeds");
     let relay_entries: Vec<_> = entries
