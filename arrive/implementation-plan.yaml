@@ -328,6 +328,20 @@ passes:
               Cloud-eligible. TokenRegistry is in-memory today; grants must
               survive restarts, issuance becomes a privileged authenticated
               endpoint, fingerprints-only extends to durable rows.
+          - id: "ADV-GATEWAY-013"
+            advance_id: "ADV-GATEWAY-013"
+            title: "OAuth 2.1 resource server: protected-resource metadata + third-party token validation"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-GATEWAY-003", "ADV-GATEWAY-011"]
+            notes: >-
+              Cloud-eligible. ADV-GATEWAY-011 proved claude.ai connectors are
+              OAuth-only (MCP-013). Per the MCP spec Totem is a RESOURCE
+              server only — no authorization server, no login UI: RFC 9728
+              metadata outside the auth layer, resource_metadata in the 401,
+              and third-party token validation with mandatory audience
+              binding, mapping claims onto the existing repo+scope+actor
+              grant. Provider choice is recorded by the advance.
           - id: "ADV-INFRA-002"
             advance_id: "ADV-INFRA-002"
             title: "Hosted deployment: container image, TLS, supervision, daily backup"
@@ -355,7 +369,7 @@ passes:
             title: "Dogfood cutover: enroll, credentials, harness wiring, memory discipline, measurement"
             status: planned
             owner: "058-totem"
-            dependencies: ["ADV-GATEWAY-012", "ADV-INFRA-002", "ADV-STORE-008", "ADV-GATEWAY-009"]
+            dependencies: ["ADV-GATEWAY-012", "ADV-GATEWAY-013", "ADV-INFRA-002", "ADV-STORE-008", "ADV-GATEWAY-009"]
             notes: >-
               WORKSTATION — the switch-flip: per-identity credentials
               (cloud-opus, cloud-sonnet, shawn), MCP connectors on both
