@@ -16,7 +16,10 @@
 //! component that dropped an owner, or an advance that no longer impacts a
 //! component, must not survive a re-sync.
 
+use std::pin::Pin;
+
 use chrono::{DateTime, Utc};
+use futures::stream::{Stream, StreamExt, select_all};
 use serde::{Deserialize, Serialize};
 use surrealdb::types::{Number, Object, RecordId, RecordIdKey, SurrealValue, Value};
 use surrealdb::{Connection, Surreal};
@@ -613,6 +616,8 @@ fn count(row: &Object, key: &str) -> StoreResult<usize> {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
     use crate::store::Store;
 
@@ -671,5 +676,32 @@ mod tests {
                 .as_deref(),
             Some("srswart/totem"),
         );
+    }
+
+    /// The relay's trigger (ADV-CONSOLE-003): a `watch()` subscriber must see
+    /// a pulse for a committed `sync`, and must not see one before the sync
+    /// happens. `verify_live_query`'s sentinel-drain pattern
+    /// (`totem-store-spike`) proves the *absence* of a spurious pulse without
+    /// depending on a quiet period; the timeout here proves the opposite
+    /// failure mode — a subscriber that never wakes for a real committed
+    /// write — deterministically instead of hanging the test suite.
+    #[tokio::test]
+    async fn a_committed_sync_wakes_a_watch_subscriber() {
+        let store = Store::in_memory().await.expect("embedded engine connects");
+        store.migrate().await.expect("migrations apply");
+        let landscape = LandscapeRepository::new(store.connection());
+
+        let mut changes = landscape.watch().await.expect("watch subscribes");
+
+        landscape
+            .sync(&unified_snapshot(), "test")
+            .await
+            .expect("sync commits");
+
+        tokio::time::timeout(Duration::from_secs(5), changes.next())
+            .await
+            .expect("a committed sync must wake the watch subscriber before the timeout")
+            .expect("the watch stream must not close on a live subscriber")
+            .expect("a committed write must not surface as a stream error");
     }
 }
