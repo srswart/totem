@@ -181,8 +181,9 @@ pub(crate) async fn enroll(
     Extension(caller): Extension<Caller>,
     Json(request): Json<EnrollRequest>,
 ) -> Result<Json<EnrollResponse>, GatewayError> {
-    let git_repo = RepoId::new(request.snapshot.repo.git_repo.clone())
-        .map_err(|error| GatewayError::InvalidRequest(format!("snapshot repo.git_repo: {error}")))?;
+    let git_repo = RepoId::new(request.snapshot.repo.git_repo.clone()).map_err(|error| {
+        GatewayError::InvalidRequest(format!("snapshot repo.git_repo: {error}"))
+    })?;
     caller.authorize_repo(&git_repo)?;
 
     let summary = state
@@ -222,7 +223,8 @@ pub(crate) async fn landscape(
         .as_ref()
         .and_then(|repo_view| repo_view.git_repo.clone())
         .unwrap_or_else(|| repo.clone());
-    let git_repo = RepoId::new(git_repo).map_err(|error| GatewayError::InvalidRequest(error.to_string()))?;
+    let git_repo =
+        RepoId::new(git_repo).map_err(|error| GatewayError::InvalidRequest(error.to_string()))?;
     caller.authorize_repo(&git_repo)?;
 
     Ok(Json(view))

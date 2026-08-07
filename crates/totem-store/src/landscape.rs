@@ -293,9 +293,7 @@ impl<'a, C: Connection> LandscapeRepository<'a, C> {
         vars.insert("repo_id", repo_thing(&snapshot.repo.id));
         vars.insert("repo_name", snapshot.repo.name.clone());
         vars.insert("repo_git_repo", snapshot.repo.git_repo.clone());
-        sql.push_str(
-            "UPSERT $repo_id CONTENT { name: $repo_name, git_repo: $repo_git_repo };\n",
-        );
+        sql.push_str("UPSERT $repo_id CONTENT { name: $repo_name, git_repo: $repo_git_repo };\n");
 
         for (index, system) in snapshot.systems.iter().enumerate() {
             let id_key = format!("sys{index}_id");
@@ -613,9 +611,7 @@ mod tests {
     /// bespoke migration step.
     #[tokio::test]
     async fn a_repo_synced_before_id_unification_gains_git_repo_on_the_next_sync() {
-        let store = Store::in_memory()
-            .await
-            .expect("embedded engine connects");
+        let store = Store::in_memory().await.expect("embedded engine connects");
         store.migrate().await.expect("migrations apply");
         let db = store.connection();
 
@@ -642,7 +638,11 @@ mod tests {
 
         let post_migration = landscape.view("058-totem").await.expect("view succeeds");
         assert_eq!(
-            post_migration.repo.expect("repo present").git_repo.as_deref(),
+            post_migration
+                .repo
+                .expect("repo present")
+                .git_repo
+                .as_deref(),
             Some("srswart/totem"),
         );
     }

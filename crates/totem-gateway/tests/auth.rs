@@ -504,11 +504,7 @@ async fn enrolling_a_snapshot_naming_another_repo_is_refused() {
 
     let response = send(
         &router,
-        post(
-            "/enroll",
-            Some(&token),
-            enroll_body(ARRIVE_ID, OTHER_REPO),
-        ),
+        post("/enroll", Some(&token), enroll_body(ARRIVE_ID, OTHER_REPO)),
     )
     .await;
     assert_eq!(
@@ -568,13 +564,20 @@ async fn reading_the_bound_repo_s_landscape_succeeds() {
     let (router, tokens) = app().await;
     let token = project_token(&tokens);
     assert_eq!(
-        send(&router, post("/enroll", Some(&token), enroll_body(ARRIVE_ID, REPO)))
-            .await
-            .status(),
+        send(
+            &router,
+            post("/enroll", Some(&token), enroll_body(ARRIVE_ID, REPO))
+        )
+        .await
+        .status(),
         StatusCode::OK,
     );
 
-    let response = send(&router, get(&format!("/landscape/{ARRIVE_ID}"), Some(&token))).await;
+    let response = send(
+        &router,
+        get(&format!("/landscape/{ARRIVE_ID}"), Some(&token)),
+    )
+    .await;
     assert_eq!(
         response.status(),
         StatusCode::OK,
@@ -589,11 +592,7 @@ async fn a_bound_token_cannot_confirm_a_never_synced_repo_s_binding() {
     let (router, tokens) = app().await;
     let token = project_token(&tokens);
 
-    let response = send(
-        &router,
-        get("/landscape/never-synced", Some(&token)),
-    )
-    .await;
+    let response = send(&router, get("/landscape/never-synced", Some(&token))).await;
     assert_eq!(
         response.status(),
         StatusCode::FORBIDDEN,
