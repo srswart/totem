@@ -29,6 +29,12 @@ COPY . .
 RUN apt-get update \
     && apt-get install -y --no-install-recommends pkg-config libssl-dev build-essential \
     && rm -rf /var/lib/apt/lists/*
+# Two jobs, not one per core. Adding `fastembed` put ONNX Runtime alongside
+# `surrealdb-core` — already the largest crate here — and the remote builder
+# OOM-killed rustc (SIGKILL) partway through. The failure reads as
+# "could not compile surrealdb-core", naming the victim rather than the cause,
+# and it appeared only once this feature was added (ADV-STORE-008).
+ENV CARGO_BUILD_JOBS=2
 RUN cargo build --release -p totem-gateway --features rocksdb,fastembed
 
 # Bake the model weights into the image (ADV-STORE-008). Cold construction is
