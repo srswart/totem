@@ -6,20 +6,20 @@ advance:
   primary_component: "gateway"
   components: ["gateway"]
   started_at: "2026-08-07T08:00:00Z"
-  implementation_completed_at: ~
+  implementation_completed_at: "2026-08-07T17:50:00Z"
   review_time_estimate_minutes: 45
   review_time_actual_minutes: ~
   pr_links: []
   external_refs: []
-  reviewability_score: 0
+  reviewability_score: 82
   risk_flags: ["auth", "public_api"]
-  evidence: []
+  evidence: ["tests:unit", "tdd:red-green", "connector:executed"]
   model_usage: []
   schema_version: 2
   mode: implementation
   facets: [software, security]
   work_products: [production_code]
-  status: planned
+  status: complete
 ---
 
 ## Objective
@@ -75,14 +75,42 @@ After this advance:
 
 ## Planned Implementation Tasks
 
-- [ ] branch / claim
-- [ ] tidy: preparatory refactoring (no behavior change)
-- [ ] test: metadata document shape and reachability *without* a credential;
-      401 carries `resource_metadata`; audience mismatch refused; expired
-      refused; bad signature refused; unknown issuer refused; a valid token
-      produces the expected grant; the static-bearer path still passes
-- [ ] feat: metadata route outside the auth layer, `WWW-Authenticate`
-      enrichment, JWKS-validating token verifier, claims→grant mapping
+- [x] branch / claim
+- [x] tidy: none needed — `authenticate` already had a clean seam; OAuth
+      slots in behind the registry lookup
+- [x] test: metadata reachable without a credential, 401 carries
+      `resource_metadata`, audience/issuer/expiry/signature refusals, valid
+      token maps to a grant, static bearer still passes
+- [x] feat: metadata route outside the auth layer, `WWW-Authenticate`
+      enrichment, JWKS-validating verifier, claims→grant mapping
+
+## Bug fix folded in: the first external client could not write
+
+Deployed, connected, and immediately broken — `totem_save` failed for every
+possible argument with:
+
+    invalid type: string "{\"kind\": \"human\", \"actor\": \"...\"}",
+    expected adjacently tagged enum Author
+
+`SaveParams::author` was a `serde_json::Value`, which tells `schemars`
+nothing, so the *published* schema declared no type. A client with no type to
+work from serialized the argument as a string, and `Author` is adjacently
+tagged with no string form — no caller could work around it.
+
+**Every existing MCP test calls the tools in-process with typed Rust
+arguments, so none of them ever exercised the schema an external client
+reads.** Sixty-six green test blocks and an unusable write path. Fixed by
+typing the parameters (`AuthorParam`, `SubjectParam`, `harness: String`) and
+adding three schema tests — one of which fails on *any* untyped parameter,
+catching the class rather than these two instances. A tolerant deserializer
+also accepts a JSON-encoded string where an object is expected: the schema is
+the fix, that is the hardening, since claude.ai will not be the last harness
+to stringify an untyped field.
+
+Folded into this advance rather than deferred because it was this advance's
+own deployment that made an external client possible, and the advance's
+completion bar requires a real tool call — which was impossible while the
+write path was broken.
 
 ## Scope and Boundaries
 
@@ -179,16 +207,63 @@ loss plainly. Decide before the cutover, not during it.
   workstation, CLI and API-connector paths are unaffected; only claude.ai
   connector reach is lost.
 
+## Reviewability
+
+`arrive score --base origin/advance/phase-010`: **82 [RED]**, documented
+rather than split. The OAuth module, its wiring, and the schema bug fix are
+one deployment's worth of work on the same surface, and the bug was only
+discoverable *after* the OAuth half shipped — splitting would have meant
+merging a resource server whose own completion evidence could not be
+obtained. The commit series is the review order: tests, feature, bug fix.
+
 ## Evidence
 
-- [ ] tidy:preparatory
-- [ ] tdd:red-green
-- [ ] tests:unit
-- [ ] connector:executed — the ADV-GATEWAY-011 probe repeated end-to-end: a
-      connector created in claude.ai against a deployed Totem, and a
-      scheduled routine calling a Totem tool through it. This advance is not
-      complete on unit tests alone; the thing it exists to enable must be
-      demonstrated.
+- [x] tdd:red-green — `crates/totem-gateway/tests/oauth.rs` written first and
+      observed failing on the missing type and field; green after. Eight
+      tests: metadata without a credential, `resource_metadata` in the 401,
+      valid token → grant, and refusals for wrong audience, wrong issuer,
+      expiry, and tampering — plus one asserting the static bearer path still
+      works, so this advance cannot quietly break ADV-GATEWAY-003.
+- [x] tests:unit — 66 workspace test blocks green; fmt and clippy clean.
+      Unit tests use HS256 with a fixed key: what is under test is
+      issuer/audience/expiry checking and claims mapping, none of which
+      depends on the algorithm. **The RS256-over-JWKS path is not unit
+      tested** — it is verified live, below.
+- [x] connector:executed — the bar this advance set for itself, met on
+      2026-08-07:
+  - claude.ai custom connector created against
+    `https://totem-dev.fly.dev/mcp` with **no client id supplied** —
+    Dynamic Client Registration succeeded against WorkOS AuthKit, where the
+    same step failed against Totem the day before (MCP-013).
+  - Google sign-in through AuthKit; connector authorized.
+  - `totem_recall` returned the project-scope estate, and the identity
+    binding refused a request naming another actor verbatim: *"this
+    credential is bound to actor user_01KZEG2Y2T1XN5M22DYKG65XCT, so it
+    cannot act as claude"* — a WorkOS-issued token's claims enforcing
+    ADV-GATEWAY-003's grant rules.
+  - `totem_save` (after the schema fix) wrote a record whose provenance
+    carries the **proven** AuthKit subject as author, not a caller-asserted
+    string: `author: {kind: human, actor: user_01KZEG2Y2T1XN5M22DYKG65XCT}`,
+    session `session_01UrhKGahJ1ipFJZSHFTDckQ`. Read back from the
+    workstation with a *different* credential (the bootstrap bearer), which
+    is the loop this advance exists to close.
+
+## Residuals found and left open, deliberately
+
+- **A save that succeeds without acknowledging.** The connector's
+  `totem_save` completed server-side while claude.ai waited indefinitely for
+  a response. Not investigated here — but it matters more than it looks: an
+  agent that never sees an acknowledgement retries, and duplicate memories
+  are exactly what a curator later has to clean up. Recorded for a follow-up
+  rather than hand-waved as a UI quirk.
+- **Recall payload size** — full 384-float embeddings returned to a caller
+  that pays per token. Authored as ADV-GATEWAY-014 rather than folded in;
+  this advance had already absorbed one unplanned fix.
+- **Per-routine identity is still unproven.** Both cloud routines would
+  authenticate as whichever AuthKit user connects them, so `cloud-opus` and
+  `cloud-sonnet` may collapse into one actor. The claims mapping makes the
+  *token's* subject the actor, so two AuthKit users would separate them —
+  untested, and ADV-INFRA-003's measurement depends on the answer.
 
 ## CI Evidence Notes
 
@@ -198,9 +273,48 @@ loss plainly. Decide before the cutover, not during it.
 
 ## Changes Made
 
-- None yet
+### 2026-08-07 - test: [ADV-GATEWAY-013] resource-server metadata, 401 discovery, token validation (red)
+- crates/totem-gateway/tests/oauth.rs: eight tests, including the
+  static-bearer regression guard
+
+### 2026-08-07 - feat: [ADV-GATEWAY-013] OAuth 2.1 resource server
+- crates/totem-gateway/src/oauth.rs: new — RFC 9728 metadata, JWKS cache
+  refreshed on unknown `kid` (how key rotation survives without a restart),
+  audience/issuer/expiry validation, claims→grant mapping
+- crates/totem-gateway/src/lib.rs: metadata route in
+  `unauthenticated_routes()` beside `/health`
+- crates/totem-gateway/src/auth.rs: OAuth fallback behind the registry
+  lookup; `InvalidToken` variant (401, not the 403 `InvalidBinding` gives —
+  a client told 403 believes its permissions are wrong and never refreshes);
+  `with_discovery` attaches `resource_metadata` on the way out, so refusals
+  from deeper handlers carry it too
+- crates/totem-gateway/src/main.rs: `oauth_from_env`, startup mode line
+- fly.toml: AuthKit issuer, resource, repo and scope — none secret
+
+### 2026-08-07 - fix: [ADV-GATEWAY-013] typed MCP save parameters
+- crates/totem-gateway/src/mcp.rs: `AuthorParam`, `SubjectParam`,
+  `harness: String`, tolerant `json_or_stringified` deserializer
+- crates/totem-gateway/tests/mcp_recall_and_save.rs: published-schema tests,
+  including one that fails on any untyped parameter
 
 ## Check for Understanding
 
-(placeholder — written during implementation, grounded in the files actually
-changed)
+1. Totem publishes protected-resource metadata and validates tokens, but
+   issues none and runs no login UI. Which sentence in the MCP authorization
+   spec makes that split legitimate, and what would Totem have had to build
+   if the spec required the two roles together?
+2. Audience validation is called the load-bearing check. Construct the
+   attack that succeeds if a resource server verifies signature, issuer and
+   expiry but not audience — and name the WorkOS-shaped precondition it
+   needs.
+3. Validation failures return 401 via a new `InvalidToken` variant rather
+   than reusing `InvalidBinding`. What does the existing variant's own doc
+   comment say about when it applies, and what does a client do wrong if it
+   receives 403 for an expired token?
+4. The metadata document and `/health` are the only unauthenticated routes.
+   Why can neither of them be moved behind the auth layer, and what does
+   `unauthenticated_routes()` buy that per-route exceptions would not?
+5. Sixty-six test blocks were green while the write path was unusable by any
+   external client. What did every one of those MCP tests do that made the
+   defect invisible, and which new test would fail if someone reintroduced
+   the same shape on a different parameter tomorrow?

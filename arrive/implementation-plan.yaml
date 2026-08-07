@@ -331,7 +331,7 @@ passes:
           - id: "ADV-GATEWAY-013"
             advance_id: "ADV-GATEWAY-013"
             title: "OAuth 2.1 resource server: protected-resource metadata + third-party token validation"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-GATEWAY-003", "ADV-GATEWAY-011"]
             notes: >-

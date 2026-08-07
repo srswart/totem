@@ -27,6 +27,10 @@ pub struct AppState {
     pub store: Store<Db>,
     /// The embedder every `/save` and `/recall` call uses.
     pub embedder: Arc<dyn Embedder>,
+    /// The OAuth resource-server verifier, when the deployment configures one
+    /// (ADV-GATEWAY-013). `None` on a workstation with no authorization
+    /// server, where static bearer credentials are the only path.
+    pub oauth: Option<std::sync::Arc<crate::OAuthVerifier>>,
     /// The credentials this gateway accepts from remote callers
     /// (ADV-GATEWAY-003). Empty by default, so a gateway that has been given
     /// no credentials refuses every remote request rather than serving them
@@ -45,6 +49,9 @@ impl AppState {
     pub fn over(store: Store<Db>) -> Self {
         Self {
             store,
+            // Configured by the binary from the environment when a deployment
+            // has an authorization server; absent on a workstation.
+            oauth: None,
             // The deterministic, non-semantic embedder: real quality
             // (BGE-small-en-v1.5 via `fastembed`, EMB-004) needs a model
             // download this sandbox's egress policy blocks, so it stays behind

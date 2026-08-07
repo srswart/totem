@@ -33,6 +33,15 @@ primary_region = "sin"
   TOTEM_BOOTSTRAP_REPO = "srswart/totem"
   TOTEM_BOOTSTRAP_SCOPE = "project:srswart/totem"
   TOTEM_BOOTSTRAP_ACTOR = "shawn"
+  # OAuth resource-server configuration (ADV-GATEWAY-013). None of this is
+  # secret: Totem validates tokens the authorization server issues and holds
+  # no client secret of its own. TOTEM_OAUTH_RESOURCE is also what registers
+  # as the WorkOS Resource Indicator; the bare origin is accepted too, since
+  # the MCP spec permits a client either form.
+  TOTEM_OAUTH_ISSUER = "https://decent-genius-72-staging.authkit.app"
+  TOTEM_OAUTH_RESOURCE = "https://totem-dev.fly.dev/mcp"
+  TOTEM_OAUTH_REPO = "srswart/totem"
+  TOTEM_OAUTH_SCOPE = "project:srswart/totem"
   # Secrets (bootstrap credential, OAuth issuer/JWKS once ADV-GATEWAY-013
   # lands) are set with `fly secrets set` and never appear in this file.
 
