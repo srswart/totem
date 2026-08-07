@@ -1,7 +1,11 @@
 # Dogfood Plan: Totem as the memory layer for building Totem
 
-**Status:** DRAFT for discussion (2026-08-07) — becomes real via the advances
-in §4 once reviewed. **Companion:** docs/tech-direction/deployment.md
+**Status:** DECIDED 2026-08-07 (Shawn) — hosting on a small always-on cloud
+host; the trial's data is trial-grade (preservation nice-to-have, not
+critical); access stays secure without over-complication (TLS + bearer
+credentials + the phase-008 hardening pair; the public-only-after-GATEWAY-006
+gate from the draft is relaxed accordingly). Realized via the advances in §4
+(now authored into phase-010). **Companion:** docs/tech-direction/deployment.md
 (DEP-001), docs/tech-direction/mcp.md, docs/overnight-experiment/log.md.
 
 ## 1. The goal
@@ -111,14 +115,18 @@ routines already use for other connectors) — which requires the gateway's
 
 ## 4. Proposed advances (draft decomposition)
 
-| # | Advance (suggested id) | Scope | Where |
+| # | Advance | Scope | Where |
 |---|---|---|---|
-| 1 | ADV-GATEWAY-011 — connector reach probe | Prove a cloud routine can call a tool on an external HTTPS MCP connector; record per-harness findings in mcp.md | WORKSTATION (needs routine config + a throwaway endpoint) |
-| 2 | ADV-GATEWAY-012 — durable credential registry | Store-backed TokenRegistry (issue/list/revoke vs the durable store), rotation runbook | cloud-eligible |
-| 3 | ADV-INFRA-002 — deployable image + TLS | Container image for the durable gateway, Caddy TLS termination, compose/launchd packaging | WORKSTATION |
-| 4 | ADV-INFRA-003 — operational loop | Scheduled backups (+offsite), curator job scheduling, restart supervision, minimal uptime/health check | WORKSTATION |
-| 5 | ADV-STORE-008 — real embedder in deployment | `fastembed` feature in the deployed build; re-embed existing rows; recall-quality smoke against EMB-004's golden queries | WORKSTATION |
-| 6 | ADV-DOGFOOD-001 — cutover | Enroll the deployed instance, issue routine + workstation credentials, wire both harnesses, update cloud-agent-notes.md with the memory discipline, define the measurement (recall/save counts, feedback ratio, "did a memory change a run" journal line in journey reports) | WORKSTATION |
+| 1 | ADV-GATEWAY-011 — connector reach probe | Prove a cloud routine can call a tool on an external HTTPS MCP connector; findings into mcp.md | WORKSTATION |
+| 2 | ADV-GATEWAY-012 — durable credential registry | Store-backed grants, privileged issuance endpoint, rotation runbook | cloud-eligible |
+| 3 | ADV-INFRA-002 — hosted deployment | Container image + Caddy TLS + supervision + daily backup + estate migration (trial-grade ops folded in) | WORKSTATION |
+| 4 | ADV-STORE-008 — real embedder in deployment | fastembed/BGE in the hosted build; re-embed; golden-query smoke | WORKSTATION |
+| 5 | ADV-INFRA-003 — cutover | Enroll, per-identity credentials, connector + harness wiring, memory discipline, measurement | WORKSTATION |
+
+All five are authored into **phase-010 ("Dogfood trial")**, sequenced before
+the evaluations phase (now order 3) so the trial starts as soon as the
+workstation track completes; the security evaluation then runs against the
+deployed, dogfooding system.
 
 Sequencing: 1 can run **now** (pure probe, parallel to phase-008). 2 is
 cloud-eligible and could slot into phase-008's tail or phase-009. 3–6 are the
