@@ -30,6 +30,15 @@ enum Command {
         /// Skip installing the `post-commit` sync hook.
         #[arg(long)]
         no_hook: bool,
+        /// The bearer credential to present. Falls back to `TOTEM_TOKEN`,
+        /// then to a credential for this repo in the local store
+        /// (ADV-CLI-002).
+        #[arg(long)]
+        token: Option<String>,
+        /// The repo this enrollment speaks for, used to pick a stored
+        /// credential. Defaults to the repo the landscape names.
+        #[arg(long)]
+        repo: Option<String>,
     },
     /// Actor credential commands.
     Credential {
@@ -66,11 +75,40 @@ async fn main() -> anyhow::Result<()> {
             gateway_url,
             source,
             no_hook,
+            token,
+            repo,
         } => {
             let arrive_root = repo_root.join("arrive");
+
+            // Resolve the credential *before* doing any work: failing after a
+            // landscape parse would waste the effort and bury the actionable
+            // message under output that looks like progress.
+            let home = totem_cli::home_dir()?;
+            let store_path = totem_cli::credential::default_store_path(&home);
+            let repo_id = match repo {
+                Some(repo) => repo,
+                None => totem_cli::enroll::repo_id_of(&arrive_root)?,
+            };
+            let credential = totem_cli::auth::resolve_token(
+                token.as_deref(),
+                std::env::var("TOTEM_TOKEN").ok().as_deref(),
+                &store_path,
+                &repo_id,
+            )?;
+            eprintln!(
+                "authenticating as the credential from {}",
+                credential.source
+            );
+
             let client = reqwest::Client::new();
-            let summary =
-                totem_cli::enroll::enroll(&client, &gateway_url, &arrive_root, &source).await?;
+            let summary = totem_cli::enroll::enroll(
+                &client,
+                &gateway_url,
+                &arrive_root,
+                &source,
+                &credential,
+            )
+            .await?;
             println!(
                 "synced {} system(s), {} component(s), {} advance(s)",
                 summary.systems, summary.components, summary.advances

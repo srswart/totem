@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
+pub mod auth;
 pub mod credential;
 pub mod enroll;
 pub mod hook;

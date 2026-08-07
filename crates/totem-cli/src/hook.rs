@@ -37,10 +37,19 @@ pub enum HookError {
     },
 }
 
+/// The hook body.
+///
+/// Deliberately carries **no credential** (ADV-CLI-002): `totem enroll`
+/// resolves one from `TOTEM_TOKEN` or the local store at run time. A token
+/// written into this script would sit in the repo's `.git/hooks`, survive in
+/// backups, and be trivially readable — and the hook runs unattended, which
+/// is exactly when a leaked credential goes unnoticed.
 fn script(gateway_url: &str) -> String {
     format!(
         "#!/bin/sh\n\
          {MARKER}\n\
+         # No credential here on purpose: `totem enroll` reads TOTEM_TOKEN or\n\
+         # the local credential store. See ADV-CLI-002.\n\
          exec totem enroll --repo-root \"$(git rev-parse --show-toplevel)\" \
          --gateway-url \"{gateway_url}\" --source hook:post-commit\n"
     )

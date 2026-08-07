@@ -8,6 +8,8 @@
 
 use std::path::Path;
 
+use crate::auth::ResolvedCredential;
+
 use serde::Deserialize;
 use thiserror::Error;
 use totem_arrive_sync::IngestError;
@@ -51,14 +53,26 @@ pub enum EnrollError {
     },
 }
 
+/// The `owner/name` repo id the landscape names, for picking a stored
+/// credential without making the operator repeat themselves.
+///
+/// `git_repo` is the identity credentials bind to (ADV-GATEWAY-009 unified
+/// the two id spaces); `id` is ARRIVE's own registry id, which a credential
+/// never names.
+pub fn repo_id_of(arrive_root: &Path) -> Result<String, EnrollError> {
+    let snapshot = totem_arrive_sync::read_repo_artifacts(arrive_root)?;
+    Ok(snapshot.repo.git_repo.clone())
+}
+
 /// Parse `arrive_root`'s `/arrive/` tree and POST the resulting landscape
 /// snapshot to `<gateway_url>/enroll`, tagging the sync run with `source`
-/// (e.g. `"cli:enroll"`, `"hook:post-commit"`).
+/// (e.g. `"cli:enroll"`, `"hook:post-commit"`) and presenting `credential`.
 pub async fn enroll(
     client: &reqwest::Client,
     gateway_url: &str,
     arrive_root: &Path,
     source: &str,
+    credential: &ResolvedCredential,
 ) -> Result<EnrollSummary, EnrollError> {
     let snapshot = totem_arrive_sync::read_repo_artifacts(arrive_root)?;
 
@@ -73,6 +87,9 @@ pub async fn enroll(
     let url = format!("{}/enroll", gateway_url.trim_end_matches('/'));
     let response = client
         .post(&url)
+        // ADV-CLI-002: the gateway refuses an unauthenticated caller, and a
+        // CLI that omitted this worked only against a loopback composition.
+        .bearer_auth(&credential.token)
         .json(&body)
         .send()
         .await

@@ -29,13 +29,8 @@ fn store_with(token: &str, repo: &str) -> PathBuf {
 fn an_explicit_flag_wins_over_everything() {
     let store = store_with("from-store", "srswart/totem");
 
-    let resolved = resolve_token(
-        Some("from-flag"),
-        Some("from-env"),
-        &store,
-        "srswart/totem",
-    )
-    .expect("resolves");
+    let resolved = resolve_token(Some("from-flag"), Some("from-env"), &store, "srswart/totem")
+        .expect("resolves");
 
     assert_eq!(resolved.token, "from-flag");
     assert_eq!(resolved.source, CredentialSource::Flag);
