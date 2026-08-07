@@ -165,3 +165,23 @@ in a real browser for the first time — closing ADV-CONSOLE-001's
 behavior ADV-CONSOLE-003 exists to fix. Everything is per-process in-memory;
 the demo promoted the §9 topology decision (and reserved ADV-INFRA-001) from
 "documented someday" to the blocker between demo and daily use.
+
+## 2026-08-07 — `failure-mode` — A stranded PR amendment un-decided a decision; the agent faithfully executed stale governance
+
+The ADV-CONSOLE-004 WORKSTATION conversion was pushed as an amendment to an
+open PR (#36) that the human had already merged — the commit landed on a
+dead branch and silently never reached master or the phase-008 plan copy. A
+manually-fired run then read its (stale) governance, correctly selected
+CONSOLE-004 as cloud-eligible, and claimed it — ten minutes from a
+vanilla-CSS redesign nobody wanted. Caught by the human noticing an
+unexpected active session; stopped with only a claim pushed; the amendment
+was cherry-picked onto the phase branch same-day.
+
+**Implications:** (1) The agent was blameless — reviewing the *system's*
+records, not the agent's behavior, found the bug; the second time
+(cf. ADV-STORE-006) the failure lived in day-side record handling. (2) New
+habit: amendments to an open PR are announced before the merge button is
+plausible, or go in a fresh PR — the merge race has now bitten twice
+(PR #11, PR #36). (3) A gate that read only merged state would have been
+immune; the claim-first design still contained the blast radius to one
+stale claim branch.

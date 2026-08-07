@@ -304,9 +304,66 @@ passes:
               App shell, status badges, card/table presentation via Tailwind
               v4 through dx's native integration; before/after screenshots
               are evidence.
+      - id: "phase-010"
+        title: "Dogfood trial (docs/dogfood/plan.md)"
+        order: 2
+        items:
+          - id: "ADV-GATEWAY-011"
+            advance_id: "ADV-GATEWAY-011"
+            title: "Investigation: cloud-routine connector reach to an external HTTPS MCP"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-GATEWAY-003"]
+            notes: >-
+              WORKSTATION — needs claude.ai routine config and a throwaway
+              public endpoint. De-risks the whole dogfood plan; findings land
+              in docs/tech-direction/mcp.md.
+          - id: "ADV-GATEWAY-012"
+            advance_id: "ADV-GATEWAY-012"
+            title: "Durable credential registry"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-GATEWAY-003", "ADV-INFRA-001"]
+            notes: >-
+              Cloud-eligible. TokenRegistry is in-memory today; grants must
+              survive restarts, issuance becomes a privileged authenticated
+              endpoint, fingerprints-only extends to durable rows.
+          - id: "ADV-INFRA-002"
+            advance_id: "ADV-INFRA-002"
+            title: "Hosted deployment: container image, TLS, supervision, daily backup"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-INFRA-001", "ADV-GATEWAY-011"]
+            notes: >-
+              WORKSTATION — provision a small always-on host (decision
+              2026-08-07), Caddy TLS in front of the loopback gateway,
+              compose supervision, daily backup, migrate the workstation
+              estate. Trial-grade by design.
+          - id: "ADV-STORE-008"
+            advance_id: "ADV-STORE-008"
+            title: "Real embedder in the deployed build (BGE-small-en-v1.5)"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-STORE-002", "ADV-INFRA-002"]
+            notes: >-
+              WORKSTATION — the model download is what the sandbox egress
+              blocks. Re-embed existing rows; golden-query smoke on the
+              deployed instance; the stub must announce itself wherever it
+              still runs.
+          - id: "ADV-INFRA-003"
+            advance_id: "ADV-INFRA-003"
+            title: "Dogfood cutover: enroll, credentials, harness wiring, memory discipline, measurement"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-GATEWAY-012", "ADV-INFRA-002", "ADV-STORE-008", "ADV-GATEWAY-009"]
+            notes: >-
+              WORKSTATION — the switch-flip: per-identity credentials
+              (cloud-opus, cloud-sonnet, shawn), MCP connectors on both
+              routines, memory discipline into cloud-agent-notes.md and
+              CLAUDE.local.md, measurement collection starts.
       - id: "phase-009"
         title: "Evaluations (quality, security, performance)"
-        order: 2
+        order: 3
         items:
           - id: "ADV-GATEWAY-006"
             advance_id: "ADV-GATEWAY-006"
