@@ -248,21 +248,21 @@ passes:
           - id: "ADV-STORE-005"
             advance_id: "ADV-STORE-005"
             title: "Enablement: synthetic memory corpus (test data for evaluations)"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-STORE-002"]
             notes: "Golden queries + leak-bait fixtures; deterministic seed/reset."
           - id: "ADV-GATEWAY-008"
             advance_id: "ADV-GATEWAY-008"
             title: "Enablement: evaluation harness (workload driver + recall-quality scorer)"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-GATEWAY-002", "ADV-STORE-005"]
             notes: "Proven with negative/positive control runs before any evaluation uses it."
           - id: "ADV-GATEWAY-009"
             advance_id: "ADV-GATEWAY-009"
             title: "Repo-bind enroll and landscape reads; unify the repo id spaces"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-GATEWAY-003"]
             notes: >-
@@ -273,7 +273,7 @@ passes:
           - id: "ADV-CORE-006"
             advance_id: "ADV-CORE-006"
             title: "Auth refusals join the access log"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-GATEWAY-001", "ADV-GATEWAY-003"]
             notes: >-
@@ -283,7 +283,7 @@ passes:
           - id: "ADV-CONSOLE-003"
             advance_id: "ADV-CONSOLE-003"
             title: "Live landscape updates: gateway event relay + console subscription"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-CONSOLE-001", "ADV-GATEWAY-001"]
             notes: >-
@@ -294,16 +294,16 @@ passes:
               scope resolution and append to the access log.
           - id: "ADV-CONSOLE-004"
             advance_id: "ADV-CONSOLE-004"
-            title: "Console visual design system (Tailwind preferred, vanilla CSS fallback)"
-            status: planned
+            title: "Console visual design system (Tailwind, workstation)"
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-CONSOLE-001"]
             notes: >-
-              First 'humans observe' surface gets a real visual design: app
-              shell, status badges, card/table presentation. Tailwind v4 via
-              dx's native integration if the sandbox can fetch the CLI;
-              committed vanilla stylesheet fallback otherwise — the outcome
-              is the spec, the vehicle is recorded honestly.
+              WORKSTATION — Tailwind's CLI is a blocked-download risk in the
+              sandbox, and visual design is verified by a human in a browser.
+              App shell, status badges, card/table presentation via Tailwind
+              v4 through dx's native integration; before/after screenshots
+              are evidence.
       - id: "phase-010"
         title: "Dogfood trial (docs/dogfood/plan.md)"
         order: 2

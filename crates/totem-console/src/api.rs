@@ -10,12 +10,17 @@
 //! `#[cfg(target_arch = "wasm32")]` on this module and `Cargo.toml`'s
 //! per-target `dioxus-web`/`gloo-net` dependencies.
 //!
-//! No live-query wiring yet (TD-009: the console must consume gateway
-//! events rather than open its own SurrealDB connection) — this is a
-//! documented gap, not an oversight; see `ADV-CONSOLE-001.md`'s Risk +
-//! Rollback section. Refresh here is manual (a button), not automatic.
+//! The landscape signal now also patches in place from the gateway's live
+//! relay (`GET /landscape/:repo/events`, ADV-CONSOLE-003) via
+//! [`subscribe_landscape_events`] — the gap `ADV-CONSOLE-001.md`'s Risk +
+//! Rollback section named. Refresh remains a working manual fallback: if the
+//! stream is unavailable (or the wasm32 `EventSource` API is absent — the
+//! browser-verification-required part of this task the advance body notes
+//! plainly), the console degrades to exactly the ADV-CONSOLE-001 behavior.
 
 use dioxus::prelude::*;
+use futures::StreamExt;
+use gloo_net::eventsource::futures::EventSource;
 use gloo_net::http::Request;
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use totem_core::{MemoryId, MemoryRecord, PromotionEvent, PromotionId, ReviewState};
@@ -23,7 +28,7 @@ use totem_core::{MemoryId, MemoryRecord, PromotionEvent, PromotionId, ReviewStat
 use crate::app::App;
 use crate::view_model::{
     AuditTrailViewModel, LandscapeViewModel, ViewModelError, parse_audit_trail, parse_landscape,
-    parse_memories, parse_promotion_queue, parse_uncertainty_queue,
+    parse_landscape_event, parse_memories, parse_promotion_queue, parse_uncertainty_queue,
 };
 
 /// `POST /recall`'s cap on this browser's own requests, in the absence of
@@ -240,9 +245,42 @@ pub async fn fetch_audit_trail(
     )?)
 }
 
+/// Subscribe to the gateway's live landscape relay for `repo` and patch
+/// `landscape` in place on every event, until the stream ends (the gateway
+/// closed it, or a malformed payload broke the connection) or this task is
+/// dropped (`use_future` cancels the previous run when `repo` changes, and
+/// every run when the component unmounts — Dioxus 0.6's own cancellation
+/// contract for the hook, not something this function manages itself).
+///
+/// `actor`/`session` are fixed rather than taken from the form: the relay's
+/// own access-log entries only need a stable subscriber identity, the same
+/// way `fetch_memories`'s `harness: "console"` is fixed rather than
+/// caller-supplied.
+async fn subscribe_landscape_events(repo: &str, landscape: &mut Signal<LandscapeViewModel>) {
+    let encoded = utf8_percent_encode(repo.trim(), NON_ALPHANUMERIC).to_string();
+    let url = format!("/landscape/{encoded}/events?actor=console&session=console-session");
+    let Ok(mut source) = EventSource::new(&url) else {
+        return;
+    };
+    let Ok(mut stream) = source.subscribe("landscape") else {
+        return;
+    };
+    while let Some(Ok((_event_type, message))) = stream.next().await {
+        let Some(data) = message.data().as_string() else {
+            continue;
+        };
+        if let Ok(view) = parse_landscape_event(&data) {
+            landscape.set(view);
+        }
+    }
+}
+
 /// The wasm entry point's root component: a repo/actor/project form over
-/// [`App`], with a manual "Refresh" button in place of the live-query
-/// auto-update the advance names as a stretch goal (see module docs).
+/// [`App`]. The landscape section updates live via
+/// [`subscribe_landscape_events`] (ADV-CONSOLE-003); the manual "Refresh"
+/// button remains as a fallback and is still the only update path for
+/// memories/promotions/uncertainty (ADV-CONSOLE-003's scope is the
+/// dashboard's landscape section — see the advance body).
 #[component]
 pub fn RootApp() -> Element {
     let mut repo = use_signal(|| "058-totem".to_string());
@@ -255,6 +293,17 @@ pub fn RootApp() -> Element {
     let promotions = use_signal(Vec::<PromotionEvent>::new);
     let uncertainty = use_signal(Vec::<MemoryRecord>::new);
     let audit = use_signal(|| Option::<AuditTrailViewModel>::None);
+
+    // Live landscape updates (ADV-CONSOLE-003): re-subscribes whenever
+    // `repo` changes, and `use_future` cancels the previous subscription's
+    // task for us — no manual EventSource lifecycle management here.
+    use_future(move || {
+        let repo_value = repo.read().clone();
+        let mut landscape = landscape;
+        async move {
+            subscribe_landscape_events(&repo_value, &mut landscape).await;
+        }
+    });
 
     let refresh = move || {
         let repo_value = repo.read().clone();
@@ -350,39 +399,64 @@ pub fn RootApp() -> Element {
         });
     };
 
+    let field = "rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none";
+    let label_cls = "flex items-center gap-2 text-xs font-medium text-slate-500";
+
     rsx! {
-        div { class: "totem-console__connect",
-            label { "Repo "
-                input {
-                    value: "{repo}",
-                    oninput: move |event| repo.set(event.value()),
+        // Inlined rather than linked: dx serves unknown paths as the SPA
+        // fallback, and the asset!() pipeline varies across dx versions —
+        // include_str! of the committed build works everywhere (16KB).
+        style { dangerous_inner_html: include_str!("../assets/tailwind.css") }
+        div { class: "min-h-screen bg-slate-50 text-slate-900 antialiased",
+        header { class: "totem-console__connect mb-8 border-b border-slate-200 bg-white shadow-sm",
+            div { class: "mx-auto flex max-w-5xl flex-wrap items-center gap-x-5 gap-y-3 px-6 py-4",
+                span { class: "mr-2 text-lg font-semibold tracking-tight text-indigo-700", "Totem" }
+                label { class: label_cls, "Repo"
+                    input {
+                        class: field,
+                        value: "{repo}",
+                        oninput: move |event| repo.set(event.value()),
+                    }
+                }
+                label { class: label_cls, "Actor"
+                    input {
+                        class: field,
+                        value: "{actor}",
+                        oninput: move |event| actor.set(event.value()),
+                    }
+                }
+                label { class: label_cls, "Project"
+                    input {
+                        class: field,
+                        value: "{project}",
+                        oninput: move |event| project.set(event.value()),
+                    }
+                }
+                button {
+                    class: "rounded-md bg-indigo-600 px-3.5 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-indigo-700",
+                    onclick: move |_| refresh(),
+                    "Refresh"
                 }
             }
-            label { "Actor "
-                input {
-                    value: "{actor}",
-                    oninput: move |event| actor.set(event.value()),
+            div { class: "totem-console__audit-lookup mx-auto flex max-w-5xl flex-wrap items-center gap-x-5 gap-y-3 px-6 pb-4",
+                label { class: label_cls, "Memory id"
+                    input {
+                        class: "{field} w-80 font-mono",
+                        value: "{audit_query}",
+                        oninput: move |event| audit_query.set(event.value()),
+                    }
+                }
+                button {
+                    class: "rounded-md border border-slate-300 bg-white px-3.5 py-1.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-100",
+                    onclick: move |_| lookup_audit(),
+                    "Look up audit trail"
                 }
             }
-            label { "Project "
-                input {
-                    value: "{project}",
-                    oninput: move |event| project.set(event.value()),
-                }
-            }
-            button { onclick: move |_| refresh(), "Refresh" }
             if let Some(message) = error.read().as_ref() {
-                p { class: "totem-console__error", "{message}" }
-            }
-        }
-        div { class: "totem-console__audit-lookup",
-            label { "Memory id "
-                input {
-                    value: "{audit_query}",
-                    oninput: move |event| audit_query.set(event.value()),
+                p { class: "totem-console__error mx-auto max-w-5xl px-6 pb-4 text-sm font-medium text-rose-700",
+                    "{message}"
                 }
             }
-            button { onclick: move |_| lookup_audit(), "Look up audit trail" }
         }
         App {
             landscape: landscape.read().clone(),
@@ -393,6 +467,7 @@ pub fn RootApp() -> Element {
             uncertainty: uncertainty.read().clone(),
             on_resolve_uncertainty,
             audit: audit.read().clone(),
+        }
         }
     }
 }

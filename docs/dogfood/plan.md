@@ -129,7 +129,7 @@ workstation track completes; the security evaluation then runs against the
 deployed, dogfooding system.
 
 Sequencing: 1 can run **now** (pure probe, parallel to phase-008). 2 is
-cloud-eligible and could slot into phase-008's tail or phase-009. 3–6 are the
+cloud-eligible and could slot into phase-008's tail or phase-009. 3–5 are the
 workstation track, in order, gated as §3.4 proposes. Console auth
 (ADV-GATEWAY-010, reserved) improves the human side but does not block agent
 dogfooding.
@@ -142,6 +142,6 @@ dogfooding.
    or accept earlier public exposure with strong tokens?
 3. **Identity model:** per-routine actors as proposed, or something finer
    (per-advance? per-session)?
-4. **Measurement:** is the §4.6 measurement set enough to answer "does Totem
+4. **Measurement:** is the ADV-INFRA-003 measurement set enough to answer "does Totem
    actually help" for the twin-experiment question, or should we design that
    properly first?

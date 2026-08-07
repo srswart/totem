@@ -349,7 +349,7 @@ async fn every_curator_action_appends_to_the_access_log() {
         .expect("the access log reads");
     let curator_entries: Vec<_> = entries
         .iter()
-        .filter(|entry| entry.harness == Harness::Curator)
+        .filter(|entry| entry.harness == Some(Harness::Curator))
         .collect();
     let endpoints: Vec<&str> = curator_entries
         .iter()
@@ -367,7 +367,8 @@ async fn every_curator_action_appends_to_the_access_log() {
     assert!(
         curator_entries
             .iter()
-            .all(|entry| entry.actor.to_string() == "totem-curator"),
+            .all(|entry| entry.actor.as_ref().map(|a| a.to_string())
+                == Some("totem-curator".to_string())),
     );
     assert_eq!(curator_entries[0].operation, AccessOperation::Recall);
     assert_eq!(curator_entries[0].result_count, Some(2));

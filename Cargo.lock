@@ -6408,6 +6408,7 @@ dependencies = [
  "dioxus",
  "dioxus-ssr",
  "dioxus-web",
+ "futures",
  "gloo-net",
  "percent-encoding",
  "serde",
@@ -6451,6 +6452,7 @@ name = "totem-gateway"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-stream",
  "axum",
  "chrono",
  "http-body-util",
@@ -6485,6 +6487,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "fastembed",
+ "futures",
  "serde",
  "surrealdb",
  "tempfile",

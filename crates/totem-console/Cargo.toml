@@ -43,6 +43,10 @@ totem-core = { path = "../totem-core" }
 # dependency graph entirely, rather than merely cfg-gating code that still
 # has to link.
 dioxus-web = "=0.6.3"
+# `eventsource` (the live landscape subscription, ADV-CONSOLE-003) is a
+# default feature; `.subscribe(..)` returns a `Stream`, driven with
+# `futures::StreamExt::next` below.
+futures.workspace = true
 gloo-net = "0.7"
 # Percent-encodes the `repo` path segment before it is interpolated into a
 # fetch URL (review feedback on PR #22): an untrimmed or slash-containing

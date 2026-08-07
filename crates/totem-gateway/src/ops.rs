@@ -22,9 +22,59 @@ use totem_core::{
 };
 use totem_store::{AdvanceView, PromotionOutcome, RecallQuery};
 
-use crate::auth::Caller;
+use crate::auth::{Caller, log_refusal};
 use crate::error::GatewayError;
 use crate::state::AppState;
+
+/// Refuse an identity this caller may not assert, appending one refusal entry
+/// to the access log when it does (ADV-CORE-006) — the single choke point
+/// every `ops` function's own `caller.authorize_identity` check now goes
+/// through, so a refusal is logged identically no matter which operation
+/// produced it.
+async fn authorize_identity(
+    state: &AppState,
+    caller: &Caller,
+    actor: &ActorId,
+    project: Option<&RepoId>,
+    teams: &[TeamId],
+    endpoint: &str,
+) -> Result<(), GatewayError> {
+    if let Err(error) = caller.authorize_identity(actor, project, teams) {
+        return Err(log_refusal(state, caller, error, endpoint).await);
+    }
+    Ok(())
+}
+
+/// Refuse a write into a scope this caller was not granted, logging the
+/// refusal the same way [`authorize_identity`] does.
+async fn authorize_scope(
+    state: &AppState,
+    caller: &Caller,
+    scope: &Scope,
+    endpoint: &str,
+) -> Result<(), GatewayError> {
+    if let Err(error) = caller.authorize_scope(scope) {
+        return Err(log_refusal(state, caller, error, endpoint).await);
+    }
+    Ok(())
+}
+
+/// Refuse a landscape enroll/read naming a different repo than this caller's
+/// credential, logging the refusal the same way [`authorize_identity`] does
+/// — [`crate::handlers::enroll`] and [`crate::handlers::landscape`]'s own
+/// `caller.authorize_repo` checks, which have no [`ScopeChain`] to resolve
+/// and so live outside the rest of this module's operations.
+pub(crate) async fn authorize_repo(
+    state: &AppState,
+    caller: &Caller,
+    requested: &RepoId,
+    endpoint: &str,
+) -> Result<(), GatewayError> {
+    if let Err(error) = caller.authorize_repo(requested) {
+        return Err(log_refusal(state, caller, error, endpoint).await);
+    }
+    Ok(())
+}
 
 /// Everything a save needs, independent of transport.
 #[derive(Debug, Clone)]
@@ -88,8 +138,16 @@ pub async fn save(
     caller: &Caller,
     endpoint: &str,
 ) -> Result<MemoryId, GatewayError> {
-    caller.authorize_identity(input.author.actor(), input.project.as_ref(), &input.teams)?;
-    caller.authorize_scope(&input.scope)?;
+    authorize_identity(
+        state,
+        caller,
+        input.author.actor(),
+        input.project.as_ref(),
+        &input.teams,
+        endpoint,
+    )
+    .await?;
+    authorize_scope(state, caller, &input.scope, endpoint).await?;
 
     let writer = ScopeChain::resolve(input.author.actor(), input.project.as_ref(), &input.teams);
 
@@ -140,7 +198,15 @@ pub async fn recall(
     caller: &Caller,
     endpoint: &str,
 ) -> Result<Vec<MemoryRecord>, GatewayError> {
-    caller.authorize_identity(&input.actor, input.project.as_ref(), &input.teams)?;
+    authorize_identity(
+        state,
+        caller,
+        &input.actor,
+        input.project.as_ref(),
+        &input.teams,
+        endpoint,
+    )
+    .await?;
 
     let reader = ScopeChain::resolve(&input.actor, input.project.as_ref(), &input.teams);
 
@@ -211,7 +277,15 @@ pub async fn feedback(
     caller: &Caller,
     endpoint: &str,
 ) -> Result<MemoryRecord, GatewayError> {
-    caller.authorize_identity(&input.actor, input.project.as_ref(), &input.teams)?;
+    authorize_identity(
+        state,
+        caller,
+        &input.actor,
+        input.project.as_ref(),
+        &input.teams,
+        endpoint,
+    )
+    .await?;
 
     let chain = ScopeChain::resolve(&input.actor, input.project.as_ref(), &input.teams);
     let record = state
@@ -286,8 +360,16 @@ pub async fn contest(
     // Authorized before the visibility probe below, not only inside the `save`
     // it delegates to: that probe is itself a read, and answering it for an
     // identity the caller may not assert would leak whether an id exists.
-    caller.authorize_identity(input.author.actor(), input.project.as_ref(), &input.teams)?;
-    caller.authorize_scope(&input.scope)?;
+    authorize_identity(
+        state,
+        caller,
+        input.author.actor(),
+        input.project.as_ref(),
+        &input.teams,
+        endpoint,
+    )
+    .await?;
+    authorize_scope(state, caller, &input.scope, endpoint).await?;
 
     let chain = ScopeChain::resolve(input.author.actor(), input.project.as_ref(), &input.teams);
     if state
@@ -390,6 +472,57 @@ pub async fn advance_status(
     Ok(state.store.landscape().advance(advance_id).await?)
 }
 
+/// Everything a landscape event-relay subscription needs, independent of
+/// transport (ADV-CONSOLE-003) — deliberately narrower than
+/// [`RecallInput`]/[`QueueReadInput`]: this route only ever serves the
+/// console's own live subscription (`crate::dto::LandscapeEventsQuery`'s own
+/// doc explains why `harness` is not a caller-supplied field here).
+#[derive(Debug, Clone)]
+pub struct LandscapeEventsInput {
+    /// The subscriber's own identity — the actor every relayed read is
+    /// logged under.
+    pub actor: ActorId,
+    /// The browser session subscribing.
+    pub session: SessionId,
+}
+
+/// Read one repo's current landscape view — unlogged.
+///
+/// Callers must log a read themselves once they know it will actually reach
+/// the caller (via [`log_landscape_read`]): [`crate::handlers::landscape`]
+/// and the relay's initial event both read this *before* authorizing the
+/// caller's repo binding (to learn the bound `git_repo` to check against),
+/// so logging here unconditionally would record a read for a request that
+/// is about to be refused.
+pub(crate) async fn landscape_view(
+    state: &AppState,
+    repo: &str,
+) -> Result<totem_store::LandscapeView, GatewayError> {
+    Ok(state.store.landscape().view(repo).await?)
+}
+
+/// Append one [`AccessOperation::Recall`] access-log entry for a landscape
+/// view the relay has just delivered (or is about to deliver) to an
+/// authorized subscriber — the "no unlogged access paths" invariant applied
+/// to a streaming read the same way [`recall`] applies it to a one-shot one.
+pub(crate) async fn log_landscape_read(
+    state: &AppState,
+    input: &LandscapeEventsInput,
+    endpoint: &str,
+) -> Result<(), GatewayError> {
+    let entry = AccessLogEntry::new(
+        input.actor.clone(),
+        Harness::Console,
+        input.session.clone(),
+        AccessOperation::Recall,
+        endpoint,
+        Utc::now(),
+    )
+    .with_result_count(1);
+    state.store.access_log().record(&entry).await?;
+    Ok(())
+}
+
 /// Everything a promotion proposal needs, independent of transport.
 #[derive(Debug, Clone)]
 pub struct ProposePromotionInput {
@@ -419,8 +552,16 @@ pub async fn propose_promotion(
     caller: &Caller,
     endpoint: &str,
 ) -> Result<PromotionOutcome, GatewayError> {
-    caller.authorize_identity(input.author.actor(), input.project.as_ref(), &input.teams)?;
-    caller.authorize_scope(&input.to)?;
+    authorize_identity(
+        state,
+        caller,
+        input.author.actor(),
+        input.project.as_ref(),
+        &input.teams,
+        endpoint,
+    )
+    .await?;
+    authorize_scope(state, caller, &input.to, endpoint).await?;
 
     let proposer = ScopeChain::resolve(input.author.actor(), input.project.as_ref(), &input.teams);
 
@@ -486,7 +627,15 @@ pub async fn promotion_pending(
     caller: &Caller,
     endpoint: &str,
 ) -> Result<Vec<PromotionEvent>, GatewayError> {
-    caller.authorize_identity(&input.actor, input.project.as_ref(), &input.teams)?;
+    authorize_identity(
+        state,
+        caller,
+        &input.actor,
+        input.project.as_ref(),
+        &input.teams,
+        endpoint,
+    )
+    .await?;
     let reader = ScopeChain::resolve(&input.actor, input.project.as_ref(), &input.teams);
 
     let pending = state.store.promotions().pending(&reader).await?;
@@ -502,7 +651,15 @@ pub async fn pending_uncertainty(
     caller: &Caller,
     endpoint: &str,
 ) -> Result<Vec<MemoryRecord>, GatewayError> {
-    caller.authorize_identity(&input.actor, input.project.as_ref(), &input.teams)?;
+    authorize_identity(
+        state,
+        caller,
+        &input.actor,
+        input.project.as_ref(),
+        &input.teams,
+        endpoint,
+    )
+    .await?;
     let reader = ScopeChain::resolve(&input.actor, input.project.as_ref(), &input.teams);
 
     let pending = state
@@ -565,7 +722,15 @@ pub async fn proposed_record(
     caller: &Caller,
     endpoint: &str,
 ) -> Result<Option<MemoryRecord>, GatewayError> {
-    caller.authorize_identity(&input.actor, input.project.as_ref(), &input.teams)?;
+    authorize_identity(
+        state,
+        caller,
+        &input.actor,
+        input.project.as_ref(),
+        &input.teams,
+        endpoint,
+    )
+    .await?;
     let reviewer = ScopeChain::resolve(&input.actor, input.project.as_ref(), &input.teams);
 
     let record = state
@@ -645,7 +810,15 @@ async fn decide_promotion(
     endpoint: &str,
     approve: bool,
 ) -> Result<PromotionEvent, GatewayError> {
-    caller.authorize_identity(input.author.actor(), input.project.as_ref(), &input.teams)?;
+    authorize_identity(
+        state,
+        caller,
+        input.author.actor(),
+        input.project.as_ref(),
+        &input.teams,
+        endpoint,
+    )
+    .await?;
     let approver = ScopeChain::resolve(input.author.actor(), input.project.as_ref(), &input.teams);
 
     let now = Utc::now();
@@ -720,7 +893,15 @@ pub async fn resolve_uncertainty(
     caller: &Caller,
     endpoint: &str,
 ) -> Result<MemoryRecord, GatewayError> {
-    caller.authorize_identity(&input.actor, input.project.as_ref(), &input.teams)?;
+    authorize_identity(
+        state,
+        caller,
+        &input.actor,
+        input.project.as_ref(),
+        &input.teams,
+        endpoint,
+    )
+    .await?;
     let resolver = ScopeChain::resolve(&input.actor, input.project.as_ref(), &input.teams);
 
     let record = state
@@ -796,7 +977,15 @@ pub async fn audit_trail(
     caller: &Caller,
     endpoint: &str,
 ) -> Result<AuditTrail, GatewayError> {
-    caller.authorize_identity(&input.actor, input.project.as_ref(), &input.teams)?;
+    authorize_identity(
+        state,
+        caller,
+        &input.actor,
+        input.project.as_ref(),
+        &input.teams,
+        endpoint,
+    )
+    .await?;
     let reader = ScopeChain::resolve(&input.actor, input.project.as_ref(), &input.teams);
 
     let Some(record) = state.store.memories().get(&reader, input.memory_id).await? else {

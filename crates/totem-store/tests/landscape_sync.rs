@@ -19,6 +19,7 @@ fn snapshot() -> LandscapeSnapshot {
         repo: RepoArtifact {
             id: "058-totem".to_string(),
             name: "058 Totem".to_string(),
+            git_repo: "srswart/totem".to_string(),
         },
         systems: vec![SystemArtifact {
             id: "058-totem-core".to_string(),
@@ -79,6 +80,10 @@ async fn a_sync_writes_the_repo_system_component_and_advance() {
         view.repo.as_ref().map(|repo| repo.name.as_str()),
         Some("058 Totem")
     );
+    assert_eq!(
+        view.repo.as_ref().and_then(|repo| repo.git_repo.as_deref()),
+        Some("srswart/totem"),
+    );
     assert_eq!(view.systems.len(), 1);
     assert_eq!(view.systems[0].id, "058-totem-core");
     assert_eq!(view.systems[0].name, "058 Totem Core");
@@ -102,6 +107,30 @@ async fn a_sync_writes_the_repo_system_component_and_advance() {
     let mut impacted = advance.components.clone();
     impacted.sort();
     assert_eq!(impacted, vec!["core".to_string(), "store".to_string()]);
+}
+
+#[tokio::test]
+async fn repo_reads_the_same_row_view_does_without_the_full_landscape() {
+    let store = common::store().await;
+    let landscape = store.landscape();
+    landscape
+        .sync(&snapshot(), "test")
+        .await
+        .expect("sync succeeds");
+
+    let repo = landscape
+        .repo("058-totem")
+        .await
+        .expect("repo lookup succeeds")
+        .expect("the repo was synced");
+    assert_eq!(repo.name, "058 Totem");
+    assert_eq!(repo.git_repo.as_deref(), Some("srswart/totem"));
+
+    let unsynced = landscape
+        .repo("nothing-here")
+        .await
+        .expect("repo lookup succeeds");
+    assert!(unsynced.is_none());
 }
 
 #[tokio::test]

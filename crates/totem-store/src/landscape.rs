@@ -16,7 +16,10 @@
 //! component that dropped an owner, or an advance that no longer impacts a
 //! component, must not survive a re-sync.
 
+use std::pin::Pin;
+
 use chrono::{DateTime, Utc};
+use futures::stream::{Stream, StreamExt, select_all};
 use serde::{Deserialize, Serialize};
 use surrealdb::types::{Number, Object, RecordId, RecordIdKey, SurrealValue, Value};
 use surrealdb::{Connection, Surreal};
@@ -34,10 +37,21 @@ const SYNC_RUN_TABLE: &str = "sync_run";
 /// One repo, as the landscape mirrors it (`arrive/registry.yaml`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RepoArtifact {
-    /// The repo id (`registry.repo_id`).
+    /// The ARRIVE registry id (`registry.repo_id`), e.g. `"058-totem"` — what
+    /// this repo's `repo` record is keyed by, and what
+    /// `GET /landscape/:repo` and `totem_landscape` take as their `repo`
+    /// parameter. Left unchanged by ADV-GATEWAY-009 so existing landscape
+    /// readers (the console, this repo's own dogfood tests) keep working.
     pub id: String,
     /// Its display name.
     pub name: String,
+    /// The `owner/name` GitHub identity (`registry.git_repo`) — the same id
+    /// space a gateway credential's `repo` binding speaks (`totem-gateway`'s
+    /// `TokenGrant::repo`). A credential's binding is checked against this
+    /// field, not against [`RepoArtifact::id`]: the two are different id
+    /// spaces (ADV-GATEWAY-003's disclosed residual), and this field is
+    /// ADV-GATEWAY-009's unification of them.
+    pub git_repo: String,
 }
 
 /// One system within a repo (`arrive/systems/<id>/system.yaml`).
@@ -144,6 +158,11 @@ pub struct RepoView {
     pub id: String,
     /// Its display name.
     pub name: String,
+    /// The `owner/name` GitHub identity ([`RepoArtifact::git_repo`]). `None`
+    /// only for a row synced before ADV-GATEWAY-009 and not yet re-synced —
+    /// re-running `sync` converges it, the same idempotent convergence every
+    /// other landscape field already gets.
+    pub git_repo: Option<String>,
 }
 
 /// One system, as read back from the landscape.
@@ -240,6 +259,36 @@ fn opt_string(value: Option<String>) -> Value {
     value.map_or(Value::None, |value| value.into_value())
 }
 
+/// One "something changed" pulse from [`LandscapeRepository::watch`]
+/// (ADV-CONSOLE-003).
+///
+/// Carries no payload, and cannot: the underlying live-query notification's
+/// raw body names whichever repo the mutated row happens to belong to, not
+/// necessarily the one a given subscriber cares about, so forwarding it here
+/// would let a caller filter *above* the store — the same hazard
+/// scope-isolated memory reads must avoid, on the landscape's own repo
+/// boundary instead of a memory scope. A subscriber that wants to know
+/// *what* changed re-reads through [`LandscapeRepository::view`] — the same
+/// store-enforced, repo-scoped read every other landscape consumer already
+/// uses.
+pub struct LandscapeChanges {
+    inner: Pin<Box<dyn Stream<Item = StoreResult<()>> + Send>>,
+}
+
+impl LandscapeChanges {
+    /// The next pulse, or `None` once every underlying live query has closed
+    /// (the connection dropped).
+    pub async fn next(&mut self) -> Option<StoreResult<()>> {
+        self.inner.next().await
+    }
+}
+
+impl std::fmt::Debug for LandscapeChanges {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LandscapeChanges").finish_non_exhaustive()
+    }
+}
+
 /// Landscape reads and writes: the only way to mirror or query an enrolled
 /// repo's ARRIVE artifacts.
 #[derive(Debug)]
@@ -276,7 +325,8 @@ impl<'a, C: Connection> LandscapeRepository<'a, C> {
 
         vars.insert("repo_id", repo_thing(&snapshot.repo.id));
         vars.insert("repo_name", snapshot.repo.name.clone());
-        sql.push_str("UPSERT $repo_id CONTENT { name: $repo_name };\n");
+        vars.insert("repo_git_repo", snapshot.repo.git_repo.clone());
+        sql.push_str("UPSERT $repo_id CONTENT { name: $repo_name, git_repo: $repo_git_repo };\n");
 
         for (index, system) in snapshot.systems.iter().enumerate() {
             let id_key = format!("sys{index}_id");
@@ -360,6 +410,27 @@ impl<'a, C: Connection> LandscapeRepository<'a, C> {
         })
     }
 
+    /// One repo's own row, or `None` if it has never synced — the lean read
+    /// a caller checking `git_repo` ownership needs (`handlers::enroll`'s
+    /// rebind guard, ADV-GATEWAY-009 follow-up). Unlike [`view`](Self::view),
+    /// this issues exactly one query rather than four: a caller with no use
+    /// for the systems/components/advances a full view materializes
+    /// shouldn't pay for them.
+    pub async fn repo(&self, repo_id: &str) -> StoreResult<Option<RepoView>> {
+        let repo = repo_thing(repo_id);
+        let mut response = self
+            .db
+            .query("SELECT * FROM $repo")
+            .bind(("repo", repo))
+            .await?
+            .check()?;
+
+        objects(response.take(0)?)?
+            .first()
+            .map(|row| repo_view(repo_id, row))
+            .transpose()
+    }
+
     /// The merged landscape view for one repo, in one round trip (G2).
     pub async fn view(&self, repo_id: &str) -> StoreResult<LandscapeView> {
         let repo = repo_thing(repo_id);
@@ -381,12 +452,7 @@ impl<'a, C: Connection> LandscapeRepository<'a, C> {
 
         let repo_view = objects(response.take(0)?)?
             .first()
-            .map(|row| -> StoreResult<RepoView> {
-                Ok(RepoView {
-                    id: repo_id.to_string(),
-                    name: row::string(row, "name")?,
-                })
-            })
+            .map(|row| repo_view(repo_id, row))
             .transpose()?;
 
         let systems = objects(response.take(1)?)?
@@ -467,6 +533,43 @@ impl<'a, C: Connection> LandscapeRepository<'a, C> {
             .transpose()
     }
 
+    /// Subscribe to every change across the landscape's own tables (`repo`,
+    /// `system`, `component`, `advance`) — the trigger the ADV-CONSOLE-003
+    /// gateway relay wakes on to know when to re-read a repo's
+    /// [`view`](Self::view). One `LIVE SELECT` per table, merged into a
+    /// single pulse stream.
+    ///
+    /// Deliberately unfiltered by repo: `component`/`advance` are two hops
+    /// from the field that would need filtering (`component.system.repo`,
+    /// `advance.system.repo`), and a live query's `WHERE` clause filters the
+    /// mutated row's own fields, not a dereferenced link two hops away. That
+    /// is safe here specifically because [`LandscapeChanges`] carries no
+    /// payload — see its own doc for why forwarding a raw notification would
+    /// be the "filtered above the store" hazard this relay must avoid, and
+    /// why an unfiltered *trigger* is not that hazard.
+    ///
+    /// Projects `id` only, not `*` (Copilot review, PR #46): every field
+    /// beyond it is discarded unread by the `map` below, so selecting the
+    /// full row would only add notification payload size and parse work for
+    /// data nothing here ever looks at.
+    pub async fn watch(&self) -> StoreResult<LandscapeChanges> {
+        let mut streams: Vec<Pin<Box<dyn Stream<Item = StoreResult<()>> + Send>>> = Vec::new();
+        for table in [REPO_TABLE, SYSTEM_TABLE, COMPONENT_TABLE, ADVANCE_TABLE] {
+            let stream = self
+                .db
+                .query(format!("LIVE SELECT id FROM {table}"))
+                .await?
+                .check()?
+                .stream::<Value>(0)?;
+            streams.push(Box::pin(
+                stream.map(|item| item.map(|_notification| ()).map_err(StoreError::from)),
+            ));
+        }
+        Ok(LandscapeChanges {
+            inner: Box::pin(select_all(streams)),
+        })
+    }
+
     /// Every sync run recorded so far, oldest first — the provenance trail
     /// `arrive-sync.yaml` requires ("every ingestion records sync
     /// provenance").
@@ -505,6 +608,17 @@ fn objects(rows: Value) -> StoreResult<Vec<Object>> {
                 .map_err(|_| StoreError::Row("query row is not an object".to_string()))
         })
         .collect()
+}
+
+/// Parses one `repo` row into a [`RepoView`] — shared by [`LandscapeRepository::repo`]
+/// and [`LandscapeRepository::view`] so the two queries can't drift on what a
+/// repo row means.
+fn repo_view(repo_id: &str, row: &Object) -> StoreResult<RepoView> {
+    Ok(RepoView {
+        id: repo_id.to_string(),
+        name: row::string(row, "name")?,
+        git_repo: opt_row_string(row, "git_repo")?,
+    })
 }
 
 /// The key half of a `record<...>`-linked field (e.g. `system` on
@@ -564,5 +678,97 @@ fn count(row: &Object, key: &str) -> StoreResult<usize> {
         Some(Value::Number(Number::Int(value))) => usize::try_from(*value)
             .map_err(|_| malformed(format!("`{key}` is out of range for usize: {value}")).into()),
         other => Err(malformed(format!("`{key}` is not a non-negative integer: {other:?}")).into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::*;
+    use crate::store::Store;
+
+    fn unified_snapshot() -> LandscapeSnapshot {
+        LandscapeSnapshot {
+            repo: RepoArtifact {
+                id: "058-totem".to_string(),
+                name: "058 Totem".to_string(),
+                git_repo: "srswart/totem".to_string(),
+            },
+            systems: Vec::new(),
+            components: Vec::new(),
+            advances: Vec::new(),
+        }
+    }
+
+    /// ADV-GATEWAY-009's migration story: a `repo` row written by a
+    /// pre-unification sync has no `git_repo` field at all (the shape every
+    /// already-enrolled repo's row has today). Re-syncing must converge it
+    /// onto the unified id — the same idempotent convergence `sync`'s own doc
+    /// already promises every other landscape field — rather than requiring a
+    /// bespoke migration step.
+    #[tokio::test]
+    async fn a_repo_synced_before_id_unification_gains_git_repo_on_the_next_sync() {
+        let store = Store::in_memory().await.expect("embedded engine connects");
+        store.migrate().await.expect("migrations apply");
+        let db = store.connection();
+
+        db.query("UPSERT $id CONTENT { name: $name };")
+            .bind(("id", repo_thing("058-totem")))
+            .bind(("name", "058 Totem"))
+            .await
+            .expect("pre-unification seed executes")
+            .check()
+            .expect("pre-unification seed has no per-statement errors");
+
+        let landscape = LandscapeRepository::new(db);
+        let pre_migration = landscape.view("058-totem").await.expect("view succeeds");
+        assert_eq!(
+            pre_migration.repo.expect("repo present").git_repo,
+            None,
+            "the seeded row has no git_repo, matching a real pre-unification row"
+        );
+
+        landscape
+            .sync(&unified_snapshot(), "test")
+            .await
+            .expect("sync succeeds");
+
+        let post_migration = landscape.view("058-totem").await.expect("view succeeds");
+        assert_eq!(
+            post_migration
+                .repo
+                .expect("repo present")
+                .git_repo
+                .as_deref(),
+            Some("srswart/totem"),
+        );
+    }
+
+    /// The relay's trigger (ADV-CONSOLE-003): a `watch()` subscriber must see
+    /// a pulse for a committed `sync`, and must not see one before the sync
+    /// happens. `verify_live_query`'s sentinel-drain pattern
+    /// (`totem-store-spike`) proves the *absence* of a spurious pulse without
+    /// depending on a quiet period; the timeout here proves the opposite
+    /// failure mode — a subscriber that never wakes for a real committed
+    /// write — deterministically instead of hanging the test suite.
+    #[tokio::test]
+    async fn a_committed_sync_wakes_a_watch_subscriber() {
+        let store = Store::in_memory().await.expect("embedded engine connects");
+        store.migrate().await.expect("migrations apply");
+        let landscape = LandscapeRepository::new(store.connection());
+
+        let mut changes = landscape.watch().await.expect("watch subscribes");
+
+        landscape
+            .sync(&unified_snapshot(), "test")
+            .await
+            .expect("sync commits");
+
+        tokio::time::timeout(Duration::from_secs(5), changes.next())
+            .await
+            .expect("a committed sync must wake the watch subscriber before the timeout")
+            .expect("the watch stream must not close on a live subscriber")
+            .expect("a committed write must not surface as a stream error");
     }
 }

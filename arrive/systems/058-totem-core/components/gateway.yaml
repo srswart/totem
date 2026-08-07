@@ -21,3 +21,4 @@ interfaces:
 invariants:
   - "Cloud credentials are least-privilege: tokens bound to repo + scope"
   - "Every read and write appends to the access log (who, what, when, via which tool, in which session)"
+  - "Every refused request appends to the access log too (why, via which route, and the presented credential's fingerprint if any) — ADV-CORE-006"

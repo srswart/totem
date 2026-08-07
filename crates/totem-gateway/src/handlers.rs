@@ -22,25 +22,30 @@
 //! request, rather than defaulting to a trusted caller.
 
 use axum::Json;
-use axum::extract::{Extension, Path, State};
-use totem_core::{MemoryId, PromotionId};
+use axum::body::{Body, Bytes};
+use axum::extract::{Extension, Path, Query, State};
+use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE};
+use axum::response::{IntoResponse, Response};
+use totem_core::{MemoryId, PromotionId, RepoId};
 
-use crate::auth::Caller;
+use crate::auth::{AuthError, Caller, log_refusal};
 use crate::dto::{
     AdvanceLogRequest, AdvanceLogResponse, AdvanceStatusResponse, AuditRequest, AuditTrailResponse,
     ContestRequest, ContestResponse, EnrollRequest, EnrollResponse, FeedbackRequest,
-    FeedbackResponse, LandscapeView, PromotionDecisionRequest, PromotionDecisionResponse,
-    PromotionQueueRequest, PromotionQueueResponse, ProposePromotionRequest,
-    ProposePromotionResponse, ProposedRecordRequest, ProposedRecordResponse, RecallRequest,
-    RecallResponse, ResolveUncertaintyRequest, ResolveUncertaintyResponse, SaveRequest,
-    SaveResponse, UncertaintyQueueRequest, UncertaintyQueueResponse,
+    FeedbackResponse, LandscapeEventsQuery, LandscapeView, PromotionDecisionRequest,
+    PromotionDecisionResponse, PromotionQueueRequest, PromotionQueueResponse,
+    ProposePromotionRequest, ProposePromotionResponse, ProposedRecordRequest,
+    ProposedRecordResponse, RecallRequest, RecallResponse, ResolveUncertaintyRequest,
+    ResolveUncertaintyResponse, SaveRequest, SaveResponse, UncertaintyQueueRequest,
+    UncertaintyQueueResponse,
 };
 use crate::error::GatewayError;
 use crate::ops::{
-    self, AdvanceLogInput, AuditInput, ContestInput, FeedbackInput, PromotionDecisionInput,
-    ProposePromotionInput, ProposedRecordInput, QueueReadInput, RecallInput,
-    ResolveUncertaintyInput, SaveInput,
+    self, AdvanceLogInput, AuditInput, ContestInput, FeedbackInput, LandscapeEventsInput,
+    PromotionDecisionInput, ProposePromotionInput, ProposedRecordInput, QueueReadInput,
+    RecallInput, ResolveUncertaintyInput, SaveInput,
 };
+use crate::sse;
 use crate::state::AppState;
 
 fn parse_memory_id(id: &str) -> Result<MemoryId, GatewayError> {
@@ -178,8 +183,64 @@ pub(crate) async fn advance_status(
 
 pub(crate) async fn enroll(
     State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
     Json(request): Json<EnrollRequest>,
 ) -> Result<Json<EnrollResponse>, GatewayError> {
+    let git_repo = RepoId::new(request.snapshot.repo.git_repo.clone()).map_err(|error| {
+        GatewayError::InvalidRequest(format!("snapshot repo.git_repo: {error}"))
+    })?;
+    ops::authorize_repo(&state, &caller, &git_repo, "/enroll").await?;
+
+    // Validated once, up front: `arrive_id` is used both as the store's
+    // lookup/write key below and as the auth error's `requested` field, so a
+    // malformed value (empty, or padded with whitespace) is refused here
+    // rather than silently syncing an ambiguous row or, in the refusal path,
+    // being papered over with the caller's own repo (Copilot review, PR #44).
+    let arrive_id = RepoId::new(request.snapshot.repo.id.clone())
+        .map_err(|error| GatewayError::InvalidRequest(format!("snapshot repo.id: {error}")))?;
+
+    // The check above only proves the *submitted* snapshot names the
+    // caller's own repo — `sync` upserts by `snapshot.repo.id` (the ARRIVE
+    // id) and unconditionally overwrites `git_repo`, so without this second
+    // check a bound credential could take over an ARRIVE id another repo
+    // already owns just by asserting its own git_repo in the snapshot. A
+    // `Caller::Bound` credential may only enroll an ARRIVE id that has never
+    // synced (first claim) or one whose stored git_repo already matches its
+    // own binding (an ordinary re-sync); an existing row with no confirmed
+    // git_repo yet is refused the same way an unconfirmed landscape read is
+    // — `Caller::Trusted` is exempt, matching every other authorize_* check.
+    //
+    // `landscape().repo(...)` rather than `view(...)`: this only needs the
+    // repo row's own `git_repo`, not the full systems/components/advances a
+    // landscape view materializes (Copilot review, PR #44).
+    if let Caller::Bound(grant, _) = &caller {
+        let existing = state
+            .store
+            .landscape()
+            .repo(&arrive_id.to_string())
+            .await
+            .map_err(GatewayError::from)?;
+        if let Some(existing) = existing {
+            let owner = existing
+                .git_repo
+                .map(RepoId::new)
+                .transpose()
+                .map_err(|error| GatewayError::InvalidRequest(error.to_string()))?;
+            if owner.as_ref() != Some(&grant.repo) {
+                return Err(log_refusal(
+                    &state,
+                    &caller,
+                    AuthError::RepoNotBound {
+                        bound: grant.repo.clone(),
+                        requested: arrive_id,
+                    },
+                    "/enroll",
+                )
+                .await);
+            }
+        }
+    }
+
     let summary = state
         .store
         .landscape()
@@ -194,18 +255,98 @@ pub(crate) async fn enroll(
     }))
 }
 
+/// The path names the ARRIVE registry id, not the credential's own
+/// `owner/name` id space — resolve the landscape's own bound identity
+/// (falling back to the raw path when the repo has never synced, or its
+/// row predates ADV-GATEWAY-009) so a `Caller::Bound` credential has
+/// something to check against either way. A `Caller::Trusted` caller's
+/// `authorize_repo` never inspects this value. Shared by [`landscape`] and
+/// [`landscape_events`] (ADV-CONSOLE-003) so the two cannot silently diverge
+/// on which repo a view's binding names.
+fn landscape_git_repo(view: &LandscapeView, repo: &str) -> Result<RepoId, GatewayError> {
+    let git_repo = view
+        .repo
+        .as_ref()
+        .and_then(|repo_view| repo_view.git_repo.clone())
+        .unwrap_or_else(|| repo.to_string());
+    RepoId::new(git_repo).map_err(|error| GatewayError::InvalidRequest(error.to_string()))
+}
+
 pub(crate) async fn landscape(
     State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
     Path(repo): Path<String>,
 ) -> Result<Json<LandscapeView>, GatewayError> {
-    let view = state
-        .store
-        .landscape()
-        .view(&repo)
-        .await
-        .map_err(GatewayError::from)?;
+    let view = ops::landscape_view(&state, &repo).await?;
+    let git_repo = landscape_git_repo(&view, &repo)?;
+    ops::authorize_repo(&state, &caller, &git_repo, "/landscape/{repo}").await?;
 
     Ok(Json(view))
+}
+
+/// `GET /landscape/:repo/events` (ADV-CONSOLE-003): the live relay the
+/// console subscribes to instead of polling [`landscape`] behind a manual
+/// Refresh button.
+///
+/// Authorizes exactly like [`landscape`] — same pre-authorization read to
+/// learn the bound `git_repo`, same [`ops::authorize_repo`] check, so a
+/// caller who cannot read a repo's landscape cannot subscribe to its changes
+/// either. Once authorized, every view this stream ever emits — the initial
+/// one and every one a [`totem_store::LandscapeRepository::watch`] pulse
+/// triggers — is a fresh, store-enforced [`ops::landscape_view`] read, and
+/// every one is logged via [`ops::log_landscape_read`]: no unlogged access
+/// path (`gateway.yaml`'s invariant) just because the read arrived over a
+/// stream instead of a request/response round trip.
+///
+/// The whole relay lives inside the response body's own stream: there is no
+/// task spawned to drive it, so a disconnected client (the body stream
+/// dropped) tears the subscription down for free, rather than leaking a
+/// background task the way a `tokio::spawn`-per-subscriber design would.
+pub(crate) async fn landscape_events(
+    State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
+    Path(repo): Path<String>,
+    Query(query): Query<LandscapeEventsQuery>,
+) -> Result<Response, GatewayError> {
+    let endpoint = "/landscape/{repo}/events";
+    let input = LandscapeEventsInput {
+        actor: query.actor,
+        session: query.session,
+    };
+
+    let view = ops::landscape_view(&state, &repo).await?;
+    let git_repo = landscape_git_repo(&view, &repo)?;
+    ops::authorize_repo(&state, &caller, &git_repo, endpoint).await?;
+    ops::log_landscape_read(&state, &input, endpoint).await?;
+
+    let mut changes = state.store.landscape().watch().await?;
+
+    let body = async_stream::stream! {
+        yield Ok::<Bytes, std::convert::Infallible>(sse::frame("landscape", &view));
+        while let Some(pulse) = changes.next().await {
+            if pulse.is_err() {
+                break;
+            }
+            match ops::landscape_view(&state, &repo).await {
+                Ok(view) => {
+                    if ops::log_landscape_read(&state, &input, endpoint).await.is_err() {
+                        break;
+                    }
+                    yield Ok(sse::frame("landscape", &view));
+                }
+                Err(_) => break,
+            }
+        }
+    };
+
+    Ok((
+        [
+            (CONTENT_TYPE, "text/event-stream"),
+            (CACHE_CONTROL, "no-cache"),
+        ],
+        Body::from_stream(body),
+    )
+        .into_response())
 }
 
 pub(crate) async fn propose_promotion(
