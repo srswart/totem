@@ -134,10 +134,13 @@ async fn main() {
     // gateway survives the restart a deploy performs. The bootstrap
     // credential is layered on top so a data directory that has lost its
     // credentials — or a brand-new one — is still reachable.
-    match state.store.credentials().active().await {
+    let durable = match state.store.credentials().active().await {
         Ok(rows) => match state.tokens.load_from(rows) {
-            Ok(0) => {}
-            Ok(loaded) => println!("loaded {loaded} durable credential(s)"),
+            Ok(0) => 0,
+            Ok(loaded) => {
+                println!("loaded {loaded} durable credential(s)");
+                loaded
+            }
             Err(error) => {
                 eprintln!("refusing to start: stored credentials are unreadable: {error}");
                 std::process::exit(1);
@@ -149,7 +152,7 @@ async fn main() {
             eprintln!("refusing to start: cannot read stored credentials: {error}");
             std::process::exit(1);
         }
-    }
+    };
 
     match bootstrap(&state.tokens) {
         Ok(Some((grant, fingerprint))) => {
@@ -179,10 +182,15 @@ async fn main() {
                 }
             }
         }
-        Ok(None) => eprintln!(
+        // Only warn when the gateway genuinely cannot be reached. Before
+        // ADV-GATEWAY-012 an absent bootstrap meant an empty registry; now
+        // durable grants may already have filled it, and warning anyway told
+        // an operator their credentials were gone when they were not.
+        Ok(None) if durable == 0 => eprintln!(
             "warning: no credential is registered, so every request will be refused with 401. \
              Set {TOKEN_VAR}/{REPO_VAR}/{SCOPE_VAR}/{ACTOR_VAR} to seed one."
         ),
+        Ok(None) => {}
         Err(error) => {
             eprintln!("refusing to start: {error}");
             std::process::exit(1);
