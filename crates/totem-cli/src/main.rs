@@ -85,15 +85,18 @@ async fn main() -> anyhow::Result<()> {
             // message under output that looks like progress.
             let home = totem_cli::home_dir()?;
             let store_path = totem_cli::credential::default_store_path(&home);
-            let repo_id = match repo {
-                Some(repo) => repo,
-                None => totem_cli::enroll::repo_id_of(&arrive_root)?,
-            };
             let credential = totem_cli::auth::resolve_token(
                 token.as_deref(),
                 std::env::var("TOTEM_TOKEN").ok().as_deref(),
                 &store_path,
-                &repo_id,
+                // Lazy: parsing `arrive/` to learn the repo identity is only
+                // needed if the store is consulted (PR #67 review).
+                || match repo {
+                    Some(repo) => Ok(repo),
+                    None => totem_cli::enroll::repo_id_of(&arrive_root).map_err(|error| {
+                        totem_cli::auth::ResolveError::RepoIdentity(error.to_string())
+                    }),
+                },
             )?;
             eprintln!(
                 "authenticating as the credential from {}",

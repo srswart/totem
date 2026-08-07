@@ -81,18 +81,31 @@ pub enum ResolveError {
     /// The local store exists but could not be read.
     #[error(transparent)]
     Store(#[from] CredentialError),
+    /// The repo identity could not be determined — only needed when the
+    /// store is being consulted.
+    #[error("cannot determine which repo this credential should be for: {0}")]
+    RepoIdentity(String),
 }
 
-/// Resolve the credential to present for `repo`.
+/// Resolve the credential to present.
 ///
 /// `flag` and `env` are passed in rather than read here so the precedence is
 /// testable without mutating process state.
-pub fn resolve_token(
+///
+/// `repo` is a **closure**, not a value: the repo identity comes from parsing
+/// the `arrive/` tree, and that is only needed when the store is consulted.
+/// Taking it eagerly would do real work before deciding whether it was
+/// needed — exactly what resolving credentials early is meant to avoid
+/// (raised in review of PR #67).
+pub fn resolve_token<F>(
     flag: Option<&str>,
     env: Option<&str>,
     store_path: &Path,
-    repo: &str,
-) -> Result<ResolvedCredential, ResolveError> {
+    repo: F,
+) -> Result<ResolvedCredential, ResolveError>
+where
+    F: FnOnce() -> Result<String, ResolveError>,
+{
     if let Some(token) = flag.filter(|value| !value.is_empty()) {
         return Ok(ResolvedCredential {
             token: token.to_string(),
@@ -106,9 +119,11 @@ pub fn resolve_token(
         });
     }
 
-    // Only a credential bound to this repo will do. Presenting one issued for
-    // another repo would earn a confusing 403 from the gateway in place of an
-    // actionable local error.
+    // Only now is the repo identity needed, and only now is it computed.
+    // A credential bound to another repo will not do: presenting one would
+    // earn a confusing 403 from the gateway in place of an actionable local
+    // error.
+    let repo = repo()?;
     let stored = credential::load(store_path)?;
     stored
         .into_iter()
@@ -118,7 +133,7 @@ pub fn resolve_token(
             source: CredentialSource::Store,
         })
         .ok_or_else(|| ResolveError::NoCredential {
-            repo: repo.to_string(),
+            repo: repo.clone(),
             store: store_path.display().to_string(),
         })
 }

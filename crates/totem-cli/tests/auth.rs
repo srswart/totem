@@ -8,12 +8,18 @@
 
 use std::path::PathBuf;
 
+use tempfile::TempDir;
 use totem_cli::auth::{CredentialSource, ResolveError, resolve_token};
 
-fn store_with(token: &str, repo: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("totem-cli-auth-{}", uuid::Uuid::new_v4()));
-    std::fs::create_dir_all(&dir).expect("temp dir");
-    let path = dir.join("credentials.json");
+/// A credential store in a temp directory that removes itself.
+///
+/// The `TempDir` is returned alongside the path and must be held for the
+/// duration of the test: dropping it deletes the directory. Writing under a
+/// bare `env::temp_dir()` left `totem-cli-auth-*` directories to accumulate
+/// across runs (raised in review of PR #67).
+fn store_with(token: &str, repo: &str) -> (TempDir, PathBuf) {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let path = dir.path().join("credentials.json");
     let credential = serde_json::json!([{
         "token": token,
         "repo": repo,
@@ -22,15 +28,26 @@ fn store_with(token: &str, repo: &str) -> PathBuf {
         "issued_at": "2026-08-07T00:00:00Z",
     }]);
     std::fs::write(&path, credential.to_string()).expect("write store");
-    path
+    (dir, path)
+}
+
+/// The repo identity a test resolves to, as the lazy closure the resolver
+/// now takes.
+fn repo(id: &str) -> impl FnOnce() -> Result<String, ResolveError> + '_ {
+    move || Ok(id.to_string())
 }
 
 #[test]
 fn an_explicit_flag_wins_over_everything() {
-    let store = store_with("from-store", "srswart/totem");
+    let (_dir, store) = store_with("from-store", "srswart/totem");
 
-    let resolved = resolve_token(Some("from-flag"), Some("from-env"), &store, "srswart/totem")
-        .expect("resolves");
+    let resolved = resolve_token(
+        Some("from-flag"),
+        Some("from-env"),
+        &store,
+        repo("srswart/totem"),
+    )
+    .expect("resolves");
 
     assert_eq!(resolved.token, "from-flag");
     assert_eq!(resolved.source, CredentialSource::Flag);
@@ -38,10 +55,10 @@ fn an_explicit_flag_wins_over_everything() {
 
 #[test]
 fn the_environment_wins_over_the_store() {
-    let store = store_with("from-store", "srswart/totem");
+    let (_dir, store) = store_with("from-store", "srswart/totem");
 
     let resolved =
-        resolve_token(None, Some("from-env"), &store, "srswart/totem").expect("resolves");
+        resolve_token(None, Some("from-env"), &store, repo("srswart/totem")).expect("resolves");
 
     assert_eq!(resolved.token, "from-env");
     assert_eq!(resolved.source, CredentialSource::Environment);
@@ -49,9 +66,9 @@ fn the_environment_wins_over_the_store() {
 
 #[test]
 fn the_store_supplies_a_credential_matching_the_repo() {
-    let store = store_with("from-store", "srswart/totem");
+    let (_dir, store) = store_with("from-store", "srswart/totem");
 
-    let resolved = resolve_token(None, None, &store, "srswart/totem").expect("resolves");
+    let resolved = resolve_token(None, None, &store, repo("srswart/totem")).expect("resolves");
 
     assert_eq!(resolved.token, "from-store");
     assert_eq!(resolved.source, CredentialSource::Store);
@@ -61,9 +78,9 @@ fn the_store_supplies_a_credential_matching_the_repo() {
 fn a_credential_for_another_repo_is_not_used() {
     // Silently presenting a credential bound to a different repo would earn a
     // confusing 403 from the gateway instead of an actionable local error.
-    let store = store_with("from-store", "someone/else");
+    let (_dir, store) = store_with("from-store", "someone/else");
 
-    let outcome = resolve_token(None, None, &store, "srswart/totem");
+    let outcome = resolve_token(None, None, &store, repo("srswart/totem"));
 
     assert!(
         matches!(outcome, Err(ResolveError::NoCredential { .. })),
@@ -76,9 +93,9 @@ fn no_credential_fails_loudly_and_says_how_to_get_one() {
     // The failure this advance most needs to prevent: a CLI that quietly
     // proceeds unauthenticated works against a loopback gateway and fails
     // confusingly against the real one.
-    let store = store_with("irrelevant", "someone/else");
+    let (_dir, store) = store_with("irrelevant", "someone/else");
 
-    let error = resolve_token(None, None, &store, "srswart/totem")
+    let error = resolve_token(None, None, &store, repo("srswart/totem"))
         .expect_err("must refuse rather than proceed anonymously");
     let message = error.to_string();
 
@@ -93,8 +110,8 @@ fn no_credential_fails_loudly_and_says_how_to_get_one() {
 
 #[test]
 fn a_resolved_credential_never_renders_its_token() {
-    let store = store_with("super-secret-token", "srswart/totem");
-    let resolved = resolve_token(None, None, &store, "srswart/totem").expect("resolves");
+    let (_dir, store) = store_with("super-secret-token", "srswart/totem");
+    let resolved = resolve_token(None, None, &store, repo("srswart/totem")).expect("resolves");
 
     let rendered = format!("{resolved:?}");
     assert!(
