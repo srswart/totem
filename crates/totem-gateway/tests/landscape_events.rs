@@ -18,7 +18,7 @@ use axum::body::Body;
 use axum::http::{Request, Response, StatusCode};
 use http_body_util::BodyExt;
 use serde_json::{Value, json};
-use totem_gateway::{AppState, TokenRegistry};
+use totem_gateway::AppState;
 use tower::ServiceExt;
 
 const REPO: &str = "srswart/totem";
