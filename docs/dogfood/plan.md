@@ -131,7 +131,13 @@ routines already use for other connectors) — which requires the gateway's
 | 4 | ADV-STORE-008 — real embedder in deployment | fastembed/BGE in the hosted build; re-embed; golden-query smoke | WORKSTATION |
 | 5 | ADV-INFRA-003 — cutover | Enroll, per-identity credentials, connector + harness wiring, memory discipline, measurement | WORKSTATION |
 
-All five are authored into **phase-010 ("Dogfood trial")**, sequenced before
+Split 2026-08-07 once four had landed: **phase-010 ("deployed authenticated
+gateway")** holds the completed server-side work — connector probe, durable
+credentials, OAuth resource server, Fly deployment — and **phase-011
+("clients, quality, cutover")** holds what remains: recall payload trimming,
+CLI auth, console login, the real embedder, and the cutover itself. The split
+lets the deployed gateway reach master rather than waiting on the whole
+trial. Originally all five were authored into **phase-010**, sequenced before
 the evaluations phase (now order 3) so the trial starts as soon as the
 workstation track completes; the security evaluation then runs against the
 deployed, dogfooding system.

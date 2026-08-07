@@ -305,7 +305,7 @@ passes:
               v4 through dx's native integration; before/after screenshots
               are evidence.
       - id: "phase-010"
-        title: "Dogfood trial (docs/dogfood/plan.md)"
+        title: "Dogfood trial: deployed authenticated gateway"
         order: 2
         items:
           - id: "ADV-GATEWAY-011"
@@ -356,6 +356,10 @@ passes:
               `fly secrets`, rmcp `allowed_hosts` configuration, and an unauthenticated
               /health route. Public resource URI `https://totem-dev.fly.dev` is the WorkOS
               Resource Indicator.
+      - id: "phase-011"
+        title: "Dogfood trial: clients, quality, cutover"
+        order: 3
+        items:
           - id: "ADV-GATEWAY-014"
             advance_id: "ADV-GATEWAY-014"
             title: "Trim recall payloads: embeddings out of client responses"
@@ -416,7 +420,7 @@ passes:
               CLAUDE.local.md, measurement collection starts.
       - id: "phase-009"
         title: "Evaluations (quality, security, performance)"
-        order: 3
+        order: 4
         items:
           - id: "ADV-GATEWAY-006"
             advance_id: "ADV-GATEWAY-006"
