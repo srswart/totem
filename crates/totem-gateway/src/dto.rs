@@ -449,6 +449,25 @@ pub struct AuditRequest {
     pub turn: Option<u32>,
 }
 
+/// `GET /landscape/:repo/events` (ADV-CONSOLE-003) — a query string, not a
+/// JSON body: the browser's native `EventSource` can only issue a bare `GET`,
+/// with no custom body or header. `harness` is not a caller-supplied field
+/// here the way it is on every POST endpoint above: this route only ever
+/// serves the console's own live subscription, so the handler fixes it to
+/// [`totem_core::Harness::Console`] rather than trusting a query parameter
+/// for it — a `Harness` value does not round-trip through a flat query string
+/// anyway (its `Other(String)` variant is not representable as one key).
+#[derive(Debug, Clone, Deserialize)]
+pub struct LandscapeEventsQuery {
+    /// The subscriber's own identity — the actor every relayed read is
+    /// logged under.
+    pub actor: ActorId,
+    /// The browser session subscribing, so its relayed reads share one
+    /// access-log session the same way any other console call's `session`
+    /// field does.
+    pub session: SessionId,
+}
+
 /// `POST /audit/:id` response.
 #[derive(Debug, Clone, Serialize)]
 pub struct AuditTrailResponse {
