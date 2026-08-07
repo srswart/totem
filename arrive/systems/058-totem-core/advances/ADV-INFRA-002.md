@@ -80,8 +80,9 @@ After this advance:
 - **Secrets via `fly secrets set`**, never in `fly.toml`: the bootstrap
   credential and, once ADV-GATEWAY-013 lands, the OAuth issuer/JWKS
   configuration. `fly.toml` holds only non-secret configuration.
-- **`TOTEM_MCP_ALLOWED_HOSTS=totem-dev.fly.dev`** — MCP-012 means the
-  deployment refuses its own public hostname without this.
+- **rmcp `allowed_hosts` widened to `totem-dev.fly.dev`.** rmcp defaults to
+  loopback-only; configure `StreamableHttpServerConfig.allowed_hosts` (via env
+  var or config) for the public Fly hostname.
 - **An unauthenticated health endpoint.** Fly health checks need a route that
   answers without credentials, and today every route is authenticated
   (the same class of problem MCP-014 found for OAuth discovery). Add a
