@@ -311,7 +311,7 @@ passes:
           - id: "ADV-GATEWAY-011"
             advance_id: "ADV-GATEWAY-011"
             title: "Investigation: cloud-routine connector reach to an external HTTPS MCP"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-GATEWAY-003"]
             notes: >-

@@ -51,12 +51,15 @@ routines already use for other connectors) — which requires the gateway's
   Standard answer: a reverse proxy (Caddy) terminating TLS in front of the
   loopback gateway, on a small domain. The single-owner invariant is
   unaffected — the proxy is a client, not a store owner.
-- **Probe first.** docs/tech-direction/mcp.md verified the transport
-  end-to-end in-sandbox but could NOT verify each harness's outbound
-  connector reach from primary sources. Before building anything: attach a
-  trivial HTTPS MCP endpoint as a connector to a test routine and prove a
-  cloud run can call one tool through it. One afternoon; de-risks the whole
-  plan.
+- **Probe executed 2026-08-07 (ADV-GATEWAY-011) — and it changed the plan.**
+  claude.ai connectors are **OAuth-only**: no static bearer can be
+  configured, and Dynamic Client Registration against Totem fails
+  (MCP-013). The deployment therefore needs an **OAuth front** —
+  Cloudflare Access or `oauth2-proxy` in front of the gateway is the
+  recommended shape; Totem's own repo+scope+actor credentials stay as they
+  are, behind it. Also: the OAuth discovery documents must sit outside the
+  auth layer (MCP-014), and public hostnames must be named via
+  `TOTEM_MCP_ALLOWED_HOSTS` (MCP-012, shipped).
 
 ### 3.2 Credentials that survive and identities that mean something
 
