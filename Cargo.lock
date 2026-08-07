@@ -6600,17 +6600,21 @@ dependencies = [
 name = "totem-console"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "chrono",
  "dioxus",
  "dioxus-ssr",
  "dioxus-web",
  "futures",
+ "getrandom 0.3.4",
  "gloo-net",
  "percent-encoding",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror 2.0.19",
  "totem-core",
+ "web-sys",
 ]
 
 [[package]]

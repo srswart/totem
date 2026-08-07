@@ -94,6 +94,35 @@ pub(crate) async fn health() -> &'static str {
     "ok"
 }
 
+/// `GET /console/config`: what the console needs to start a sign-in
+/// (ADV-GATEWAY-010).
+///
+/// Unauthenticated by necessity — a signed-out browser has no credential and
+/// this is what tells it how to get one — and by content: an issuer, a
+/// **public** OAuth client id, a redirect URI and a resource identifier.
+/// Nothing here is secret; the client *secret* is never sent to a browser,
+/// which is the entire reason the console uses PKCE.
+///
+/// 404 when the deployment has no OAuth configured, so an API-only gateway
+/// says "no sign-in here" rather than offering a broken one.
+pub(crate) async fn console_config(
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let (Some(verifier), Some(client_id), Some(redirect_uri)) = (
+        state.oauth.as_ref(),
+        state.console_client_id.as_ref(),
+        state.console_redirect_uri.as_ref(),
+    ) else {
+        return Err(StatusCode::NOT_FOUND);
+    };
+    Ok(Json(serde_json::json!({
+        "issuer": verifier.issuer(),
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "resource": verifier.resource(),
+    })))
+}
+
 /// `GET /.well-known/oauth-protected-resource`: RFC 9728 metadata.
 ///
 /// Unauthenticated by necessity (MCP-014) and by design: the document names

@@ -13,3 +13,4 @@ pub mod view_model;
 
 #[cfg(target_arch = "wasm32")]
 pub mod api;
+pub mod auth;

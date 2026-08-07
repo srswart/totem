@@ -156,6 +156,13 @@ async fn main() {
         None => println!("console: not served (API only)"),
     }
 
+    state.console_client_id = std::env::var("TOTEM_CONSOLE_CLIENT_ID")
+        .ok()
+        .filter(|value| !value.is_empty());
+    state.console_redirect_uri = std::env::var("TOTEM_CONSOLE_REDIRECT_URI")
+        .ok()
+        .filter(|value| !value.is_empty());
+
     state.oauth = totem_gateway::oauth_from_env();
     match state.oauth.as_ref() {
         Some(verifier) => println!("oauth: resource server for {}", verifier.metadata_url()),
