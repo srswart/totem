@@ -269,7 +269,7 @@ async fn advance_status_reads_a_synced_advance_by_id() {
             &router,
             "/enroll",
             json!({
-                "repo": { "id": "058-totem", "name": "Totem" },
+                "repo": { "id": "058-totem", "name": "Totem", "git_repo": "srswart/totem" },
                 "systems": [{ "id": "058-totem-core", "name": "Totem Core" }],
                 "components": [{
                     "id": "gateway",

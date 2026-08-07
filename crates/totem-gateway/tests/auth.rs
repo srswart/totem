@@ -82,6 +82,14 @@ fn post(path: &str, token: Option<&str>, body: Value) -> Request<Body> {
         .expect("request builds")
 }
 
+fn get(path: &str, token: Option<&str>) -> Request<Body> {
+    let mut builder = Request::builder().method("GET").uri(path);
+    if let Some(token) = token {
+        builder = builder.header("authorization", format!("Bearer {token}"));
+    }
+    builder.body(Body::empty()).expect("request builds")
+}
+
 async fn body_text(response: Response<Body>) -> String {
     let bytes = response
         .into_body()
@@ -120,6 +128,21 @@ fn recall_body(actor: &str, project: Option<&str>, teams: Vec<&str>) -> Value {
         "harness": "claude_code",
         "session": "sess-1",
         "turn": null,
+    })
+}
+
+/// An `/enroll` body naming `arrive_id` as the ARRIVE registry id and
+/// `git_repo` as the `owner/name` GitHub identity — the two id spaces
+/// ADV-GATEWAY-009 unifies. Empty systems/components/advances: these tests
+/// are about the repo binding, not the sync content `tests/enroll.rs` already
+/// covers.
+fn enroll_body(arrive_id: &str, git_repo: &str) -> Value {
+    json!({
+        "repo": { "id": arrive_id, "name": "Totem", "git_repo": git_repo },
+        "systems": [],
+        "components": [],
+        "advances": [],
+        "source": "test:enroll",
     })
 }
 
@@ -464,6 +487,122 @@ async fn a_credential_cannot_be_issued_for_a_scope_it_does_not_own() {
 }
 
 // ---------------------------------------------------------------------------
+// Repo binding: `/enroll` and `GET /landscape/:repo` (ADV-GATEWAY-009).
+//
+// Before this advance, both routes were authenticated but not repo-bound —
+// any valid credential could enroll or read any repo's landscape, an
+// enumeration vector ADV-GATEWAY-003 disclosed and left open. These tests
+// prove the refusal, plus a control proving the bound repo still round-trips.
+// ---------------------------------------------------------------------------
+
+const ARRIVE_ID: &str = "058-totem";
+
+#[tokio::test]
+async fn enrolling_a_snapshot_naming_another_repo_is_refused() {
+    let (router, tokens) = app().await;
+    let token = project_token(&tokens);
+
+    let response = send(
+        &router,
+        post(
+            "/enroll",
+            Some(&token),
+            enroll_body(ARRIVE_ID, OTHER_REPO),
+        ),
+    )
+    .await;
+    assert_eq!(
+        response.status(),
+        StatusCode::FORBIDDEN,
+        "a credential bound to one repo enrolling a snapshot for another is the enumeration \
+         vector this advance closes"
+    );
+}
+
+#[tokio::test]
+async fn enrolling_a_snapshot_for_the_bound_repo_succeeds() {
+    let (router, tokens) = app().await;
+    let token = project_token(&tokens);
+
+    let response = send(
+        &router,
+        post("/enroll", Some(&token), enroll_body(ARRIVE_ID, REPO)),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn reading_another_repo_s_landscape_is_refused() {
+    let (router, tokens) = app().await;
+    let owner_token = project_token(&tokens);
+    assert_eq!(
+        send(
+            &router,
+            post("/enroll", Some(&owner_token), enroll_body(ARRIVE_ID, REPO)),
+        )
+        .await
+        .status(),
+        StatusCode::OK,
+        "seeding the landscape this test then tries to read as someone else"
+    );
+
+    let other_token = tokens
+        .issue(OTHER_REPO, &format!("project:{OTHER_REPO}"), ADA, None)
+        .expect("a coherent binding for the other repo issues");
+    let response = send(
+        &router,
+        get(&format!("/landscape/{ARRIVE_ID}"), Some(&other_token)),
+    )
+    .await;
+    assert_eq!(
+        response.status(),
+        StatusCode::FORBIDDEN,
+        "no route can enumerate other repos' landscapes, regardless of the ARRIVE id vs. \
+         owner/name id space a caller tries to name it in"
+    );
+}
+
+#[tokio::test]
+async fn reading_the_bound_repo_s_landscape_succeeds() {
+    let (router, tokens) = app().await;
+    let token = project_token(&tokens);
+    assert_eq!(
+        send(&router, post("/enroll", Some(&token), enroll_body(ARRIVE_ID, REPO)))
+            .await
+            .status(),
+        StatusCode::OK,
+    );
+
+    let response = send(&router, get(&format!("/landscape/{ARRIVE_ID}"), Some(&token))).await;
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "a credential reading the landscape it enrolled must still round-trip"
+    );
+    let body = body_text(response).await;
+    assert!(body.contains(ARRIVE_ID), "got: {body}");
+}
+
+#[tokio::test]
+async fn a_bound_token_cannot_confirm_a_never_synced_repo_s_binding() {
+    let (router, tokens) = app().await;
+    let token = project_token(&tokens);
+
+    let response = send(
+        &router,
+        get("/landscape/never-synced", Some(&token)),
+    )
+    .await;
+    assert_eq!(
+        response.status(),
+        StatusCode::FORBIDDEN,
+        "an unconfirmed binding refuses just as certainly as a real mismatch — otherwise a \
+         bound token could probe which ARRIVE ids exist by watching for a 200 vs. 403"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // MCP over streamable HTTP: the transport cloud harnesses actually require.
 // ---------------------------------------------------------------------------
 
@@ -644,6 +783,34 @@ async fn a_token_bound_to_one_repo_cannot_name_another_over_streamable_http() {
     assert!(
         outcome.is_err(),
         "a repo-bound token writing another repo's project scope over MCP: {outcome:?}"
+    );
+
+    client.cancel().await.expect("clean shutdown");
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn totem_landscape_refuses_a_repo_this_token_cannot_confirm_over_streamable_http() {
+    let server = Server::start().await;
+    let token = project_token(&server.tokens);
+    let client = server.client(Some(&token)).await.expect("initialize");
+
+    // The REST surface (`tests/auth.rs`'s
+    // `a_bound_token_cannot_confirm_a_never_synced_repo_s_binding`) and this
+    // MCP tool share the same `handlers::landscape`/`totem_landscape`
+    // refusal rule, not two implementations of it — proven here the same way
+    // `a_token_bound_to_one_repo_cannot_name_another_over_streamable_http`
+    // proves the write side over MCP rather than assuming it from REST alone.
+    let outcome = client
+        .call_tool(
+            CallToolRequestParams::new("totem_landscape")
+                .with_arguments(object(json!({ "repo": "never-synced" }))),
+        )
+        .await;
+
+    assert!(
+        outcome.is_err(),
+        "a repo-bound token reading a landscape it cannot confirm over MCP: {outcome:?}"
     );
 
     client.cancel().await.expect("clean shutdown");
