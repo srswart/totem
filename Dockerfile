@@ -23,8 +23,12 @@ RUN cargo build --release -p totem-gateway --features rocksdb
 # The console bundle (ADV-GATEWAY-010), built in its own stage so a console
 # change does not invalidate the gateway's (much longer) compile.
 FROM rust:1.96-slim-bookworm AS console
+# dioxus-cli links against OpenSSL; without these its build fails with
+# "Could not find directory of OpenSSL installation". This layer sits before
+# `COPY . .` so Docker caches the CLI build across deploys — a source change
+# does not recompile it.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        curl ca-certificates \
+        curl ca-certificates pkg-config libssl-dev build-essential \
     && rm -rf /var/lib/apt/lists/*
 RUN rustup target add wasm32-unknown-unknown
 RUN cargo install dioxus-cli --version 0.7.3 --locked
