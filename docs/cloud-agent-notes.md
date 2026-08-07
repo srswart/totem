@@ -63,6 +63,43 @@ Implementing without working ARRIVE commands produces ungoverned changes and is 
 
 Do NOT run authenticated commands: no `arrive sync`, no `arrive platform *`, no `arrive auth`. Everything you need (doctor, info, status, score, check, plan, template render, draft, log) works offline.
 
+## Step 2.5 — Recall from Totem before reading anything (trial, v1)
+
+This project uses its own product. A shared, durable memory lives at
+`https://totem-dev.fly.dev`, and your routine should have it attached as an
+MCP connector. If the Totem tools are not available to you, note that in your
+report and continue — the trial is new and a missing connector is a finding,
+not a reason to stop.
+
+**Recall before Step 3, not after.** Query the advance id you are about to
+implement and the components it touches. If a memory contradicts a governance
+document, that contradiction is the most valuable thing you will learn this
+run: report it, and prefer the document while saying plainly that the two
+disagree.
+
+## Step 9.5 — Save what the next run needs (trial, v1)
+
+Before your journey report, save to `project:srswart/totem`:
+
+- **A decision and its reasoning**, especially one that closed off
+  alternatives.
+- **A dead end** — what you tried that did not work, and why. The highest
+  value memory and the most often skipped, because failing at something feels
+  less worth recording than finishing it. The next run repeats it otherwise.
+- **A correction to a spec**, when an advance or tech-direction record turned
+  out to be wrong.
+- **A constraint discovered by running something**, that no amount of reading
+  would have revealed.
+
+**Never save**: a summary of your diff (git has it), advance status or scores
+(ARRIVE has them), or anything resembling a credential. The test is whether
+the memory would change what a future run *does*.
+
+Use `totem_feedback` when a recalled memory actually changed what you did, or
+misled you — the value loop ranks by use and outcome and has no other signal.
+
+Detail, categories and scope rules: `.claude/skills/totem-memory/SKILL.md`.
+
 ## Step 3 — Read the governance context
 
 Read in this order:

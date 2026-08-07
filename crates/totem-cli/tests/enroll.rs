@@ -12,6 +12,16 @@ use totem_cli::enroll::{self, EnrollError};
 use totem_gateway::AppState;
 use totem_store::Store;
 
+/// A credential for the enroll calls under test. ADV-CLI-002 made the
+/// argument mandatory precisely so a caller cannot forget it; these tests
+/// assert the landscape round trip, not the auth path (see `tests/auth.rs`).
+fn test_credential() -> totem_cli::auth::ResolvedCredential {
+    totem_cli::auth::ResolvedCredential {
+        token: "test-token".to_string(),
+        source: totem_cli::auth::CredentialSource::Flag,
+    }
+}
+
 fn arrive_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../arrive")
 }
@@ -44,9 +54,15 @@ async fn enrolling_this_repo_against_a_real_gateway_populates_its_landscape() {
     let (gateway_url, store) = spawn_gateway().await;
     let client = reqwest::Client::new();
 
-    let summary = enroll::enroll(&client, &gateway_url, &arrive_root(), "test:enroll")
-        .await
-        .expect("enroll succeeds");
+    let summary = enroll::enroll(
+        &client,
+        &gateway_url,
+        &arrive_root(),
+        "test:enroll",
+        &test_credential(),
+    )
+    .await
+    .expect("enroll succeeds");
     assert_eq!(summary.systems, 1);
     assert!(summary.advances >= 23);
 
@@ -74,6 +90,7 @@ async fn enrolling_against_an_unreachable_gateway_reports_plainly() {
         &format!("http://{addr}"),
         &arrive_root(),
         "test:enroll",
+        &test_credential(),
     )
     .await
     .expect_err("nothing is listening");
@@ -90,6 +107,7 @@ async fn enrolling_a_missing_arrive_directory_is_reported_plainly() {
         &gateway_url,
         Path::new("/nonexistent/totem-cli-fixture"),
         "test:enroll",
+        &test_credential(),
     )
     .await
     .expect_err("a missing /arrive/ directory cannot be ingested");

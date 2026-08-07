@@ -237,6 +237,44 @@ passes:
               deferred as unassigned gaps (see ADV-CONSOLE-002.md's Scope
               Correction).
 
+      - id: "phase-012"
+        title: "Deferred residuals: restore drill, MSRV, build caching"
+        order: 4
+        items:
+          - id: "ADV-INFRA-005"
+            advance_id: "ADV-INFRA-005"
+            title: "Verify the backup: restore a snapshot into a working gateway"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-INFRA-002"]
+            notes: >-
+              WORKSTATION — INFRA-002's one unmet requirement. A backup never
+              restored is a hope, and the estate now holds real memories.
+              Verify by recall, not by exit code; record the timing an
+              operator would need mid-incident.
+          - id: "ADV-CORE-007"
+            advance_id: "ADV-CORE-007"
+            title: "Correct the workspace MSRV"
+            status: planned
+            owner: "058-totem"
+            dependencies: []
+            notes: >-
+              Cloud-eligible. Cargo.toml declares 1.85; the dependency graph
+              needs 1.94. A false statement in the manifest, exposed only
+              when a container was pinned to the declared value.
+          - id: "ADV-INFRA-006"
+            advance_id: "ADV-INFRA-006"
+            title: "Cache dependency builds so deploys are minutes, not quarter-hours"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-INFRA-002"]
+            notes: >-
+              WORKSTATION — every deploy recompiles SurrealDB and RocksDB
+              (10-15 min), which made a flaky network expensive and will make
+              DEP-001's double-deploy check tedious enough to skip. Measure
+              the improvement and prove the cache busts on a dependency
+              change.
+
   - id: "pass-006"
     title: "Pass 6: Evaluation and hardening"
     order: 6
@@ -363,7 +401,7 @@ passes:
           - id: "ADV-GATEWAY-014"
             advance_id: "ADV-GATEWAY-014"
             title: "Trim recall payloads: embeddings out of client responses"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-GATEWAY-002"]
             notes: >-
@@ -371,10 +409,23 @@ passes:
               deployed gateway: recall returns 384 floats per record to a
               caller that pays per token and cannot use them. Recall is the
               most frequent call in the trial, so the cost compounds.
+          - id: "ADV-GATEWAY-015"
+            advance_id: "ADV-GATEWAY-015"
+            title: "MCP tool calls acknowledge, or fail — never neither"
+            status: done
+            owner: "058-totem"
+            dependencies: ["ADV-GATEWAY-013"]
+            notes: >-
+              Cloud-eligible. GATEWAY-013's residual: a connector save
+              completed server-side while the client waited forever. An agent
+              that sees no ack retries, so the failure mode is silent
+              duplicate memories — it corrupts the trial's data and its
+              measurement while looking like a UI glitch. Diagnose before
+              fixing; test the way a client calls, over HTTP.
           - id: "ADV-CLI-002"
             advance_id: "ADV-CLI-002"
             title: "CLI authenticates to the gateway"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-GATEWAY-012"]
             notes: >-
@@ -386,16 +437,17 @@ passes:
           - id: "ADV-GATEWAY-010"
             advance_id: "ADV-GATEWAY-010"
             title: "Console on the gateway: static hosting + AuthKit browser login"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-GATEWAY-013", "ADV-INFRA-002", "ADV-CONSOLE-004"]
             notes: >-
-              Two gaps found while deploying INFRA-002: the console is not in
-              the image at all, and it sends no credential so it cannot talk
-              to the deployed gateway. Ships the wasm bundle from the gateway
-              (same origin, no proxy) and adds AuthKit browser login via PKCE,
-              reusing GATEWAY-013's validation path. Retires
-              ADV-CONSOLE-001's free-text-actor risk.
+              Done 2026-08-08. WORKSTATION: the evidence is a human signing
+              in, which no sandbox can produce. Deviation on record — the
+              browser cannot call AuthKit's token endpoint (permissive CORS
+              preflight, no header on the actual response), so the code
+              exchange relays through POST /console/token on our own origin.
+              Scored 85 (Red) and was not split; the seam was serving vs
+              sign-in.
           - id: "ADV-STORE-008"
             advance_id: "ADV-STORE-008"
             title: "Real embedder in the deployed build (BGE-small-en-v1.5)"
@@ -407,12 +459,25 @@ passes:
               blocks. Re-embed existing rows; golden-query smoke on the
               deployed instance; the stub must announce itself wherever it
               still runs.
+          - id: "ADV-INFRA-004"
+            advance_id: "ADV-INFRA-004"
+            title: "Memory discipline: standalone rules and a Totem skill (trial v1)"
+            status: done
+            owner: "058-totem"
+            dependencies: ["ADV-GATEWAY-013"]
+            notes: >-
+              Cloud-eligible. INFRA-003 planned to put the memory discipline
+              in CLAUDE.local.md — local-only, never synced, invisible to
+              Cursor and to any other developer. The repo's own
+              arrive/agent-rules + `arrive sync agent-rules` pipeline already
+              reaches Claude Code, Cursor and skills from one source; this
+              uses it. Must land before the cutover.
           - id: "ADV-INFRA-003"
             advance_id: "ADV-INFRA-003"
             title: "Dogfood cutover: enroll, credentials, harness wiring, memory discipline, measurement"
             status: planned
             owner: "058-totem"
-            dependencies: ["ADV-GATEWAY-012", "ADV-GATEWAY-013", "ADV-INFRA-002", "ADV-STORE-008", "ADV-GATEWAY-009"]
+            dependencies: ["ADV-GATEWAY-012", "ADV-GATEWAY-013", "ADV-INFRA-002", "ADV-STORE-008", "ADV-GATEWAY-009", "ADV-CLI-002"]
             notes: >-
               WORKSTATION — the switch-flip: per-identity credentials
               (cloud-opus, cloud-sonnet, shawn), MCP connectors on both
@@ -420,7 +485,7 @@ passes:
               CLAUDE.local.md, measurement collection starts.
       - id: "phase-009"
         title: "Evaluations (quality, security, performance)"
-        order: 4
+        order: 5
         items:
           - id: "ADV-GATEWAY-006"
             advance_id: "ADV-GATEWAY-006"

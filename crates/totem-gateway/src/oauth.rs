@@ -137,6 +137,19 @@ impl OAuthVerifier {
         })
     }
 
+    /// The authorization server this deployment trusts.
+    pub fn issuer(&self) -> &str {
+        &self.issuer
+    }
+
+    /// The canonical resource identifier a token must be audienced for.
+    pub fn resource(&self) -> &str {
+        self.audiences
+            .first()
+            .map(String::as_str)
+            .unwrap_or_default()
+    }
+
     /// Where this server's metadata document lives, absolute — the value
     /// RFC 9728 §5.1 wants in the `resource_metadata` parameter of a 401.
     pub fn metadata_url(&self) -> String {

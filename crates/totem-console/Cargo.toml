@@ -36,6 +36,13 @@ thiserror.workspace = true
 # `totem-store` is not a dependency: its `LandscapeView` has no `Deserialize`
 # and pulls in `surrealdb`, which a wasm32-unknown-unknown crate must not.
 totem-core = { path = "../totem-core" }
+# The PKCE helpers (ADV-GATEWAY-010) are pure and therefore host-testable —
+# a SHA-256 challenge, base64url without padding, and URL construction — so
+# their dependencies belong here rather than under the wasm target.
+sha2 = "0.10"
+base64 = "0.22"
+getrandom = "0.3"
+percent-encoding = "2"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 # Only ever exercised from the browser (`src/api.rs`, `src/main.rs`); a
@@ -48,10 +55,12 @@ dioxus-web = "=0.6.3"
 # `futures::StreamExt::next` below.
 futures.workspace = true
 gloo-net = "0.7"
+# Randomness in a browser comes from the Web Crypto API.
+getrandom = { version = "0.3", features = ["wasm_js"] }
+web-sys = { version = "0.3", features = ["Window", "Storage", "Location"] }
 # Percent-encodes the `repo` path segment before it is interpolated into a
 # fetch URL (review feedback on PR #22): an untrimmed or slash-containing
 # value would otherwise change which route the browser actually requests.
-percent-encoding = "2"
 
 [dev-dependencies]
 chrono.workspace = true

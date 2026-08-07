@@ -185,3 +185,46 @@ plausible, or go in a fresh PR — the merge race has now bitten twice
 (PR #11, PR #36). (3) A gate that read only merged state would have been
 immune; the claim-first design still contained the blast radius to one
 stale claim branch.
+
+## 2026-08-08 — `failure-mode` — Four advances, two days, one blind spot: we test insides, not edges
+
+Four defects in two days reached a deployed system through a fully green
+suite, and all four sit in the same place — the boundary where our code meets
+something we do not run in CI.
+
+| Advance | Defect | Why the suite missed it |
+|---|---|---|
+| GATEWAY-013 | `totem_save`'s published JSON Schema declared no type for `author`; claude.ai sent a string | Tests called the handler in-process with typed arguments; nobody read the *published* schema |
+| CLI-002 | The CLI could not reach an HTTPS gateway at all (no TLS feature) | Every test used plain-HTTP loopback |
+| GATEWAY-015 | `json_response = true` had never applied to a real client | No test drove the transport; the comment asserting otherwise was false from the day it was written |
+| GATEWAY-010 | AuthKit's token endpoint is unreachable from a browser; the console flashed a dashboard on every load | No browser in CI, and no way to add one |
+
+**The pattern:** an in-process test verifies that our function does what we
+meant. It cannot verify a *contract with something external* — a published
+schema, a TLS handshake, a wire format, a CORS response header, a rendered
+frame. Three of the four had a comment or a record asserting the correct
+behavior, written by whoever wrote the code, and the assertion was simply
+wrong. A green suite plus a confident comment is not evidence about an edge.
+
+**Implications for the overnight cycle:**
+
+1. **This is a boundary between night work and day work, and a sharp one.**
+   Everything above was found by a human at a browser or a real client. An
+   autonomous run can build the console, prove it compiles, prove the routes
+   do not shadow, and deploy it — and still cannot learn that the sign-in
+   fails. Advances whose evidence is *external* should be routed as work the
+   night shift prepares and the morning verifies, rather than work the night
+   shift closes.
+2. **Evidence keys already encode this** and should be used deliberately.
+   `login:executed`, `connection:executed` and `restore:verified` are all
+   claims no sandbox can earn. An advance whose evidence list contains one is
+   structurally a day/night handoff, and the plan could say so the way it
+   says `WORKSTATION`.
+3. **The cheap fix is not "more tests" but "one test at the real boundary."**
+   GATEWAY-013 got three published-schema tests, GATEWAY-015 three
+   client-shaped rmcp-over-HTTP tests, CLI-002 a real TLS path. Each was
+   small. None existed because nothing prompted them; the advance template
+   asks what to test, not *at which boundary*.
+4. **The console's edge stays uncovered.** There is no browser in CI and this
+   trial is not buying one. That is an accepted gap, not an oversight —
+   worth restating whenever console work is scheduled for a cloud run.

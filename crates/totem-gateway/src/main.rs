@@ -133,6 +133,36 @@ async fn main() {
     // OAuth resource-server mode (ADV-GATEWAY-013), when the deployment
     // configures an authorization server. Absent it, static bearer
     // credentials remain the only path — which is what a workstation runs.
+    // The console bundle, when this deployment ships one (ADV-GATEWAY-010).
+    // Absent, the gateway serves its API and nothing at `/` — an API-only
+    // deployment, which is what a workstation runs.
+    state.console_dir = std::env::var("TOTEM_CONSOLE_DIR")
+        .ok()
+        .filter(|dir| !dir.is_empty())
+        .map(std::path::PathBuf::from);
+    match state.console_dir.as_ref() {
+        Some(dir) if dir.join("index.html").is_file() => {
+            println!("console: serving from {}", dir.display())
+        }
+        Some(dir) => {
+            // Configured but empty is a deployment mistake worth refusing:
+            // the alternative is a gateway that silently 404s its own UI.
+            eprintln!(
+                "refusing to start: TOTEM_CONSOLE_DIR is {} but it has no index.html",
+                dir.display()
+            );
+            std::process::exit(1);
+        }
+        None => println!("console: not served (API only)"),
+    }
+
+    state.console_client_id = std::env::var("TOTEM_CONSOLE_CLIENT_ID")
+        .ok()
+        .filter(|value| !value.is_empty());
+    state.console_redirect_uri = std::env::var("TOTEM_CONSOLE_REDIRECT_URI")
+        .ok()
+        .filter(|value| !value.is_empty());
+
     state.oauth = totem_gateway::oauth_from_env();
     match state.oauth.as_ref() {
         Some(verifier) => println!("oauth: resource server for {}", verifier.metadata_url()),
