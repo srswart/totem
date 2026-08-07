@@ -295,7 +295,7 @@ passes:
           - id: "ADV-CONSOLE-004"
             advance_id: "ADV-CONSOLE-004"
             title: "Console visual design system (Tailwind, workstation)"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-CONSOLE-001"]
             notes: >-
