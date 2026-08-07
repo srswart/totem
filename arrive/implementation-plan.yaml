@@ -412,7 +412,7 @@ passes:
           - id: "ADV-GATEWAY-015"
             advance_id: "ADV-GATEWAY-015"
             title: "MCP tool calls acknowledge, or fail — never neither"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-GATEWAY-013"]
             notes: >-
