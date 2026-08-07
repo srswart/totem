@@ -38,7 +38,12 @@ async fn get_stream(router: &axum::Router, path: &str, token: Option<&str>) -> R
         .expect("the router does not fail to produce a response")
 }
 
-async fn authed_post(router: &axum::Router, path: &str, token: &str, body: Value) -> Response<Body> {
+async fn authed_post(
+    router: &axum::Router,
+    path: &str,
+    token: &str,
+    body: Value,
+) -> Response<Body> {
     router
         .clone()
         .oneshot(
@@ -116,7 +121,12 @@ fn event_data(frame: &str) -> Value {
 async fn connecting_delivers_the_current_landscape_immediately() {
     let (router, _store) = common::app().await;
     assert_status(
-        &common::post(&router, "/enroll", enroll_request(ARRIVE_ID, REPO, "ADV-A-001")).await,
+        &common::post(
+            &router,
+            "/enroll",
+            enroll_request(ARRIVE_ID, REPO, "ADV-A-001"),
+        )
+        .await,
         StatusCode::OK,
     );
 
@@ -137,10 +147,7 @@ async fn connecting_delivers_the_current_landscape_immediately() {
 
     let mut body = response.into_body();
     let frame = next_sse_event(&mut body, Duration::from_secs(5)).await;
-    assert!(
-        frame.starts_with("event: landscape\n"),
-        "got: {frame:?}"
-    );
+    assert!(frame.starts_with("event: landscape\n"), "got: {frame:?}");
     let data = event_data(&frame);
     assert_eq!(data["repo"]["id"], ARRIVE_ID);
     assert_eq!(data["advances"][0]["id"], "ADV-A-001");
@@ -159,7 +166,12 @@ fn advance_ids(data: &Value) -> Vec<String> {
 async fn a_later_write_pushes_a_second_event_with_the_updated_view() {
     let (router, _store) = common::app().await;
     assert_status(
-        &common::post(&router, "/enroll", enroll_request(ARRIVE_ID, REPO, "ADV-A-001")).await,
+        &common::post(
+            &router,
+            "/enroll",
+            enroll_request(ARRIVE_ID, REPO, "ADV-A-001"),
+        )
+        .await,
         StatusCode::OK,
     );
 
@@ -184,7 +196,12 @@ async fn a_later_write_pushes_a_second_event_with_the_updated_view() {
     // first — not a specific array position, which `view`'s own query makes
     // no ordering promise about.
     assert_status(
-        &common::post(&router, "/enroll", enroll_request(ARRIVE_ID, REPO, "ADV-A-002")).await,
+        &common::post(
+            &router,
+            "/enroll",
+            enroll_request(ARRIVE_ID, REPO, "ADV-A-002"),
+        )
+        .await,
         StatusCode::OK,
     );
 
@@ -200,7 +217,12 @@ async fn a_later_write_pushes_a_second_event_with_the_updated_view() {
 async fn every_delivered_event_appends_one_access_log_entry() {
     let (router, store) = common::app().await;
     assert_status(
-        &common::post(&router, "/enroll", enroll_request(ARRIVE_ID, REPO, "ADV-A-001")).await,
+        &common::post(
+            &router,
+            "/enroll",
+            enroll_request(ARRIVE_ID, REPO, "ADV-A-001"),
+        )
+        .await,
         StatusCode::OK,
     );
 
@@ -214,7 +236,12 @@ async fn every_delivered_event_appends_one_access_log_entry() {
     next_sse_event(&mut body, Duration::from_secs(5)).await;
 
     assert_status(
-        &common::post(&router, "/enroll", enroll_request(ARRIVE_ID, REPO, "ADV-A-002")).await,
+        &common::post(
+            &router,
+            "/enroll",
+            enroll_request(ARRIVE_ID, REPO, "ADV-A-002"),
+        )
+        .await,
         StatusCode::OK,
     );
     next_sse_event(&mut body, Duration::from_secs(5)).await;
@@ -230,7 +257,10 @@ async fn every_delivered_event_appends_one_access_log_entry() {
         "every relayed view is a read, and every read is logged: {entries:?}"
     );
     for entry in relay_entries {
-        assert_eq!(entry.actor.as_ref().map(ToString::to_string).as_deref(), Some(ADA));
+        assert_eq!(
+            entry.actor.as_ref().map(ToString::to_string).as_deref(),
+            Some(ADA)
+        );
     }
 }
 

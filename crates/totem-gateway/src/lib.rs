@@ -78,10 +78,7 @@ fn routes(state: AppState) -> Router {
         .route("/advance/{id}/status", get(handlers::advance_status))
         .route("/enroll", post(handlers::enroll))
         .route("/landscape/{repo}", get(handlers::landscape))
-        .route(
-            "/landscape/{repo}/events",
-            get(handlers::landscape_events),
-        )
+        .route("/landscape/{repo}/events", get(handlers::landscape_events))
         .route("/promotions", post(handlers::propose_promotion))
         .route("/promotions/pending", post(handlers::promotion_pending))
         .route("/promotions/{id}/record", post(handlers::proposed_record))
