@@ -8,7 +8,9 @@
 
 use surrealdb::types::{Object, SurrealValue, Value};
 use surrealdb::{Connection, Surreal};
-use totem_core::{AccessLogEntry, AccessOperation, ActorId, MemoryId, ScopeChain, SessionId};
+use totem_core::{
+    AccessLogEntry, AccessOperation, ActorId, MemoryId, RefusalReason, ScopeChain, SessionId,
+};
 
 use crate::error::{StoreError, StoreResult};
 use crate::memory::MemoryRepository;
@@ -24,6 +26,7 @@ fn operation_key(operation: AccessOperation) -> &'static str {
         AccessOperation::Propose => "propose",
         AccessOperation::PromotionDecision => "promotion_decision",
         AccessOperation::Resolve => "resolve",
+        AccessOperation::Refused => "refused",
     }
 }
 
@@ -35,17 +38,58 @@ fn operation_from(key: &str) -> Result<AccessOperation, RowError> {
         "propose" => Ok(AccessOperation::Propose),
         "promotion_decision" => Ok(AccessOperation::PromotionDecision),
         "resolve" => Ok(AccessOperation::Resolve),
+        "refused" => Ok(AccessOperation::Refused),
         other => Err(row::malformed(format!(
             "unknown access log operation: {other}"
         ))),
     }
 }
 
+fn refusal_reason_key(reason: RefusalReason) -> &'static str {
+    match reason {
+        RefusalReason::MissingCredential => "missing_credential",
+        RefusalReason::UnknownCredential => "unknown_credential",
+        RefusalReason::Expired => "expired",
+        RefusalReason::ActorNotBound => "actor_not_bound",
+        RefusalReason::RepoNotBound => "repo_not_bound",
+        RefusalReason::ScopeNotBound => "scope_not_bound",
+    }
+}
+
+fn refusal_reason_from(key: &str) -> Result<RefusalReason, RowError> {
+    match key {
+        "missing_credential" => Ok(RefusalReason::MissingCredential),
+        "unknown_credential" => Ok(RefusalReason::UnknownCredential),
+        "expired" => Ok(RefusalReason::Expired),
+        "actor_not_bound" => Ok(RefusalReason::ActorNotBound),
+        "repo_not_bound" => Ok(RefusalReason::RepoNotBound),
+        "scope_not_bound" => Ok(RefusalReason::ScopeNotBound),
+        other => Err(row::malformed(format!("unknown refusal reason: {other}"))),
+    }
+}
+
 fn to_row(entry: &AccessLogEntry) -> Object {
     let mut row = Object::new();
-    row.insert("actor", entry.actor.to_string());
-    row.insert("harness", row::harness_key(&entry.harness));
-    row.insert("session", entry.session.to_string());
+    row.insert(
+        "actor",
+        entry
+            .actor
+            .as_ref()
+            .map_or(Value::None, |actor| actor.to_string().into_value()),
+    );
+    row.insert(
+        "harness",
+        entry.harness.as_ref().map_or(Value::None, |harness| {
+            row::harness_key(harness).into_value()
+        }),
+    );
+    row.insert(
+        "session",
+        entry
+            .session
+            .as_ref()
+            .map_or(Value::None, |session| session.to_string().into_value()),
+    );
     row.insert(
         "turn",
         entry
@@ -66,21 +110,74 @@ fn to_row(entry: &AccessLogEntry) -> Object {
             .result_count
             .map_or(Value::None, |count| (count as i64).into_value()),
     );
+    row.insert(
+        "refusal_reason",
+        entry.refusal_reason.map_or(Value::None, |reason| {
+            refusal_reason_key(reason).into_value()
+        }),
+    );
+    row.insert(
+        "credential_fingerprint",
+        entry
+            .credential_fingerprint
+            .clone()
+            .map_or(Value::None, |fingerprint| fingerprint.into_value()),
+    );
     row.insert("at", row::instant(entry.at));
     row
 }
 
+fn optional_string(row: &Object, field: &str) -> Result<Option<String>, RowError> {
+    match row.get(field) {
+        None | Some(Value::None) | Some(Value::Null) => Ok(None),
+        Some(_) => Ok(Some(row::string(row, field)?)),
+    }
+}
+
 fn from_row(row: &Object) -> Result<AccessLogEntry, RowError> {
-    let actor = ActorId::new(row::string(row, "actor")?)
+    let actor = optional_string(row, "actor")?
+        .map(ActorId::new)
+        .transpose()
         .map_err(|error| row::malformed(format!("stored actor is invalid: {error}")))?;
-    let harness = row::harness_from(&row::string(row, "harness")?)?;
-    let session = SessionId::new(row::string(row, "session")?)
+    let harness = optional_string(row, "harness")?
+        .map(|harness| row::harness_from(&harness))
+        .transpose()?;
+    let session = optional_string(row, "session")?
+        .map(SessionId::new)
+        .transpose()
         .map_err(|error| row::malformed(format!("stored session is invalid: {error}")))?;
     let operation = operation_from(&row::string(row, "operation")?)?;
+    // `totem-core`'s own contract (`access_log.rs`'s doc comment): actor,
+    // harness, and session are `None` only on a `Refused` entry — every
+    // other operation confirmed an identity before it could touch the
+    // store. Enforced here, not just at the write path (`to_row` never
+    // constructs a row that would violate it, but a hand-written or
+    // pre-migration row could), so a row that breaks the contract is a
+    // decode-time `RowError`, not a silent `Option` a reader has to
+    // remember to check.
+    if operation != AccessOperation::Refused
+        && (actor.is_none() || harness.is_none() || session.is_none())
+    {
+        return Err(row::malformed(format!(
+            "a {operation:?} access log row is missing actor/harness/session — only a refused entry may omit them"
+        )));
+    }
     let endpoint = row::string(row, "endpoint")?;
     let at = row::datetime(row, "at")?;
 
-    let mut entry = AccessLogEntry::new(actor, harness, session, operation, endpoint, at);
+    let mut entry = AccessLogEntry {
+        actor,
+        harness,
+        session,
+        turn: None,
+        operation,
+        endpoint,
+        memory_id: None,
+        result_count: None,
+        refusal_reason: None,
+        credential_fingerprint: None,
+        at,
+    };
 
     entry.turn = match row.get("turn") {
         None | Some(Value::None) | Some(Value::Null) => None,
@@ -102,6 +199,10 @@ fn from_row(row: &Object) -> Result<AccessLogEntry, RowError> {
                 .ok_or_else(|| row::malformed("result_count is not a non-negative integer"))?,
         ),
     };
+    entry.refusal_reason = optional_string(row, "refusal_reason")?
+        .map(|reason| refusal_reason_from(&reason))
+        .transpose()?;
+    entry.credential_fingerprint = optional_string(row, "credential_fingerprint")?;
 
     Ok(entry)
 }
@@ -187,4 +288,72 @@ fn rows_to_entries(rows: Value) -> StoreResult<Vec<AccessLogEntry>> {
         entries.push(from_row(&row)?);
     }
     Ok(entries)
+}
+
+#[cfg(test)]
+mod tests {
+    //! `from_row`/`to_row` are crate-private, so the row-shape enforcement
+    //! this module owns can only be exercised by writing a row directly
+    //! (bypassing `to_row`, which never produces a row that violates the
+    //! contract) — the same reason `schema.rs`'s own DB-level tests live
+    //! inside the crate rather than in `tests/`.
+
+    use crate::Store;
+
+    async fn migrated() -> Store<surrealdb::engine::local::Db> {
+        let store = Store::in_memory().await.expect("embedded engine connects");
+        store.migrate().await.expect("migrations apply");
+        store
+    }
+
+    #[tokio::test]
+    async fn a_non_refused_row_missing_its_identity_is_a_malformed_row_not_a_silent_option() {
+        let store = migrated().await;
+
+        // A hand-written row lacking `actor`/`harness`/`session` — exactly
+        // the shape a corrupted or pre-contract row could take. `to_row`
+        // never produces this for a `Save` entry; this proves `from_row`
+        // still catches it if something else does.
+        store
+            .connection()
+            .query(
+                "CREATE access_log CONTENT {
+                    operation: 'save', endpoint: '/save',
+                    at: d'2026-08-05T06:00:00Z'
+                }",
+            )
+            .await
+            .expect("sent")
+            .check()
+            .expect("the schema itself accepts the row — actor/harness/session are optional columns now");
+
+        let refused = store.access_log().list().await;
+        assert!(
+            matches!(refused, Err(crate::StoreError::Row(_))),
+            "expected a malformed-row refusal, got {refused:?}",
+        );
+    }
+
+    #[tokio::test]
+    async fn a_refused_row_with_no_identity_decodes_cleanly() {
+        let store = migrated().await;
+
+        store
+            .connection()
+            .query(
+                "CREATE access_log CONTENT {
+                    operation: 'refused', endpoint: '/save',
+                    refusal_reason: 'missing_credential',
+                    at: d'2026-08-05T06:00:00Z'
+                }",
+            )
+            .await
+            .expect("sent")
+            .check()
+            .expect("a refused row with no identity satisfies the schema");
+
+        let entries = store.access_log().list().await.expect("decodes cleanly");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].actor, None);
+    }
 }

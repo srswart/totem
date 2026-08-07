@@ -273,7 +273,7 @@ passes:
           - id: "ADV-CORE-006"
             advance_id: "ADV-CORE-006"
             title: "Auth refusals join the access log"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-GATEWAY-001", "ADV-GATEWAY-003"]
             notes: >-

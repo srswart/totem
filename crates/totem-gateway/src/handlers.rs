@@ -25,7 +25,7 @@ use axum::Json;
 use axum::extract::{Extension, Path, State};
 use totem_core::{MemoryId, PromotionId, RepoId};
 
-use crate::auth::{AuthError, Caller};
+use crate::auth::{AuthError, Caller, log_refusal};
 use crate::dto::{
     AdvanceLogRequest, AdvanceLogResponse, AdvanceStatusResponse, AuditRequest, AuditTrailResponse,
     ContestRequest, ContestResponse, EnrollRequest, EnrollResponse, FeedbackRequest,
@@ -184,7 +184,7 @@ pub(crate) async fn enroll(
     let git_repo = RepoId::new(request.snapshot.repo.git_repo.clone()).map_err(|error| {
         GatewayError::InvalidRequest(format!("snapshot repo.git_repo: {error}"))
     })?;
-    caller.authorize_repo(&git_repo)?;
+    ops::authorize_repo(&state, &caller, &git_repo, "/enroll").await?;
 
     // Validated once, up front: `arrive_id` is used both as the store's
     // lookup/write key below and as the auth error's `requested` field, so a
@@ -208,7 +208,7 @@ pub(crate) async fn enroll(
     // `landscape().repo(...)` rather than `view(...)`: this only needs the
     // repo row's own `git_repo`, not the full systems/components/advances a
     // landscape view materializes (Copilot review, PR #44).
-    if let Caller::Bound(grant) = &caller {
+    if let Caller::Bound(grant, _) = &caller {
         let existing = state
             .store
             .landscape()
@@ -222,10 +222,16 @@ pub(crate) async fn enroll(
                 .transpose()
                 .map_err(|error| GatewayError::InvalidRequest(error.to_string()))?;
             if owner.as_ref() != Some(&grant.repo) {
-                return Err(GatewayError::Auth(AuthError::RepoNotBound {
-                    bound: grant.repo.clone(),
-                    requested: arrive_id,
-                }));
+                return Err(log_refusal(
+                    &state,
+                    &caller,
+                    AuthError::RepoNotBound {
+                        bound: grant.repo.clone(),
+                        requested: arrive_id,
+                    },
+                    "/enroll",
+                )
+                .await);
             }
         }
     }
@@ -269,7 +275,7 @@ pub(crate) async fn landscape(
         .unwrap_or_else(|| repo.clone());
     let git_repo =
         RepoId::new(git_repo).map_err(|error| GatewayError::InvalidRequest(error.to_string()))?;
-    caller.authorize_repo(&git_repo)?;
+    ops::authorize_repo(&state, &caller, &git_repo, "/landscape/{repo}").await?;
 
     Ok(Json(view))
 }

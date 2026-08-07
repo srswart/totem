@@ -33,6 +33,7 @@
 //! only one the authenticated HTTP application ever constructs.
 
 use std::collections::HashMap;
+use std::fmt::Write as _;
 use std::sync::{Arc, RwLock};
 
 use axum::extract::{Request, State};
@@ -41,13 +42,26 @@ use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use chrono::{DateTime, Utc};
 use sha2::{Digest, Sha256};
-use totem_core::{ActorId, RepoId, Scope, TeamId};
+use totem_core::{AccessLogEntry, ActorId, RefusalReason, RepoId, Scope, TeamId};
 use uuid::Uuid;
 
 use crate::error::GatewayError;
+use crate::state::AppState;
 
 /// A credential's fingerprint: SHA-256 of the token text.
 type Fingerprint = [u8; 32];
+
+/// The same fingerprint [`fingerprint`] computes, hex-encoded for the access
+/// log (ADV-CORE-006) — never the token text, and never the raw digest bytes
+/// either, so a log entry is printable and greppable.
+fn fingerprint_hex(token: &str) -> String {
+    Sha256::digest(token.as_bytes())
+        .iter()
+        .fold(String::with_capacity(64), |mut hex, byte| {
+            write!(hex, "{byte:02x}").expect("writing to a String never fails");
+            hex
+        })
+}
 
 /// The bounds one credential carries: exactly one repo, one scope, one actor.
 ///
@@ -138,6 +152,26 @@ impl AuthError {
             self,
             AuthError::MissingCredential | AuthError::UnknownCredential | AuthError::Expired(_)
         )
+    }
+
+    /// The [`RefusalReason`] a refused *request* logs (ADV-CORE-006).
+    ///
+    /// `None` for [`AuthError::IncoherentBinding`] and
+    /// [`AuthError::InvalidBinding`]: both are refused at credential *issue*
+    /// time ([`TokenRegistry::issue`]), never while authenticating or
+    /// authorizing a request, so no request-refusal call site can produce
+    /// them — `totem_cli`/console issuance surfaces have their own error
+    /// reporting for that failure, independent of the access log.
+    pub fn refusal_reason(&self) -> Option<RefusalReason> {
+        match self {
+            AuthError::MissingCredential => Some(RefusalReason::MissingCredential),
+            AuthError::UnknownCredential => Some(RefusalReason::UnknownCredential),
+            AuthError::Expired(_) => Some(RefusalReason::Expired),
+            AuthError::ActorNotBound { .. } => Some(RefusalReason::ActorNotBound),
+            AuthError::RepoNotBound { .. } => Some(RefusalReason::RepoNotBound),
+            AuthError::ScopeNotBound { .. } => Some(RefusalReason::ScopeNotBound),
+            AuthError::IncoherentBinding { .. } | AuthError::InvalidBinding(_) => None,
+        }
     }
 }
 
@@ -283,9 +317,11 @@ pub enum Caller {
     ///
     /// Never constructed by [`crate::authenticated_app`].
     Trusted,
-    /// A remote caller holding a verified credential. Every identity it
-    /// asserts is checked against the grant.
-    Bound(TokenGrant),
+    /// A remote caller holding a verified credential, and that credential's
+    /// hex fingerprint (ADV-CORE-006) — carried alongside the grant so an
+    /// authorization refusal can still identify *which* credential was
+    /// refused without ever holding the token text itself.
+    Bound(TokenGrant, String),
 }
 
 impl Caller {
@@ -298,7 +334,7 @@ impl Caller {
     ) -> Result<(), AuthError> {
         match self {
             Caller::Trusted => Ok(()),
-            Caller::Bound(grant) => grant.authorize_identity(actor, project, teams),
+            Caller::Bound(grant, _) => grant.authorize_identity(actor, project, teams),
         }
     }
 
@@ -306,7 +342,7 @@ impl Caller {
     pub fn authorize_scope(&self, scope: &Scope) -> Result<(), AuthError> {
         match self {
             Caller::Trusted => Ok(()),
-            Caller::Bound(grant) => grant.authorize_scope(scope),
+            Caller::Bound(grant, _) => grant.authorize_scope(scope),
         }
     }
 
@@ -315,9 +351,53 @@ impl Caller {
     pub fn authorize_repo(&self, requested: &RepoId) -> Result<(), AuthError> {
         match self {
             Caller::Trusted => Ok(()),
-            Caller::Bound(grant) => grant.authorize_repo(requested),
+            Caller::Bound(grant, _) => grant.authorize_repo(requested),
         }
     }
+
+    /// This caller's credential fingerprint, for a refusal log entry
+    /// (ADV-CORE-006). `None` for [`Caller::Trusted`]: there is no credential
+    /// to fingerprint on the local, single-user path.
+    pub fn fingerprint(&self) -> Option<&str> {
+        match self {
+            Caller::Trusted => None,
+            Caller::Bound(_, fingerprint) => Some(fingerprint),
+        }
+    }
+}
+
+/// Append a refusal entry for `error` and return it unchanged, so a call site
+/// can write `return Err(refuse(...).await);` — logging is best-effort and
+/// never turns a refusal into a success or a success into a refusal
+/// (ADV-CORE-006's stated risk): a failed log write is reported via
+/// `eprintln!` (this crate's existing warning convention — see `main.rs` —
+/// it has no `tracing` dependency), not propagated.
+///
+/// `endpoint` should name the route (`/recall`, `mcp:totem_save`) the same
+/// way every successful [`crate::ops`] entry does, so a refusal is
+/// distinguishable by surface in the same audit query.
+pub(crate) async fn log_refusal(
+    state: &AppState,
+    caller: &Caller,
+    error: AuthError,
+    endpoint: &str,
+) -> GatewayError {
+    if let Some(reason) = error.refusal_reason() {
+        let mut entry = AccessLogEntry::refused(reason, endpoint, Utc::now());
+        if let Some(fingerprint) = caller.fingerprint() {
+            entry = entry.with_fingerprint(fingerprint);
+        }
+        if let Err(log_error) = state.store.access_log().record(&entry).await {
+            // Best-effort, per this advance's stated risk: the refusal itself
+            // must stand even if the entry describing it cannot be appended.
+            // `eprintln!` matches this crate's existing warning convention
+            // (main.rs) — a full observability path is a later concern.
+            eprintln!(
+                "warning: failed to append a refusal to the access log ({endpoint}): {log_error}"
+            );
+        }
+    }
+    GatewayError::Auth(error)
 }
 
 /// The credentials this gateway will accept, keyed by fingerprint.
@@ -485,18 +565,22 @@ fn bearer(header: &str) -> Option<&str> {
 }
 
 /// Verify the presented credential and attach the resulting [`Caller`] to the
-/// request, or refuse it.
+/// request, or refuse it — appending exactly one refusal entry to the access
+/// log when it does (ADV-CORE-006), the only store touch a refused request
+/// makes.
 ///
 /// Applied by [`crate::authenticated_app`] to the whole application — REST
 /// routes and the streamable-HTTP MCP service alike — so there is no route on
-/// a remotely-reachable listener that skips it. Handlers extract
+/// a remotely-reachable listener that skips it, and no route that logs a
+/// refusal on one surface but not the other. Handlers extract
 /// `Extension<Caller>`; a handler mounted without this layer finds no
 /// extension and fails rather than defaulting to a trusted caller.
 pub async fn authenticate(
-    State(tokens): State<TokenRegistry>,
+    State(state): State<AppState>,
     mut request: Request,
     next: Next,
 ) -> Response {
+    let path = request.uri().path().to_string();
     let presented = request
         .headers()
         .get(AUTHORIZATION)
@@ -505,15 +589,43 @@ pub async fn authenticate(
         .map(str::to_owned);
 
     let Some(token) = presented else {
-        return GatewayError::Auth(AuthError::MissingCredential).into_response();
+        let error = log_refusal(
+            &state,
+            &Caller::Trusted,
+            AuthError::MissingCredential,
+            &path,
+        )
+        .await;
+        return error.into_response();
     };
 
-    match tokens.verify(&token, Utc::now()) {
+    match state.tokens.verify(&token, Utc::now()) {
         Ok(grant) => {
-            request.extensions_mut().insert(Caller::Bound(grant));
+            request
+                .extensions_mut()
+                .insert(Caller::Bound(grant, fingerprint_hex(&token)));
             next.run(request).await
         }
-        Err(error) => GatewayError::Auth(error).into_response(),
+        Err(error) => {
+            // No verified `Caller` exists yet for a failed `verify`, so the
+            // refusal is logged with the *presented* token's own fingerprint
+            // rather than through a `Caller` — a forged or revoked credential
+            // still deserves a correlatable trace, never its plaintext.
+            let entry = AccessLogEntry::refused(
+                error
+                    .refusal_reason()
+                    .unwrap_or(RefusalReason::UnknownCredential),
+                &path,
+                Utc::now(),
+            )
+            .with_fingerprint(fingerprint_hex(&token));
+            if let Err(log_error) = state.store.access_log().record(&entry).await {
+                eprintln!(
+                    "warning: failed to append a refusal to the access log ({path}): {log_error}"
+                );
+            }
+            GatewayError::Auth(error).into_response()
+        }
     }
 }
 
