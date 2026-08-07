@@ -1,130 +1,181 @@
 ---
 advance:
   id: "ADV-INFRA-004"
-  title: "Memory discipline as synced agent rules and a Totem skill"
+  title: "Memory discipline: standalone rules and a Totem skill (trial v1)"
   system: "058-totem-core"
   primary_component: "infra"
   components: ["infra"]
   started_at: "2026-08-07T19:00:00Z"
-  implementation_completed_at: ~
+  implementation_completed_at: "2026-08-07T19:30:00Z"
   review_time_estimate_minutes: 30
   review_time_actual_minutes: ~
   pr_links: []
   external_refs: []
   reviewability_score: 0
   risk_flags: []
-  evidence: []
+  evidence: ["rules:authored", "connection:executed"]
   model_usage: []
   schema_version: 2
   mode: implementation
   facets: [software]
   work_products: [production_code]
-  status: planned
+  status: complete
 ---
 
 ## Objective
 
-Give every harness that touches this repo — Claude Code (workstation and
-cloud), Cursor, and any future enrolled developer's — the rules and the
-on-demand detail for *using* Totem, through the repo's own governance
-pipeline rather than one person's untracked local file.
+Give every harness that works on this repo the rules and the on-demand detail
+for *using* Totem, so the trial can start capturing and using memories — and
+learn what discipline actually works before deciding how it should be
+packaged.
 
-ADV-INFRA-003 currently plans to put the memory discipline in
-`docs/cloud-agent-notes.md` (cloud routines only) and `CLAUDE.local.md`
-(explicitly local, never synced, never committed). That reaches neither
-Cursor nor a second developer — an odd shape for a system whose premise is
-*shared* memory, and one that guarantees the discipline drifts per machine.
+**Direction set by Shawn 2026-08-07, replacing this advance's original
+premise.** The first draft routed everything through `arrive/agent-rules/`
+and `arrive sync agent-rules`. That is the repo's cross-harness pipeline and
+it works — but ARRIVE and Totem are separate products that install,
+initialise and enrol independently, and baking Totem's usage rules into the
+ARRIVE kit presumes an integration decision this trial has not yet earned.
+So: **author standalone, experiment, settle packaging afterwards.**
 
-The repo already has the right mechanism and nothing plans to use it:
-`arrive/agent-rules/*.md` plus `arrive sync agent-rules` generates
-`CLAUDE.md`, `.cursor/rules/*.mdc`, and `.claude/skills/*` from one canonical
-source.
+What that changes is *where the files live*, not what they say. The rules are
+hand-authored and committed rather than generated, and named so an
+`arrive sync agent-rules` run cannot clobber them.
 
 ## Behavioral Change
 
 After this advance:
 
-- **A canonical rule** at `arrive/agent-rules/memory-discipline.md` (with its
-  `.frontmatter.yaml`) is the single source for how sessions use Totem. It is
-  always-applied rather than glob-scoped: it governs what a session does at
-  its start and end, not what it does when editing a particular file.
-- **`arrive sync agent-rules` propagates it** to `CLAUDE.md`, a Cursor rule,
-  and a `totem-memory` skill — so Claude Code and Cursor receive the same
-  discipline, and it arrives with a clone rather than with a person.
-- **The rule stays short**; the skill carries the detail. The rule says what
-  to do (recall before reading governance docs; save decisions, dead ends and
-  spec corrections — not diff dumps; `totem_feedback` when a recalled memory
-  helped or misled). The skill explains the scope model, what belongs in each
-  memory category, and what *not* to save.
-- **Connection instructions are documented once**: `claude mcp add --transport
-  http` with a bearer credential for workstation Claude Code, the connector
-  for claude.ai routines, and whatever Cursor's equivalent proves to be —
-  including, honestly, "unverified" if it is (mcp.md's Cursor rows are still
-  unverified, and this advance does not get to pretend otherwise).
-- **ADV-INFRA-003's scope narrows** accordingly: it wires credentials,
-  connectors and measurement, and no longer authors discipline into
-  `CLAUDE.local.md`.
+- **`CLAUDE.local.md`** carries the four always-applied rules for workstation
+  Claude Code. ARRIVE never writes this file — which is exactly why it suits
+  an independent ruleset — and it is *not* gitignored, so unlike most "local"
+  files it travels with a clone.
+- **`.claude/skills/totem-memory/SKILL.md`** carries the detail: the two
+  moments that matter, what is worth saving, **what never to save**, the six
+  categories, the scope model, tool shapes, and per-harness connection
+  instructions. Loaded on demand, so it costs nothing until needed.
+- **`.cursor/rules/totem-memory.mdc`** gives Cursor the same four rules,
+  hand-authored under a name no ARRIVE sync generates, and states plainly
+  that Cursor's remote-MCP reach is **unverified** — a reader in Cursor
+  without Totem tools is meeting a known gap, not a misconfiguration.
+- **`docs/cloud-agent-notes.md` gains Step 2.5 and Step 9.5**: recall before
+  reading the governance docs, and save what the next run needs before the
+  journey report. A missing connector is explicitly *a finding to report*,
+  not a reason to stop.
+- **The workstation is connected**: `claude mcp add --transport http` against
+  the deployed gateway, verified `✔ Connected`.
+
+## The discipline itself (v1 hypothesis)
+
+Four rules, deliberately few, because always-applied rules cost context in
+every session:
+
+1. Recall *before* reading the governance docs — a memory that contradicts a
+   doc is the most valuable thing a session can find, and reading the doc
+   first frames it away.
+2. Save what the next session needs, not what you did: decisions and their
+   reasoning, **dead ends**, spec corrections, constraints found by running
+   something.
+3. Default to `project:` scope. Too narrow is invisible, too wide is noise,
+   promotion is the sanctioned path between.
+4. Feedback when a memory helped or misled — the value loop has no other
+   signal.
+
+The skill names dead ends as the highest-value and most-skipped category,
+because finishing something feels more recordable than failing at it. Whether
+that holds is exactly what the trial measures.
 
 ## Planned Implementation Tasks
 
-- [ ] branch / claim
-- [ ] author `arrive/agent-rules/memory-discipline.md` + frontmatter
-- [ ] `arrive sync agent-rules`; verify the generated Claude, Cursor and
-      skill outputs are what the rule intended
-- [ ] document connection for each harness; mark unverified ones as such
-- [ ] narrow ADV-INFRA-003's scope note
+- [x] branch / claim
+- [x] author the four rules (CLAUDE.local.md, Cursor rule) and the
+      `totem-memory` skill
+- [x] cloud protocol: Step 2.5 recall, Step 9.5 save
+- [x] connect the workstation; verify
+- [ ] connect the cloud routines — claude.ai configuration rather than repo
+      content; see Evidence
+- [x] record the packaging decision as deferred
 
 ## Scope and Boundaries
 
-**In scope:** the canonical rule, its generated outputs, the skill's content,
-connection documentation, and the INFRA-003 scope narrowing.
+**In scope:** the rules, the skill, the protocol steps, the workstation
+connection, and recording that packaging is deferred.
 
-**Out of scope:** the credentials themselves and the measurement
-(ADV-INFRA-003); CLI authentication (ADV-CLI-002); whether the discipline is
-*any good*, which only running it will tell — this advance ships v1 and the
-observation log tunes it.
+**Out of scope:** credentials and measurement (ADV-INFRA-003); CLI
+authentication (ADV-CLI-002); whether the discipline is any good, which only
+running it will tell.
 
 ## A component-ownership gap this exposes
 
 `arrive/agent-rules/**`, `.cursor/**` and `.claude/**` are in **no
 component's selectors** — the repo's own governance surface is unowned, so a
 change to it maps to no component and inherits no invariants. This advance
-declares `infra` and should extend that component's selectors to cover them,
-or record why a separate `governance` component would be better. Noted rather
-than quietly ignored, because "which component owns this?" is a question
-ARRIVE exists to make answerable.
+declares `infra` because it had to declare something. Extending `infra`'s
+selectors, or adding a `governance` component, is a real decision left open
+rather than quietly resolved by an advance that happened to touch these
+paths.
 
 ## Risk + Rollback
 
 - Risk: a discipline nobody follows is worse than none, because it implies a
-  coverage that does not exist. Keep v1 to the four rules above; let the
-  observation log add, not the author's imagination.
-- Risk: rules that are always-applied consume context in every session. The
-  rule stays short and defers detail to the skill precisely for this.
-- Risk: generated files drift from their canonical source if someone
-  hand-edits `CLAUDE.md` or a `.mdc`. The generated headers already warn;
-  the advance verifies the sync output rather than editing it.
-- Rollback: revert branch and re-run sync; the harnesses lose the rule and
-  keep working exactly as they do today.
+  coverage that does not exist. v1 is four rules; the observation log adds,
+  not the author's imagination.
+- Risk: always-applied rules consume context in every session. The rule stays
+  short and defers to the skill precisely for this.
+- Risk: an `arrive sync agent-rules` run overwriting hand-authored files.
+  Mitigated by naming — nothing in the kit generates `totem-memory` — and
+  `CLAUDE.local.md` is a file ARRIVE contractually never writes.
+- Rollback: delete the three files and revert the two protocol steps; the
+  harnesses lose the rules and keep working exactly as today.
 
 ## Evidence
 
-- [ ] tests:unit — n/a for authored rules; the check is that `arrive sync
-      agent-rules` reproduces the committed outputs with no diff
-- [ ] sync:verified — generated Claude, Cursor and skill outputs inspected
-      and committed
-- [ ] connection:documented — each harness's path recorded, with unverified
-      ones labelled
+- [x] rules:authored — `CLAUDE.local.md`,
+      `.cursor/rules/totem-memory.mdc`,
+      `.claude/skills/totem-memory/SKILL.md`, and the two protocol steps in
+      `docs/cloud-agent-notes.md`. No code changed; the workspace suite is
+      unaffected.
+- [x] connection:executed — workstation Claude Code registered against
+      `https://totem-dev.fly.dev/mcp`, reporting `✔ Connected`. A session
+      started after registration has the tools.
+- [ ] **Not done: the cloud routines are not attached.** The connector exists
+      in claude.ai and authenticates, but attaching it to
+      `totem-advance-opus` and `totem-advance-sonnet` is configuration this
+      advance did not perform. Until then Step 2.5 will correctly report a
+      missing connector — anticipated by the step, but it means the cloud
+      half of the trial has not begun.
+- Not claimed: that the discipline is any good. It is a hypothesis, and the
+      observation log is where it earns or loses its place.
 
 ## CI Evidence Notes
 
-- Externally-run checks before merge per docs/cloud-agent-notes.md Step 7.
+- No code changed; the standing checks apply unchanged.
 
 ## Changes Made
 
-- None yet
+### 2026-08-07 - feat: [ADV-INFRA-004] Totem usage rules and skill
+- CLAUDE.local.md: new — four always-applied workstation rules, committed
+  and ARRIVE-safe
+- .claude/skills/totem-memory/SKILL.md: new — the detail, loaded on demand
+- .cursor/rules/totem-memory.mdc: new — the same rules for Cursor, with the
+  unverified-reach caveat stated
+- docs/cloud-agent-notes.md: Step 2.5 (recall first) and Step 9.5 (save what
+  the next run needs)
 
 ## Check for Understanding
 
-(placeholder — written during implementation, grounded in the files actually
-changed)
+1. The rules live in `CLAUDE.local.md` rather than `arrive/agent-rules/`.
+   What property of that file makes it suitable for an *independent* ruleset,
+   and what second property (which most "local" files lack) makes it usable
+   by a second developer?
+2. Four rules are always-applied and everything else sits in a skill. What
+   does that split cost, and what does it buy, on a session that never
+   touches Totem at all?
+3. The skill calls dead ends the highest-value and most-skipped memory
+   category. Why would an agent systematically under-record them, and what in
+   the rule text is meant to counteract that?
+4. Step 2.5 puts recall *before* reading the governance docs rather than
+   after. What failure does that ordering prevent, and what does it ask a run
+   to do when a memory and a document disagree?
+5. The Cursor rule states that Cursor's remote-MCP reach is unverified. Which
+   investigation left it unverified and why, and what would it take to turn
+   that line into a claim?
