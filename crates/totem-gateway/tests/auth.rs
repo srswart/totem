@@ -516,6 +516,70 @@ async fn enrolling_a_snapshot_naming_another_repo_is_refused() {
 }
 
 #[tokio::test]
+async fn enrolling_a_snapshot_cannot_rebind_an_arrive_id_another_repo_already_owns() {
+    let (router, tokens) = app().await;
+    let owner_token = project_token(&tokens);
+    assert_eq!(
+        send(
+            &router,
+            post("/enroll", Some(&owner_token), enroll_body(ARRIVE_ID, REPO)),
+        )
+        .await
+        .status(),
+        StatusCode::OK,
+        "seeding the landscape an attacker then tries to take over"
+    );
+
+    // The check that a snapshot names the *caller's own* repo is not enough
+    // on its own: `sync` upserts by the snapshot's ARRIVE id and overwrites
+    // whatever `git_repo` the request asserts, so a credential bound to a
+    // *different* repo could otherwise hijack an already-enrolled ARRIVE id
+    // just by asserting its own binding in the snapshot (PR #43 review).
+    let attacker_token = tokens
+        .issue(OTHER_REPO, &format!("project:{OTHER_REPO}"), ADA, None)
+        .expect("a coherent binding for the attacker's own repo issues");
+    let hijack = send(
+        &router,
+        post(
+            "/enroll",
+            Some(&attacker_token),
+            enroll_body(ARRIVE_ID, OTHER_REPO),
+        ),
+    )
+    .await;
+    assert_eq!(
+        hijack.status(),
+        StatusCode::FORBIDDEN,
+        "a bound credential must not be able to take over an ARRIVE id another repo already owns"
+    );
+
+    // The original owner's binding must be untouched by the refused attempt.
+    let view = send(
+        &router,
+        get(&format!("/landscape/{ARRIVE_ID}"), Some(&owner_token)),
+    )
+    .await;
+    assert_eq!(
+        view.status(),
+        StatusCode::OK,
+        "the rightful owner must still be able to read its own landscape"
+    );
+
+    // The rightful owner re-syncing the same ARRIVE id must still succeed —
+    // the fix must not turn every re-enroll into a rebind refusal.
+    let resync = send(
+        &router,
+        post("/enroll", Some(&owner_token), enroll_body(ARRIVE_ID, REPO)),
+    )
+    .await;
+    assert_eq!(
+        resync.status(),
+        StatusCode::OK,
+        "the rightful owner re-syncing its own ARRIVE id must not be refused"
+    );
+}
+
+#[tokio::test]
 async fn enrolling_a_snapshot_for_the_bound_repo_succeeds() {
     let (router, tokens) = app().await;
     let token = project_token(&tokens);
