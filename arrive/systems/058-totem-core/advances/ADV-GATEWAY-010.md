@@ -262,8 +262,12 @@ that pointed elsewhere:
    AuthKit's `/oauth2/register`; `fly.toml` records the exact call.
 2. **The redirect URI must match exactly**, including scheme and trailing
    path, and it is registered with the *client*, not the Application.
-3. **The RFC 8707 `resource` is the gateway's origin**, matching the audience
-   the gateway checks — not the MCP path, not the issuer.
+3. **The RFC 8707 `resource` must match an audience the gateway accepts.**
+   Here it is `https://totem-dev.fly.dev/mcp`; `oauth.rs::from_env` derives
+   the bare origin as well and accepts **both**, precisely because the MCP
+   spec lets a client send either and the mismatch is invisible from
+   outside. What it is never is the *issuer* — sending that yields a token
+   the gateway correctly refuses, and the failure presents as a login bug.
 
 ## Check for Understanding
 
