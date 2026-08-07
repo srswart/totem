@@ -128,7 +128,19 @@ fn bootstrap(tokens: &TokenRegistry) -> Result<Option<(TokenGrant, String)>, Aut
 async fn main() {
     let store = connect_store().await;
     store.migrate().await.expect("migrations apply");
-    let state = AppState::over(store);
+    let mut state = AppState::over(store);
+
+    // OAuth resource-server mode (ADV-GATEWAY-013), when the deployment
+    // configures an authorization server. Absent it, static bearer
+    // credentials remain the only path — which is what a workstation runs.
+    state.oauth = totem_gateway::oauth_from_env();
+    match state.oauth.as_ref() {
+        Some(verifier) => println!("oauth: resource server for {}", verifier.metadata_url()),
+        None => println!(
+            "oauth: not configured (static bearer credentials only); set \
+             TOTEM_OAUTH_ISSUER/_RESOURCE/_REPO/_SCOPE to enable"
+        ),
+    }
 
     // Durable grants first (ADV-GATEWAY-012): everything issued through the
     // gateway survives the restart a deploy performs. The bootstrap

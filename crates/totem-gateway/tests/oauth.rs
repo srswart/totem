@@ -31,7 +31,10 @@ async fn app() -> axum::Router {
     let mut state = AppState::over(store);
     state.oauth = Some(std::sync::Arc::new(OAuthVerifier::with_fixed_key(
         ISSUER.to_string(),
-        vec![RESOURCE.to_string(), "https://totem-dev.fly.dev".to_string()],
+        vec![
+            RESOURCE.to_string(),
+            "https://totem-dev.fly.dev".to_string(),
+        ],
         common::REPO.to_string(),
         format!("project:{}", common::REPO),
         jsonwebtoken::DecodingKey::from_secret(TEST_KEY),
@@ -60,10 +63,10 @@ fn valid_claims() -> Value {
 }
 
 async fn recall_with(router: &axum::Router, bearer: Option<&str>) -> StatusCode {
-    let mut request = Request::builder().method("POST").uri("/recall").header(
-        "content-type",
-        "application/json",
-    );
+    let mut request = Request::builder()
+        .method("POST")
+        .uri("/recall")
+        .header("content-type", "application/json");
     if let Some(bearer) = bearer {
         request = request.header("authorization", format!("Bearer {bearer}"));
     }
@@ -139,7 +142,10 @@ async fn an_unauthenticated_refusal_points_at_the_metadata() {
         header.contains("resource_metadata="),
         "RFC 9728 §5.1: the refusal must say where the metadata lives, got {header}"
     );
-    assert!(header.contains("/.well-known/oauth-protected-resource"), "{header}");
+    assert!(
+        header.contains("/.well-known/oauth-protected-resource"),
+        "{header}"
+    );
 }
 
 #[tokio::test]
@@ -210,7 +216,12 @@ async fn static_bearer_credentials_still_work_alongside_oauth() {
     let state = AppState::over(store);
     let issued = state
         .tokens
-        .issue(common::REPO, &format!("project:{}", common::REPO), "ada", None)
+        .issue(
+            common::REPO,
+            &format!("project:{}", common::REPO),
+            "ada",
+            None,
+        )
         .expect("issue");
     let router = totem_gateway::authenticated_app(state);
 

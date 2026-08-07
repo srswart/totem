@@ -37,7 +37,8 @@ use std::fmt::Write as _;
 use std::sync::{Arc, RwLock};
 
 use axum::extract::{Request, State};
-use axum::http::header::AUTHORIZATION;
+use axum::http::StatusCode;
+use axum::http::header::{AUTHORIZATION, WWW_AUTHENTICATE};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use chrono::{DateTime, Utc};
@@ -101,6 +102,16 @@ pub enum AuthError {
     /// two apart tells a caller which guesses were once real.
     #[error("the presented credential is not valid")]
     UnknownCredential,
+    /// An OAuth access token failed validation: bad signature, wrong issuer,
+    /// wrong audience, or expired (ADV-GATEWAY-013).
+    ///
+    /// The MCP authorization spec requires 401 for these — a client that
+    /// receives 403 believes its *permissions* are wrong and never refreshes
+    /// the token. The detail is returned verbatim because a legitimate client
+    /// debugging a connector needs it, and it tells an attacker nothing about
+    /// this server they could not determine by reading the metadata document.
+    #[error("access token rejected: {0}")]
+    InvalidToken(String),
     /// The presented credential has expired.
     #[error("the presented credential expired at {0}")]
     Expired(DateTime<Utc>),
@@ -151,7 +162,10 @@ impl AuthError {
     pub fn is_authentication_failure(&self) -> bool {
         matches!(
             self,
-            AuthError::MissingCredential | AuthError::UnknownCredential | AuthError::Expired(_)
+            AuthError::MissingCredential
+                | AuthError::UnknownCredential
+                | AuthError::Expired(_)
+                | AuthError::InvalidToken(_)
         )
     }
 
@@ -166,7 +180,13 @@ impl AuthError {
     pub fn refusal_reason(&self) -> Option<RefusalReason> {
         match self {
             AuthError::MissingCredential => Some(RefusalReason::MissingCredential),
-            AuthError::UnknownCredential => Some(RefusalReason::UnknownCredential),
+            // An OAuth token that fails validation is, to this server, a
+            // credential it does not accept — the same audit fact as an
+            // unknown bearer, so it logs under the same reason rather than
+            // widening totem-core's enum for a distinction no auditor needs.
+            AuthError::UnknownCredential | AuthError::InvalidToken(_) => {
+                Some(RefusalReason::UnknownCredential)
+            }
             AuthError::Expired(_) => Some(RefusalReason::Expired),
             AuthError::ActorNotBound { .. } => Some(RefusalReason::ActorNotBound),
             AuthError::RepoNotBound { .. } => Some(RefusalReason::RepoNotBound),
@@ -645,6 +665,7 @@ pub async fn authenticate(
     mut request: Request,
     next: Next,
 ) -> Response {
+    let oauth_metadata = state.oauth.as_ref().map(|verifier| verifier.metadata_url());
     let path = request.uri().path().to_string();
     let presented = request
         .headers()
@@ -661,15 +682,33 @@ pub async fn authenticate(
             &path,
         )
         .await;
-        return error.into_response();
+        return with_discovery(error.into_response(), oauth_metadata.as_deref());
     };
 
-    match state.tokens.verify(&token, Utc::now()) {
+    // Static bearer first (ADV-GATEWAY-003): it is a hash and a map lookup,
+    // and it is what curl, the CLI, Claude Code's own registration and the
+    // Claude API connector all present. An OAuth access token is simply not
+    // in that registry, so falling through to the resource-server path costs
+    // an unregistered token one failed lookup and nothing else.
+    let verified = match state.tokens.verify(&token, Utc::now()) {
+        Ok(grant) => Ok(grant),
+        Err(registry_error) => match state.oauth.as_ref() {
+            Some(verifier) => verifier.verify(&token, Utc::now()).await,
+            // No authorization server configured: the registry's verdict is
+            // the only verdict, and its error is the accurate one.
+            None => Err(registry_error),
+        },
+    };
+
+    match verified {
         Ok(grant) => {
             request
                 .extensions_mut()
                 .insert(Caller::Bound(grant, fingerprint_hex(&token)));
-            next.run(request).await
+            // Deeper handlers refuse too (an authorization failure is a 403 or
+            // a 401 from `ops`), so discovery is attached on the way out
+            // rather than only on this function's own refusals.
+            with_discovery(next.run(request).await, oauth_metadata.as_deref())
         }
         Err(error) => {
             // No verified `Caller` exists yet for a failed `verify`, so the
@@ -689,9 +728,28 @@ pub async fn authenticate(
                     "warning: failed to append a refusal to the access log ({path}): {log_error}"
                 );
             }
-            GatewayError::Auth(error).into_response()
+            with_discovery(
+                GatewayError::Auth(error).into_response(),
+                oauth_metadata.as_deref(),
+            )
         }
     }
+}
+
+/// Attach RFC 9728 discovery to a 401 when an authorization server is
+/// configured (ADV-GATEWAY-013).
+///
+/// A bare `WWW-Authenticate: Bearer` tells a spec-compliant client nothing
+/// about *how* to obtain a credential; the `resource_metadata` parameter
+/// points at the document that does. Non-401 responses are untouched.
+fn with_discovery(mut response: Response, metadata_url: Option<&str>) -> Response {
+    if response.status() == StatusCode::UNAUTHORIZED
+        && let Some(url) = metadata_url
+        && let Ok(value) = format!("Bearer resource_metadata=\"{url}\"").parse()
+    {
+        response.headers_mut().insert(WWW_AUTHENTICATE, value);
+    }
+    response
 }
 
 #[cfg(test)]
