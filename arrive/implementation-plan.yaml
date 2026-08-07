@@ -407,6 +407,19 @@ passes:
               blocks. Re-embed existing rows; golden-query smoke on the
               deployed instance; the stub must announce itself wherever it
               still runs.
+          - id: "ADV-INFRA-004"
+            advance_id: "ADV-INFRA-004"
+            title: "Memory discipline as synced agent rules and a Totem skill"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-GATEWAY-013"]
+            notes: >-
+              Cloud-eligible. INFRA-003 planned to put the memory discipline
+              in CLAUDE.local.md — local-only, never synced, invisible to
+              Cursor and to any other developer. The repo's own
+              arrive/agent-rules + `arrive sync agent-rules` pipeline already
+              reaches Claude Code, Cursor and skills from one source; this
+              uses it. Must land before the cutover.
           - id: "ADV-INFRA-003"
             advance_id: "ADV-INFRA-003"
             title: "Dogfood cutover: enroll, credentials, harness wiring, memory discipline, measurement"

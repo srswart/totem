@@ -48,6 +48,13 @@ After this advance:
   decisions, dead ends, and spec corrections — not diff dumps; `totem_advance_log`
   on completion; `totem_feedback` when a recalled memory helped or misled.
   CLAUDE.local.md gets the workstation equivalent.
+
+  **Scope narrowed 2026-08-07:** authoring the discipline moved to
+  ADV-INFRA-004, which puts it in `arrive/agent-rules/` so
+  `arrive sync agent-rules` reaches Claude Code, Cursor and the skills
+  surface from one source. Putting it in `CLAUDE.local.md` would have made
+  the rules for a *shared* memory system local to one machine. This advance
+  keeps the credentials, connector wiring, and measurement.
 - The measurement is defined and collection starts: per-run recall/save
   counts and feedback ratio (from Totem's own access log — it is the
   metering system), plus one journey-report line per run: "did a recalled
