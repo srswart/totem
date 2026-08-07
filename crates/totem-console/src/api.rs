@@ -56,10 +56,69 @@ pub enum FetchError {
     ViewModel(#[from] ViewModelError),
 }
 
+/// The bearer token this tab holds, if the human has signed in
+/// (ADV-GATEWAY-010).
+///
+/// A module-level cell rather than a parameter threaded through every fetch:
+/// wasm in a browser is single-threaded and there is exactly one signed-in
+/// identity per tab, so the alternative is ceremony without safety. Set once
+/// when a session is established and cleared on sign-out.
+mod session {
+    use std::cell::RefCell;
+
+    thread_local! {
+        static TOKEN: RefCell<Option<String>> = const { RefCell::new(None) };
+    }
+
+    pub fn set(token: Option<String>) {
+        TOKEN.with(|cell| *cell.borrow_mut() = token);
+    }
+
+    pub fn get() -> Option<String> {
+        TOKEN.with(|cell| cell.borrow().clone())
+    }
+}
+
+pub use session::set as set_session_token;
+
+/// Attach the bearer credential, when one is held.
+///
+/// Signed out, requests go without it and the gateway answers 401 — which the
+/// UI renders as "sign in", not as a failure. That is deliberate: a console
+/// that hid the difference between "not signed in" and "broken" would send
+/// people hunting for an outage.
+fn authorized(request: gloo_net::http::RequestBuilder) -> gloo_net::http::RequestBuilder {
+    match session::get() {
+        Some(token) => request.header("authorization", &format!("Bearer {token}")),
+        None => request,
+    }
+}
+
+/// `GET /console/config` — what this deployment needs for a sign-in.
+///
+/// Unauthenticated: a signed-out browser has no credential, and this is the
+/// document that tells it how to get one.
+pub async fn fetch_console_config() -> Result<crate::auth::ConsoleConfig, FetchError> {
+    let response = Request::get("/console/config")
+        .send()
+        .await
+        .map_err(|error| FetchError::Request(error.to_string()))?;
+    if !response.ok() {
+        return Err(FetchError::Status {
+            status: response.status(),
+            body: response.text().await.unwrap_or_default(),
+        });
+    }
+    response
+        .json()
+        .await
+        .map_err(|error| FetchError::Request(error.to_string()))
+}
+
 /// `GET /landscape/:repo`.
 pub async fn fetch_landscape(repo: &str) -> Result<LandscapeViewModel, FetchError> {
     let repo = utf8_percent_encode(repo.trim(), NON_ALPHANUMERIC).to_string();
-    let response = Request::get(&format!("/landscape/{repo}"))
+    let response = authorized(Request::get(&format!("/landscape/{repo}")))
         .send()
         .await
         .map_err(|error| FetchError::Request(error.to_string()))?;
@@ -88,7 +147,7 @@ pub async fn fetch_memories(actor: &str, project: &str) -> Result<Vec<MemoryReco
         "session": "console-session",
         "turn": null,
     });
-    let response = Request::post("/recall")
+    let response = authorized(Request::post("/recall"))
         .header("content-type", "application/json")
         .body(request_body.to_string())
         .map_err(|error| FetchError::Request(error.to_string()))?
@@ -111,7 +170,7 @@ pub async fn fetch_memories(actor: &str, project: &str) -> Result<Vec<MemoryReco
 /// (`fetch_landscape`/`fetch_memories` predate this helper and are left as
 /// they are rather than churned for a pattern they only used once each).
 async fn post_json(path: &str, body: serde_json::Value) -> Result<String, FetchError> {
-    let response = Request::post(path)
+    let response = authorized(Request::post(path))
         .header("content-type", "application/json")
         .body(body.to_string())
         .map_err(|error| FetchError::Request(error.to_string()))?
@@ -283,6 +342,53 @@ async fn subscribe_landscape_events(repo: &str, landscape: &mut Signal<Landscape
 /// dashboard's landscape section — see the advance body).
 #[component]
 pub fn RootApp() -> Element {
+    // Sign-in state (ADV-GATEWAY-010). `None` while we work out whether this
+    // tab has a session; `Some(SignedOut)` once we know it does not, which is
+    // when the prompt appears. Distinguishing "deciding" from "signed out"
+    // keeps a sign-in prompt from flashing on every load.
+    let mut session = use_signal(|| Option::<crate::auth::Session>::None);
+    let mut sign_in_error = use_signal(|| Option::<String>::None);
+    let mut config = use_signal(|| Option::<crate::auth::ConsoleConfig>::None);
+
+    use_future(move || async move {
+        // A deployment with no OAuth configured serves no config: the console
+        // then runs as it always did, against a trusted local gateway, rather
+        // than demanding a sign-in that cannot happen.
+        let fetched = fetch_console_config().await.ok();
+        config.set(fetched.clone());
+        let Some(settings) = fetched else {
+            session.set(Some(crate::auth::Session::SignedIn(String::new())));
+            return;
+        };
+
+        if let Some((code, state)) = crate::auth::callback_params() {
+            match crate::auth::complete_sign_in(&settings, &code, &state).await {
+                Ok(token) => {
+                    set_session_token(Some(token.clone()));
+                    session.set(Some(crate::auth::Session::SignedIn(token)));
+                    // Drop `?code=` from the address bar so a refresh cannot
+                    // replay a now-spent authorization code.
+                    if let Some(window) = web_sys::window() {
+                        let _ = window.location().set_search("");
+                    }
+                }
+                Err(error) => {
+                    sign_in_error.set(Some(error));
+                    session.set(Some(crate::auth::Session::SignedOut));
+                }
+            }
+            return;
+        }
+
+        match crate::auth::stored_token() {
+            Some(token) => {
+                set_session_token(Some(token.clone()));
+                session.set(Some(crate::auth::Session::SignedIn(token)));
+            }
+            None => session.set(Some(crate::auth::Session::SignedOut)),
+        }
+    });
+
     let mut repo = use_signal(|| "058-totem".to_string());
     let mut actor = use_signal(|| "".to_string());
     let mut project = use_signal(|| "".to_string());
@@ -401,6 +507,37 @@ pub fn RootApp() -> Element {
 
     let field = "rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none";
     let label_cls = "flex items-center gap-2 text-xs font-medium text-slate-500";
+
+    // Signed out: a prompt, not empty views or a wall of 401s.
+    if matches!(*session.read(), Some(crate::auth::Session::SignedOut)) {
+        let settings = config.read().clone();
+        return rsx! {
+            style { dangerous_inner_html: include_str!("../assets/tailwind.css") }
+            div { class: "flex min-h-screen items-center justify-center bg-slate-50 text-slate-900 antialiased",
+                div { class: "w-full max-w-sm rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm",
+                    h1 { class: "mb-2 text-xl font-semibold tracking-tight text-indigo-700", "Totem" }
+                    p { class: "mb-6 text-sm text-slate-500",
+                        "Sign in to see this repo's landscape and the memories your scope chain allows."
+                    }
+                    if let Some(message) = sign_in_error.read().as_ref() {
+                        p { class: "mb-4 rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700", "{message}" }
+                    }
+                    match settings {
+                        Some(settings) => rsx! {
+                            button {
+                                class: "w-full rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700",
+                                onclick: move |_| crate::auth::begin_sign_in(&settings),
+                                "Sign in"
+                            }
+                        },
+                        None => rsx! {
+                            p { class: "text-sm text-slate-500", "This gateway has no sign-in configured." }
+                        },
+                    }
+                }
+            }
+        };
+    }
 
     rsx! {
         // Inlined rather than linked: dx serves unknown paths as the SPA
