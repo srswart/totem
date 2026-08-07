@@ -57,7 +57,7 @@ async fn revoking_an_unknown_fingerprint_is_refused_not_silently_ignored() {
     let outcome = store.credentials().revoke("fp-never-issued").await;
 
     assert!(
-        matches!(outcome, Err(StoreError::NotFound { .. })),
+        matches!(outcome, Err(StoreError::CredentialNotFound(_))),
         "revoking an unknown credential must report it — a revocation that \
          silently does nothing reads as success to an operator racing an \
          incident, got {outcome:?}"

@@ -8,6 +8,7 @@ use surrealdb::types::{Number, RecordId, Value};
 use surrealdb::{Connection, Surreal};
 
 use crate::access_log::AccessLogRepository;
+use crate::credential::CredentialRepository;
 use crate::curation::CurationRepository;
 use crate::error::{StoreError, StoreResult};
 use crate::landscape::LandscapeRepository;
@@ -196,6 +197,11 @@ impl<C: Connection> Store<C> {
     /// Curator merges and their rollbacks under the standing policy — the only
     /// way a record is ever retired (`components/curator.yaml`: curation never
     /// deletes).
+    /// Durable credential grants (ADV-GATEWAY-012).
+    pub fn credentials(&self) -> CredentialRepository<'_, C> {
+        CredentialRepository { db: &self.db }
+    }
+
     pub fn curation(&self) -> CurationRepository<'_, C> {
         self.curation_with_policy(totem_core::CurationPolicy::new())
     }

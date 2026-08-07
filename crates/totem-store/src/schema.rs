@@ -847,3 +847,21 @@ mod tests {
         );
     }
 }
+
+/// v10 — durable credential grants (ADV-GATEWAY-012).
+///
+/// Only the fingerprint is stored, never token text: the field list below is
+/// the enforcement, and `tests/credentials.rs` asserts a row cannot carry a
+/// token. `revoked` is a tombstone rather than a delete, so a revocation is
+/// itself part of the record and a replayed fingerprint cannot resurrect a
+/// credential by re-creating a row that no longer exists.
+pub(crate) const CREDENTIAL_SCHEMA_V10: &str = r#"
+DEFINE TABLE credential SCHEMAFULL;
+DEFINE FIELD fingerprint ON credential TYPE string ASSERT $value != '';
+DEFINE FIELD repo ON credential TYPE string ASSERT $value != '';
+DEFINE FIELD scope ON credential TYPE string ASSERT $value != '';
+DEFINE FIELD actor ON credential TYPE string ASSERT $value != '';
+DEFINE FIELD expires_at ON credential TYPE option<datetime>;
+DEFINE FIELD revoked ON credential TYPE bool DEFAULT false;
+DEFINE INDEX credential_fingerprint ON credential FIELDS fingerprint UNIQUE;
+"#;

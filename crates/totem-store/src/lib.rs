@@ -47,6 +47,7 @@
 
 mod access_log;
 pub mod corpus;
+mod credential;
 mod curation;
 mod embedding;
 mod error;
@@ -59,6 +60,7 @@ mod schema;
 mod store;
 
 pub use access_log::AccessLogRepository;
+pub use credential::{CredentialGrantRow, CredentialRepository};
 pub use curation::CurationRepository;
 #[cfg(feature = "fastembed")]
 pub use embedding::fastembed_embedder::FastembedEmbedder;
