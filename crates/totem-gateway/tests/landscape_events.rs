@@ -146,6 +146,15 @@ async fn connecting_delivers_the_current_landscape_immediately() {
     assert_eq!(data["advances"][0]["id"], "ADV-A-001");
 }
 
+fn advance_ids(data: &Value) -> Vec<String> {
+    data["advances"]
+        .as_array()
+        .expect("advances is an array")
+        .iter()
+        .map(|advance| advance["id"].as_str().expect("id is a string").to_string())
+        .collect()
+}
+
 #[tokio::test]
 async fn a_later_write_pushes_a_second_event_with_the_updated_view() {
     let (router, _store) = common::app().await;
@@ -164,18 +173,26 @@ async fn a_later_write_pushes_a_second_event_with_the_updated_view() {
     let mut body = response.into_body();
 
     let first = next_sse_event(&mut body, Duration::from_secs(5)).await;
-    assert_eq!(event_data(&first)["advances"][0]["id"], "ADV-A-001");
+    assert_eq!(advance_ids(&event_data(&first)), vec!["ADV-A-001"]);
 
+    // `sync` never deletes an advance absent from a later snapshot (only the
+    // `impacts` edges of advances present *in* that snapshot are replaced —
+    // `LandscapeRepository::sync`'s own doc), so a second enroll with a
+    // different advance id grows the set rather than replacing it. What this
+    // proves is the thing that matters: the second event is a *fresh*
+    // store-enforced read (ADV-A-002 present), not a stale repeat of the
+    // first — not a specific array position, which `view`'s own query makes
+    // no ordering promise about.
     assert_status(
         &common::post(&router, "/enroll", enroll_request(ARRIVE_ID, REPO, "ADV-A-002")).await,
         StatusCode::OK,
     );
 
     let second = next_sse_event(&mut body, Duration::from_secs(5)).await;
-    assert_eq!(
-        event_data(&second)["advances"][0]["id"],
-        "ADV-A-002",
-        "a re-sync must push a fresh view, not repeat the stale one"
+    let ids = advance_ids(&event_data(&second));
+    assert!(
+        ids.contains(&"ADV-A-002".to_string()),
+        "a re-sync must push a fresh view, not repeat the stale one: {ids:?}"
     );
 }
 
