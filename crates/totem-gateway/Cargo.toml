@@ -31,7 +31,10 @@ axum = "0.8"
 # Already in the lock via surrealdb; direct dependencies here so the OAuth
 # resource server (ADV-GATEWAY-013) validates tokens with the same version.
 jsonwebtoken = "10.3"
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+# Pinned to the version rmcp 3.1.0 already pulls in, so the gateway compiles
+# one HTTP stack rather than two. (The TLS feature is `rustls` on 0.13 and
+# `rustls-tls` on 0.12 — a rename that quietly hid the duplication.)
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 chrono.workspace = true
 # Pinned exactly, matching totem-mcp-spike's pin: docs/tech-direction/mcp.md
 # (ADV-GATEWAY-005) verified this exact version's stdio and streamable-HTTP
