@@ -42,15 +42,14 @@ a **claude.ai MCP connector attached to the routine** (the same mechanism the
 routines already use for other connectors) — which requires the gateway's
 `/mcp` to be a public **HTTPS** endpoint. That means:
 
-- **Hosting.** DEP-001's single instance needs a machine that is always on.
-  Options, in rough order of preference: (a) a small always-on cloud host
-  (container or VPS) running the durable gateway; (b) the workstation plus a
-  tunnel (Tailscale Funnel / cloudflared) — zero new hosting but couples the
-  team's memory to one laptop's lid being open. Decision needed (§5).
-- **TLS + domain.** The gateway serves plain HTTP; DEP-001 scoped TLS out.
-  Standard answer: a reverse proxy (Caddy) terminating TLS in front of the
-  loopback gateway, on a small domain. The single-owner invariant is
-  unaffected — the proxy is a client, not a store owner.
+- **Hosting — DECIDED 2026-08-07: Fly.io**, app `totem-dev`, region `sin`.
+  Public endpoint `https://totem-dev.fly.dev`; TLS and supervision come from
+  the platform, so the deployment work is DEP-001 versus Fly's defaults —
+  exactly one machine, no rolling deploys, a volume for the memory estate
+  (ADV-INFRA-002).
+- **TLS + domain — solved by the platform.** Fly terminates TLS for
+  `totem-dev.fly.dev`; no reverse proxy, no certificate management, no custom
+  domain needed for the trial.
 - **Probe first.** docs/tech-direction/mcp.md verified the transport
   end-to-end in-sandbox but could NOT verify each harness's outbound
   connector reach from primary sources. Before building anything: attach a

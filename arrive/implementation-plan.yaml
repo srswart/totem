@@ -330,15 +330,18 @@ passes:
               endpoint, fingerprints-only extends to durable rows.
           - id: "ADV-INFRA-002"
             advance_id: "ADV-INFRA-002"
-            title: "Hosted deployment: container image, TLS, supervision, daily backup"
+            title: "Fly.io deployment: image, single-machine volume, secrets, snapshots"
             status: planned
             owner: "058-totem"
             dependencies: ["ADV-INFRA-001", "ADV-GATEWAY-011"]
             notes: >-
-              WORKSTATION — provision a small always-on host (decision
-              2026-08-07), Caddy TLS in front of the loopback gateway,
-              compose supervision, daily backup, migrate the workstation
-              estate. Trial-grade by design.
+              WORKSTATION — Fly.io app `totem-dev`, region `sin` (decision
+              2026-08-07); TLS and supervision come from the platform. The
+              work is DEP-001 vs Fly defaults: exactly one machine, no
+              rolling deploy, a volume for the estate, secrets via
+              `fly secrets`, TOTEM_MCP_ALLOWED_HOSTS, and an unauthenticated
+              /health route. Public hostname totem-dev.fly.dev is the WorkOS
+              Resource Indicator.
           - id: "ADV-STORE-008"
             advance_id: "ADV-STORE-008"
             title: "Real embedder in the deployed build (BGE-small-en-v1.5)"
