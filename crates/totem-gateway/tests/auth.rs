@@ -203,10 +203,7 @@ async fn health_reveals_nothing_but_liveness() {
 
     // A health endpoint that leaks build metadata, store paths, or counts
     // hands an unauthenticated caller reconnaissance for free.
-    assert_eq!(
-        body, "ok",
-        "health must answer liveness only, got: {body}"
-    );
+    assert_eq!(body, "ok", "health must answer liveness only, got: {body}");
 }
 
 #[tokio::test]

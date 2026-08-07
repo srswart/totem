@@ -82,6 +82,17 @@ pub(crate) async fn save(
     Ok(Json(SaveResponse { id }))
 }
 
+/// `GET /health`: liveness only, no credential required.
+///
+/// Deliberately returns a constant. A health endpoint that reports build
+/// metadata, store paths, or record counts hands an unauthenticated caller
+/// free reconnaissance; platform health checks need none of it. See
+/// `crate::unauthenticated_routes` for why this route is outside the auth
+/// layer at all.
+pub(crate) async fn health() -> &'static str {
+    "ok"
+}
+
 pub(crate) async fn recall(
     State(state): State<AppState>,
     Extension(caller): Extension<Caller>,

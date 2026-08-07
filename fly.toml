@@ -1,0 +1,65 @@
+# Totem on Fly.io — ADV-INFRA-002.
+#
+# READ THIS BEFORE CHANGING MACHINE COUNTS OR DEPLOY STRATEGY.
+#
+# The gateway owns an embedded RocksDB store with an exclusive lock
+# (DEP-001): exactly one machine may run at a time, ever. Fly's defaults all
+# violate that — two machines on first deploy, rolling updates that run old
+# and new simultaneously, autoscaling. Every setting below that looks
+# over-cautious is load-bearing:
+#
+#   * one machine, pinned                 -> a second cannot attach the volume
+#   * strategy = "immediate"              -> stop the old machine before the
+#                                            new one opens the store
+#   * auto_stop_machines = false          -> no surprise shutdowns mid-write;
+#                                            we prefer integrity to pennies
+#
+# Verification is a double deploy: deploy twice in a row and confirm the
+# second comes up clean and `fly status` shows exactly one machine.
+
+app = "totem-dev"
+primary_region = "sin"
+
+[build]
+
+[env]
+  TOTEM_DATA_DIR = "/data"
+  TOTEM_MCP_ALLOWED_HOSTS = "totem-dev.fly.dev"
+  # Secrets (bootstrap credential, OAuth issuer/JWKS once ADV-GATEWAY-013
+  # lands) are set with `fly secrets set` and never appear in this file.
+
+[mounts]
+  source = "totem_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8787
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    hard_limit = 50
+    soft_limit = 25
+
+# Liveness only, unauthenticated by design — Fly's checker cannot present a
+# credential, so /health is an enumerated exception to "every route behind
+# auth" (see crate::unauthenticated_routes and tests/auth.rs).
+[[http_service.checks]]
+  interval = "30s"
+  timeout = "5s"
+  grace_period = "20s"
+  method = "GET"
+  path = "/health"
+
+[deploy]
+  strategy = "immediate"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  # 1GB is a starting point, not a measurement: SurrealDB + RocksDB need more
+  # than the 256MB default, and ADV-STORE-008's BGE embedder will need more
+  # again. Record observed usage and resize rather than guessing twice.
+  memory = "1gb"
