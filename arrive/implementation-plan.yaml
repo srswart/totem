@@ -363,7 +363,7 @@ passes:
           - id: "ADV-GATEWAY-014"
             advance_id: "ADV-GATEWAY-014"
             title: "Trim recall payloads: embeddings out of client responses"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-GATEWAY-002"]
             notes: >-

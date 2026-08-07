@@ -6,20 +6,20 @@ advance:
   primary_component: "gateway"
   components: ["gateway"]
   started_at: "2026-08-07T17:30:00Z"
-  implementation_completed_at: ~
+  implementation_completed_at: "2026-08-07T18:30:00Z"
   review_time_estimate_minutes: 20
   review_time_actual_minutes: ~
   pr_links: []
   external_refs: []
-  reviewability_score: 0
+  reviewability_score: 13
   risk_flags: ["public_api"]
-  evidence: []
+  evidence: ["tests:unit", "tdd:red-green", "payload-size"]
   model_usage: []
   schema_version: 2
   mode: implementation
   facets: [software]
   work_products: [production_code]
-  status: planned
+  status: complete
 ---
 
 ## Objective
@@ -59,11 +59,12 @@ After this advance:
 
 ## Planned Implementation Tasks
 
-- [ ] branch / claim
-- [ ] tidy: preparatory refactoring (no behavior change)
-- [ ] test: recall responses (MCP and REST) contain no embedding; the store
-      still holds one and vector search still ranks
-- [ ] feat: response-shape change on both surfaces
+- [x] branch / claim
+- [x] tidy: none needed — `ops::recall` was already the single point both
+      surfaces return through
+- [x] test: recall carries no embedding (REST, and MCP through the same
+      `ops` path); the store still holds vectors so search is unaffected
+- [x] feat: strip in `ops::recall`; stop serializing an absent embedding
 
 ## Scope and Boundaries
 
@@ -84,12 +85,32 @@ needs them); the audit trail's own record view; any change to ranking.
   reinstated default.
 - Rollback: revert branch; payloads return to their current size.
 
+## Reviewability
+
+`arrive score --base origin/advance/phase-011`: **13 [GREEN]**.
+
 ## Evidence
 
-- [ ] tidy:preparatory
-- [ ] tdd:red-green
-- [ ] tests:unit
-- [ ] payload-size: before/after bytes for a representative recall, measured
+- [x] tdd:red-green — `crates/totem-gateway/tests/recall_payload.rs` written
+      first and observed failing with the vector in the body; green after.
+- [x] tests:unit — 67 workspace test blocks green; fmt and clippy clean.
+- [x] payload-size — **measured, not estimated**: one recalled record went
+      from **2,479 to 561 bytes (77% smaller)**. At ten records a call that
+      is roughly 18 KB of vectors an agent no longer reads or pays for, on
+      the most frequent call in the trial.
+- [x] consumers checked, as the risk section required: `grep` across the
+      console, CLI, and gateway found **no reader of `content.embedding`
+      outside `ops`** — the console renders body and scope, the CLI does not
+      recall. Nothing was broken by the removal; this was confirmed rather
+      than assumed.
+
+## Note on the second change
+
+`Content::embedding` also gained `skip_serializing_if`, so an absent
+embedding renders as nothing rather than `"embedding": null`. It is a
+`totem-core` field, but the store persists it through `totem-store`'s own row
+mapping rather than serde, so the change is wire-shape only — asserted by the
+test that reads a vector back out of the store after a save.
 
 ## CI Evidence Notes
 
@@ -97,9 +118,31 @@ needs them); the audit trail's own record view; any change to ranking.
 
 ## Changes Made
 
-- None yet
+### 2026-08-07 - test: [ADV-GATEWAY-014] recall carries no embedding (red)
+- crates/totem-gateway/tests/recall_payload.rs: new — absence in the
+  response, presence in the store
+
+### 2026-08-07 - feat: [ADV-GATEWAY-014] strip embeddings from client responses
+- crates/totem-gateway/src/ops.rs: `without_embeddings`, applied in
+  `recall` so REST and MCP cannot drift on what a client receives
+- crates/totem-core/src/record.rs: `skip_serializing_if` on
+  `Content::embedding`
 
 ## Check for Understanding
 
-(placeholder — written during implementation, grounded in the files actually
-changed)
+1. The trim is applied in `ops::recall` rather than in the REST handler and
+   the MCP tool separately. What failure does that placement prevent as new
+   surfaces are added?
+2. The store still holds every vector while responses carry none. Which
+   store behaviour would break if the trim had been applied one layer
+   deeper, and which test would have caught it?
+3. `Content::embedding` gained `skip_serializing_if`, yet stored rows are
+   unaffected. What does `totem-store` use to persist that field, and why
+   does that make a serde attribute safe here but not in general?
+4. The advance required the payload reduction to be measured rather than
+   claimed. What were the two numbers, and why does an unmeasured
+   token-cost claim deserve suspicion in an advance whose entire objective
+   is cost?
+5. Removing a field from a published response is a `public_api` risk. What
+   did the advance require before accepting it, and what was actually
+   found?
