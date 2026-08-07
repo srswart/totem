@@ -41,6 +41,7 @@ mod handlers;
 mod mcp;
 mod mcp_http;
 mod ops;
+mod sse;
 mod state;
 
 use axum::Router;
@@ -77,6 +78,10 @@ fn routes(state: AppState) -> Router {
         .route("/advance/{id}/status", get(handlers::advance_status))
         .route("/enroll", post(handlers::enroll))
         .route("/landscape/{repo}", get(handlers::landscape))
+        .route(
+            "/landscape/{repo}/events",
+            get(handlers::landscape_events),
+        )
         .route("/promotions", post(handlers::propose_promotion))
         .route("/promotions/pending", post(handlers::promotion_pending))
         .route("/promotions/{id}/record", post(handlers::proposed_record))
@@ -95,7 +100,8 @@ fn routes(state: AppState) -> Router {
 }
 
 /// Build the **local** REST router: `POST /recall`, `POST /save`,
-/// `POST /enroll`, `GET /landscape/:repo`, `POST /feedback`, `POST /contest`,
+/// `POST /enroll`, `GET /landscape/:repo`, `GET /landscape/:repo/events`
+/// (the live relay, ADV-CONSOLE-003), `POST /feedback`, `POST /contest`,
 /// `POST /advance/log`, `GET /advance/:id/status`, the promotion-approval
 /// surface (`POST /promotions`, `POST /promotions/pending`,
 /// `POST /promotions/:id/record`, `POST /promotions/:id/approve`,
