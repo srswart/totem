@@ -259,6 +259,36 @@ fn opt_string(value: Option<String>) -> Value {
     value.map_or(Value::None, |value| value.into_value())
 }
 
+/// One "something changed" pulse from [`LandscapeRepository::watch`]
+/// (ADV-CONSOLE-003).
+///
+/// Carries no payload, and cannot: the underlying live-query notification's
+/// raw body names whichever repo the mutated row happens to belong to, not
+/// necessarily the one a given subscriber cares about, so forwarding it here
+/// would let a caller filter *above* the store — the same hazard
+/// scope-isolated memory reads must avoid, on the landscape's own repo
+/// boundary instead of a memory scope. A subscriber that wants to know
+/// *what* changed re-reads through [`LandscapeRepository::view`] — the same
+/// store-enforced, repo-scoped read every other landscape consumer already
+/// uses.
+pub struct LandscapeChanges {
+    inner: Pin<Box<dyn Stream<Item = StoreResult<()>> + Send>>,
+}
+
+impl LandscapeChanges {
+    /// The next pulse, or `None` once every underlying live query has closed
+    /// (the connection dropped).
+    pub async fn next(&mut self) -> Option<StoreResult<()>> {
+        self.inner.next().await
+    }
+}
+
+impl std::fmt::Debug for LandscapeChanges {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LandscapeChanges").finish_non_exhaustive()
+    }
+}
+
 /// Landscape reads and writes: the only way to mirror or query an enrolled
 /// repo's ARRIVE artifacts.
 #[derive(Debug)]
@@ -501,6 +531,38 @@ impl<'a, C: Connection> LandscapeRepository<'a, C> {
                 })
             })
             .transpose()
+    }
+
+    /// Subscribe to every change across the landscape's own tables (`repo`,
+    /// `system`, `component`, `advance`) — the trigger the ADV-CONSOLE-003
+    /// gateway relay wakes on to know when to re-read a repo's
+    /// [`view`](Self::view). One `LIVE SELECT` per table, merged into a
+    /// single pulse stream.
+    ///
+    /// Deliberately unfiltered by repo: `component`/`advance` are two hops
+    /// from the field that would need filtering (`component.system.repo`,
+    /// `advance.system.repo`), and a live query's `WHERE` clause filters the
+    /// mutated row's own fields, not a dereferenced link two hops away. That
+    /// is safe here specifically because [`LandscapeChanges`] carries no
+    /// payload — see its own doc for why forwarding a raw notification would
+    /// be the "filtered above the store" hazard this relay must avoid, and
+    /// why an unfiltered *trigger* is not that hazard.
+    pub async fn watch(&self) -> StoreResult<LandscapeChanges> {
+        let mut streams: Vec<Pin<Box<dyn Stream<Item = StoreResult<()>> + Send>>> = Vec::new();
+        for table in [REPO_TABLE, SYSTEM_TABLE, COMPONENT_TABLE, ADVANCE_TABLE] {
+            let stream = self
+                .db
+                .query(format!("LIVE SELECT * FROM {table}"))
+                .await?
+                .check()?
+                .stream::<Value>(0)?;
+            streams.push(Box::pin(
+                stream.map(|item| item.map(|_notification| ()).map_err(StoreError::from)),
+            ));
+        }
+        Ok(LandscapeChanges {
+            inner: Box::pin(select_all(streams)),
+        })
     }
 
     /// Every sync run recorded so far, oldest first — the provenance trail
