@@ -6657,6 +6657,7 @@ dependencies = [
  "chrono",
  "http-body-util",
  "jsonwebtoken",
+ "percent-encoding",
  "reqwest 0.13.4",
  "rmcp",
  "serde",

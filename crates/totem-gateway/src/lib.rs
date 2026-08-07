@@ -189,5 +189,6 @@ fn unauthenticated_routes(state: AppState) -> Router {
             get(handlers::protected_resource_metadata),
         )
         .route("/console/config", get(handlers::console_config))
+        .route("/console/token", post(handlers::console_token))
         .with_state(state)
 }

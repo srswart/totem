@@ -123,6 +123,71 @@ pub(crate) async fn console_config(
     })))
 }
 
+/// `POST /console/token`: relay the console's PKCE code exchange
+/// (ADV-GATEWAY-010).
+///
+/// **Why this exists.** AuthKit answers the CORS *preflight* for its token
+/// endpoint with `Access-Control-Allow-Origin: *`, but omits that header from
+/// the actual response — so a browser completes the request and then refuses
+/// to let the page read it. The console cannot exchange its authorization
+/// code directly, and no client-side change can fix a missing response
+/// header.
+///
+/// **What it is not.** The gateway does not become an OAuth client: no client
+/// secret exists, PKCE is still what proves the exchange, and no token is
+/// issued here — this forwards a request to *the configured issuer* and
+/// returns its answer. The destination is taken from server configuration,
+/// never from the request, so this cannot be pointed at an arbitrary host.
+///
+/// Unauthenticated by necessity: a caller mid-sign-in has no credential yet,
+/// which is the entire point of the exchange. The authorization code is
+/// worthless without the verifier held by the tab that started the flow.
+pub(crate) async fn console_token(
+    State(state): State<AppState>,
+    Json(request): Json<crate::dto::ConsoleTokenRequest>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let (Some(verifier), Some(client_id), Some(redirect_uri)) = (
+        state.oauth.as_ref(),
+        state.console_client_id.as_ref(),
+        state.console_redirect_uri.as_ref(),
+    ) else {
+        return Err(StatusCode::NOT_FOUND);
+    };
+
+    // Built by hand rather than with reqwest's `form` helper: the gateway
+    // enables only the `json` feature, and pulling in `urlencoded` for five
+    // known-shaped fields is not worth the dependency surface.
+    let encode = |value: &str| {
+        percent_encoding::utf8_percent_encode(value, percent_encoding::NON_ALPHANUMERIC).to_string()
+    };
+    let form = format!(
+        "grant_type=authorization_code&code={}&code_verifier={}&client_id={}&redirect_uri={}",
+        encode(&request.code),
+        encode(&request.code_verifier),
+        encode(client_id),
+        encode(redirect_uri),
+    );
+    let response = reqwest::Client::new()
+        .post(format!(
+            "{}/oauth2/token",
+            verifier.issuer().trim_end_matches('/')
+        ))
+        .header("content-type", "application/x-www-form-urlencoded")
+        .body(form)
+        .send()
+        .await
+        .map_err(|_| StatusCode::BAD_GATEWAY)?;
+
+    let status = response.status();
+    let body: serde_json::Value = response.json().await.map_err(|_| StatusCode::BAD_GATEWAY)?;
+    if !status.is_success() {
+        // The authorization server's own refusal, forwarded without the
+        // token-shaped fields a caller might otherwise mistake for success.
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+    Ok(Json(body))
+}
+
 /// `GET /.well-known/oauth-protected-resource`: RFC 9728 metadata.
 ///
 /// Unauthenticated by necessity (MCP-014) and by design: the document names

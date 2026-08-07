@@ -31,6 +31,7 @@ axum = "0.8"
 # Static file serving for the console (ADV-GATEWAY-010). `fs` only — the
 # gateway needs a directory server and an SPA fallback, nothing else.
 tower-http = { version = "0.6", default-features = false, features = ["fs"] }
+percent-encoding = "2"
 # Already in the lock via surrealdb; direct dependencies here so the OAuth
 # resource server (ADV-GATEWAY-013) validates tokens with the same version.
 jsonwebtoken = "10.3"

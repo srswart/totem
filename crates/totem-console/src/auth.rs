@@ -171,7 +171,7 @@ mod browser {
     /// a mismatch means this callback did not originate from this tab's
     /// sign-in, and the code is discarded rather than exchanged.
     pub async fn complete_sign_in(
-        config: &ConsoleConfig,
+        _config: &ConsoleConfig,
         code: &str,
         returned_state: &str,
     ) -> Result<String, String> {
@@ -188,28 +188,21 @@ mod browser {
             access_token: String,
         }
 
-        let body = format!(
-            "grant_type=authorization_code&code={code}&redirect_uri={redirect}\
-             &client_id={client}&code_verifier={verifier}",
-            redirect = percent_encoding::utf8_percent_encode(
-                &config.redirect_uri,
-                percent_encoding::NON_ALPHANUMERIC
-            ),
-            client = percent_encoding::utf8_percent_encode(
-                &config.client_id,
-                percent_encoding::NON_ALPHANUMERIC
-            ),
-        );
-        let response = gloo_net::http::Request::post(&format!(
-            "{}/oauth2/token",
-            config.issuer.trim_end_matches('/')
-        ))
-        .header("content-type", "application/x-www-form-urlencoded")
-        .body(body)
-        .map_err(|error| error.to_string())?
-        .send()
-        .await
-        .map_err(|error| error.to_string())?;
+        // Exchanged through the gateway's own origin, not directly against
+        // AuthKit (ADV-GATEWAY-010). AuthKit answers the CORS preflight with
+        // `Access-Control-Allow-Origin: *` but omits the header from the
+        // actual response, so the browser completes the request and then
+        // refuses to let this page read it. No client-side change can fix a
+        // missing response header; the relay is same-origin and therefore
+        // unaffected. PKCE still proves the exchange — the verifier below
+        // never leaves this tab except to our own server.
+        let response = gloo_net::http::Request::post("/console/token")
+            .header("content-type", "application/json")
+            .body(serde_json::json!({ "code": code, "code_verifier": verifier }).to_string())
+            .map_err(|error| error.to_string())?
+            .send()
+            .await
+            .map_err(|error| error.to_string())?;
 
         remove(VERIFIER_KEY);
         remove(STATE_KEY);

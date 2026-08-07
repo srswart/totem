@@ -508,6 +508,17 @@ pub fn RootApp() -> Element {
     let field = "rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none";
     let label_cls = "flex items-center gap-2 text-xs font-medium text-slate-500";
 
+    // Still deciding whether this tab has a session: render nothing rather
+    // than the dashboard. The first version rendered the full UI while the
+    // check was in flight, so every load flashed a dashboard before the
+    // sign-in card — the exact opposite of what its own comment claimed.
+    if session.read().is_none() {
+        return rsx! {
+            style { dangerous_inner_html: include_str!("../assets/tailwind.css") }
+            div { class: "min-h-screen bg-slate-50" }
+        };
+    }
+
     // Signed out: a prompt, not empty views or a wall of 401s.
     if matches!(*session.read(), Some(crate::auth::Session::SignedOut)) {
         let settings = config.read().clone();
