@@ -126,6 +126,22 @@ fn bootstrap(tokens: &TokenRegistry) -> Result<Option<(TokenGrant, String)>, Aut
 
 #[tokio::main]
 async fn main() {
+    // `--warm-embedder`: construct the embedder and exit. The image build runs
+    // this so the model weights are baked in (ADV-STORE-008). Cold
+    // construction is ~276s against ~124ms warm (EMB-004), and a first boot
+    // paying that cost would fail its health check long before it served
+    // anything — so the download happens once, at build time, where a slow
+    // step is merely slow.
+    if std::env::args().any(|arg| arg == "--warm-embedder") {
+        let state = AppState::over(
+            totem_store::Store::in_memory()
+                .await
+                .expect("in-memory store connects"),
+        );
+        println!("embedder warm: {}", state.embedder.model_name());
+        return;
+    }
+
     let store = connect_store().await;
     store.migrate().await.expect("migrations apply");
     let mut state = AppState::over(store);
@@ -154,6 +170,23 @@ async fn main() {
             std::process::exit(1);
         }
         None => println!("console: not served (API only)"),
+    }
+
+    // Which embedder is actually in the path. The stub must announce itself
+    // (ADV-STORE-008): a deployment silently serving non-semantic recall looks
+    // identical to one doing the real thing, right up until someone trusts a
+    // ranking.
+    {
+        let model = state.embedder.model_name();
+        if model.starts_with("deterministic") {
+            println!(
+                "totem-gateway embedder: {model} — NON-SEMANTIC stand-in. Recall ranks by \
+                 character trigrams, not meaning. Build with --features fastembed for \
+                 BGE-small-en-v1.5."
+            );
+        } else {
+            println!("totem-gateway embedder: {model}");
+        }
     }
 
     state.console_client_id = std::env::var("TOTEM_CONSOLE_CLIENT_ID")

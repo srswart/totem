@@ -74,6 +74,11 @@ uuid.workspace = true
 # gateway as the durable shared instance. Off by default so cloud/CI builds
 # stay lean (infra component invariant).
 rocksdb = ["totem-store/rocksdb"]
+# The real embedder (BGE-small-en-v1.5). Off by default for the same reason
+# the store's feature is: first use downloads model weights, which the cloud
+# sandbox's egress blocks (EMB-002/EMB-003). The deployment image turns it on
+# (ADV-STORE-008).
+fastembed = ["totem-store/fastembed"]
 
 [dev-dependencies]
 tempfile = "3"

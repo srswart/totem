@@ -182,7 +182,6 @@ struct EmbeddingModelCount {
     rows: usize,
 }
 
-
 pub(crate) fn check_dimensions(embedding: &[f32]) -> StoreResult<()> {
     if embedding.len() == EMBEDDING_DIMENSIONS {
         return Ok(());
@@ -329,9 +328,7 @@ impl<'a, C: Connection> MemoryRepository<'a, C> {
             let vector = embedder.embed(&row.body)?;
             check_dimensions(&vector)?;
             self.db
-                .query(format!(
-                    "UPDATE $id SET embedding = $embedding, embedding_model = $model"
-                ))
+                .query("UPDATE $id SET embedding = $embedding, embedding_model = $model")
                 .bind(("id", row.id.clone()))
                 .bind((
                     "embedding",

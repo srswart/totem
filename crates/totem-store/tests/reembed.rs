@@ -17,9 +17,9 @@ use std::sync::Arc;
 mod common;
 
 use common::{ADA, chain, store};
+use surrealdb::engine::local::Db;
 use totem_core::{MemoryCategory, Scope};
 use totem_store::{DeterministicEmbedder, Embedder, Store, StoreResult};
-use surrealdb::engine::local::Db;
 
 /// A stand-in for "a different model" that is still offline.
 ///
@@ -64,7 +64,11 @@ async fn store_with(bodies: &[&str], embedder: &dyn Embedder) -> Store<Db> {
 #[tokio::test]
 async fn reembedding_rewrites_every_row_written_by_a_different_model() {
     let old = DeterministicEmbedder::new();
-    let store = store_with(&["the gateway owns the store", "phase-011 is in flight"], &old).await;
+    let store = store_with(
+        &["the gateway owns the store", "phase-011 is in flight"],
+        &old,
+    )
+    .await;
 
     let before = store
         .memories()

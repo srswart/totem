@@ -18,7 +18,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /build
 COPY . .
-RUN cargo build --release -p totem-gateway --features rocksdb
+# `fastembed` brings ONNX Runtime, which needs a C++ toolchain to link.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends pkg-config libssl-dev build-essential \
+    && rm -rf /var/lib/apt/lists/*
+RUN cargo build --release -p totem-gateway --features rocksdb,fastembed
+
+# Bake the model weights into the image (ADV-STORE-008). Cold construction is
+# ~276s because of this download, against ~124ms warm (EMB-004) — a first boot
+# paying that would fail its health check long before it served anything. Here
+# a slow step is merely slow.
+ENV FASTEMBED_CACHE_PATH=/models
+RUN /build/target/release/totem-gateway --warm-embedder
 
 # The console bundle (ADV-GATEWAY-010), built in its own stage so a console
 # change does not invalidate the gateway's (much longer) compile.
@@ -42,6 +53,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /build/target/release/totem-gateway /usr/local/bin/totem-gateway
+# The baked weights, and the variable that makes the runtime look for them
+# here rather than trying to download to a working directory it cannot write.
+COPY --from=builder /models /models
+ENV FASTEMBED_CACHE_PATH=/models
 COPY --from=console /build/target/dx/totem-console/release/web/public /console
 ENV TOTEM_CONSOLE_DIR=/console
 
