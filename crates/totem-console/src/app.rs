@@ -389,6 +389,89 @@ mod tests {
         }
     }
 
+
+    #[test]
+    fn advance_status_renders_as_a_semantic_status_badge() {
+        let mut vdom = VirtualDom::new_with_props(
+            AdvanceRow,
+            AdvanceRowProps {
+                advance: AdvanceView {
+                    id: "ADV-CONSOLE-004".to_string(),
+                    system: "058-totem-core".to_string(),
+                    title: "Console visual design system".to_string(),
+                    status: Some("complete".to_string()),
+                    components: vec!["console".to_string()],
+                },
+            },
+        );
+        let html = ssr(&mut vdom);
+        assert!(
+            html.contains("badge--complete"),
+            "status badge class missing: {html}"
+        );
+        assert!(html.contains("badge"), "badge base class missing: {html}");
+    }
+
+    #[test]
+    fn component_stage_renders_as_a_semantic_stage_badge() {
+        let mut vdom = VirtualDom::new_with_props(
+            ComponentRow,
+            ComponentRowProps {
+                component: ComponentView {
+                    id: "console".to_string(),
+                    system: "058-totem-core".to_string(),
+                    name: "Totem Console".to_string(),
+                    stage: Some("incubating".to_string()),
+                    owners: vec!["058-totem".to_string()],
+                },
+            },
+        );
+        let html = ssr(&mut vdom);
+        assert!(
+            html.contains("badge--stage"),
+            "stage badge class missing: {html}"
+        );
+    }
+
+    #[component]
+    fn ShellFixture() -> Element {
+        rsx! {
+            App {
+                landscape: synced_landscape(),
+                memories: Vec::new(),
+                promotions: Vec::new(),
+                on_approve_promotion: |_| {},
+                on_reject_promotion: |_| {},
+                uncertainty: Vec::new(),
+                on_resolve_uncertainty: |_| {},
+                audit: None,
+            }
+        }
+    }
+
+    #[test]
+    fn the_app_shell_renders_tab_semantics_with_an_active_marker() {
+        let mut vdom = VirtualDom::new(ShellFixture);
+        let html = ssr(&mut vdom);
+        assert!(
+            html.contains("totem-shell"),
+            "shell landmark class missing: {html}"
+        );
+        assert!(html.contains("tab--active"), "active tab marker missing: {html}");
+    }
+
+    #[test]
+    fn empty_states_carry_the_semantic_empty_class() {
+        let mut vdom = VirtualDom::new_with_props(
+            MemoryBrowserView,
+            MemoryBrowserViewProps {
+                records: Vec::new(),
+            },
+        );
+        let html = ssr(&mut vdom);
+        assert!(html.contains(r#"class="empty"#), "empty-state class missing: {html}");
+    }
+
     #[test]
     fn the_landscape_dashboard_renders_the_synced_repo_s_name_and_components() {
         let mut vdom = VirtualDom::new_with_props(
