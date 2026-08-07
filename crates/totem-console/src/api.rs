@@ -399,39 +399,64 @@ pub fn RootApp() -> Element {
         });
     };
 
+    let field = "rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none";
+    let label_cls = "flex items-center gap-2 text-xs font-medium text-slate-500";
+
     rsx! {
-        div { class: "totem-console__connect",
-            label { "Repo "
-                input {
-                    value: "{repo}",
-                    oninput: move |event| repo.set(event.value()),
+        // Inlined rather than linked: dx serves unknown paths as the SPA
+        // fallback, and the asset!() pipeline varies across dx versions —
+        // include_str! of the committed build works everywhere (16KB).
+        style { dangerous_inner_html: include_str!("../assets/tailwind.css") }
+        div { class: "min-h-screen bg-slate-50 text-slate-900 antialiased",
+        header { class: "totem-console__connect mb-8 border-b border-slate-200 bg-white shadow-sm",
+            div { class: "mx-auto flex max-w-5xl flex-wrap items-center gap-x-5 gap-y-3 px-6 py-4",
+                span { class: "mr-2 text-lg font-semibold tracking-tight text-indigo-700", "Totem" }
+                label { class: label_cls, "Repo"
+                    input {
+                        class: field,
+                        value: "{repo}",
+                        oninput: move |event| repo.set(event.value()),
+                    }
+                }
+                label { class: label_cls, "Actor"
+                    input {
+                        class: field,
+                        value: "{actor}",
+                        oninput: move |event| actor.set(event.value()),
+                    }
+                }
+                label { class: label_cls, "Project"
+                    input {
+                        class: field,
+                        value: "{project}",
+                        oninput: move |event| project.set(event.value()),
+                    }
+                }
+                button {
+                    class: "rounded-md bg-indigo-600 px-3.5 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-indigo-700",
+                    onclick: move |_| refresh(),
+                    "Refresh"
                 }
             }
-            label { "Actor "
-                input {
-                    value: "{actor}",
-                    oninput: move |event| actor.set(event.value()),
+            div { class: "totem-console__audit-lookup mx-auto flex max-w-5xl flex-wrap items-center gap-x-5 gap-y-3 px-6 pb-4",
+                label { class: label_cls, "Memory id"
+                    input {
+                        class: "{field} w-80 font-mono",
+                        value: "{audit_query}",
+                        oninput: move |event| audit_query.set(event.value()),
+                    }
+                }
+                button {
+                    class: "rounded-md border border-slate-300 bg-white px-3.5 py-1.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-100",
+                    onclick: move |_| lookup_audit(),
+                    "Look up audit trail"
                 }
             }
-            label { "Project "
-                input {
-                    value: "{project}",
-                    oninput: move |event| project.set(event.value()),
-                }
-            }
-            button { onclick: move |_| refresh(), "Refresh" }
             if let Some(message) = error.read().as_ref() {
-                p { class: "totem-console__error", "{message}" }
-            }
-        }
-        div { class: "totem-console__audit-lookup",
-            label { "Memory id "
-                input {
-                    value: "{audit_query}",
-                    oninput: move |event| audit_query.set(event.value()),
+                p { class: "totem-console__error mx-auto max-w-5xl px-6 pb-4 text-sm font-medium text-rose-700",
+                    "{message}"
                 }
             }
-            button { onclick: move |_| lookup_audit(), "Look up audit trail" }
         }
         App {
             landscape: landscape.read().clone(),
@@ -442,6 +467,7 @@ pub fn RootApp() -> Element {
             uncertainty: uncertainty.read().clone(),
             on_resolve_uncertainty,
             audit: audit.read().clone(),
+        }
         }
     }
 }

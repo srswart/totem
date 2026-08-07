@@ -1,0 +1,15 @@
+/* Tailwind v4 input (pinned 4.1.5). The committed build lives at
+ * assets/tailwind.css so no toolchain is needed to build or serve the
+ * console. Regenerate after changing classes in src/:
+ *
+ *   npm install --no-save tailwindcss@4.1.5 @tailwindcss/cli@4.1.5 --prefix /tmp/tw
+ *   printf '@import "tailwindcss";\n@source "./src";\n' > /tmp/tw/input.css
+ *   (cd /tmp/tw && ./node_modules/.bin/tailwindcss -i input.css \
+ *      -o <repo>/crates/totem-console/assets/tailwind.css)
+ *
+ * Named tailwind.input.css (not tailwind.css) deliberately: dx 0.7 auto-detects
+ * the latter and its bundled Tailwind installer hangs in this environment,
+ * blocking the entire dev-server build. The committed artifact is the path.
+ */
+@import "tailwindcss";
+@source "./src";
