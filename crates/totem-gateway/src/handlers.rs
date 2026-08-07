@@ -186,6 +186,14 @@ pub(crate) async fn enroll(
     })?;
     caller.authorize_repo(&git_repo)?;
 
+    // Validated once, up front: `arrive_id` is used both as the store's
+    // lookup/write key below and as the auth error's `requested` field, so a
+    // malformed value (empty, or padded with whitespace) is refused here
+    // rather than silently syncing an ambiguous row or, in the refusal path,
+    // being papered over with the caller's own repo (Copilot review, PR #44).
+    let arrive_id = RepoId::new(request.snapshot.repo.id.clone())
+        .map_err(|error| GatewayError::InvalidRequest(format!("snapshot repo.id: {error}")))?;
+
     // The check above only proves the *submitted* snapshot names the
     // caller's own repo — `sync` upserts by `snapshot.repo.id` (the ARRIVE
     // id) and unconditionally overwrites `git_repo`, so without this second
@@ -196,14 +204,17 @@ pub(crate) async fn enroll(
     // own binding (an ordinary re-sync); an existing row with no confirmed
     // git_repo yet is refused the same way an unconfirmed landscape read is
     // — `Caller::Trusted` is exempt, matching every other authorize_* check.
+    //
+    // `landscape().repo(...)` rather than `view(...)`: this only needs the
+    // repo row's own `git_repo`, not the full systems/components/advances a
+    // landscape view materializes (Copilot review, PR #44).
     if let Caller::Bound(grant) = &caller {
         let existing = state
             .store
             .landscape()
-            .view(&request.snapshot.repo.id)
+            .repo(&arrive_id.to_string())
             .await
-            .map_err(GatewayError::from)?
-            .repo;
+            .map_err(GatewayError::from)?;
         if let Some(existing) = existing {
             let owner = existing
                 .git_repo
@@ -211,11 +222,9 @@ pub(crate) async fn enroll(
                 .transpose()
                 .map_err(|error| GatewayError::InvalidRequest(error.to_string()))?;
             if owner.as_ref() != Some(&grant.repo) {
-                let requested = RepoId::new(request.snapshot.repo.id.clone())
-                    .unwrap_or_else(|_| grant.repo.clone());
                 return Err(GatewayError::Auth(AuthError::RepoNotBound {
                     bound: grant.repo.clone(),
-                    requested,
+                    requested: arrive_id,
                 }));
             }
         }
