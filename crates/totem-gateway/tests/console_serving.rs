@@ -11,13 +11,28 @@ mod common;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
+use tempfile::TempDir;
 use tower::ServiceExt;
 
-async fn app() -> axum::Router {
+/// A gateway serving a minimal console bundle from a temp directory.
+///
+/// A fixture rather than the real `dx` output: what is under test is the
+/// *routing* — that the bundle is reachable and that it never shadows the
+/// API — which does not need a real wasm build, and would otherwise make
+/// these tests depend on a toolchain CI does not have.
+async fn app() -> (TempDir, axum::Router) {
+    let dir = tempfile::tempdir().expect("temp dir");
+    std::fs::write(
+        dir.path().join("index.html"),
+        "<!DOCTYPE html><html><body>totem console</body></html>",
+    )
+    .expect("write index");
+
     let store = totem_store::Store::in_memory().await.expect("store");
     store.migrate().await.expect("migrate");
-    let state = totem_gateway::AppState::over(store);
-    totem_gateway::authenticated_app(state)
+    let mut state = totem_gateway::AppState::over(store);
+    state.console_dir = Some(dir.path().to_path_buf());
+    (dir, totem_gateway::authenticated_app(state))
 }
 
 async fn get(router: &axum::Router, uri: &str) -> (StatusCode, String) {
@@ -40,7 +55,8 @@ async fn get(router: &axum::Router, uri: &str) -> (StatusCode, String) {
 
 #[tokio::test]
 async fn the_console_is_served_at_the_root() {
-    let (status, body) = get(&app().await, "/").await;
+    let (_dir, router) = app().await;
+    let (status, body) = get(&router, "/").await;
 
     assert_eq!(status, StatusCode::OK, "the console must be reachable");
     assert!(
@@ -54,23 +70,24 @@ async fn the_console_is_served_at_the_root() {
 async fn a_client_side_route_falls_back_to_the_console() {
     // A page the browser owns, not the server: it must render the app
     // rather than 404, or a refresh on any console URL breaks.
-    let (status, body) = get(&app().await, "/governance").await;
+    let (_dir, router) = app().await;
+    let (status, body) = get(&router, "/governance").await;
 
     assert_eq!(status, StatusCode::OK);
-    assert!(body.contains("<html") || body.contains("<!DOCTYPE"), "{body:.120}");
+    assert!(
+        body.contains("<html") || body.contains("<!DOCTYPE"),
+        "{body:.120}"
+    );
 }
 
 #[tokio::test]
 async fn the_fallback_never_shadows_an_api_route() {
-    let router = app().await;
+    let (_dir, router) = app().await;
 
     // Unauthenticated API calls must still be refused with 401 — never
     // answered with the console document, which would turn an auth failure
     // into a baffling parse error on the client.
-    for uri in [
-        "/landscape/058-totem",
-        "/advance/ADV-GATEWAY-010/status",
-    ] {
+    for uri in ["/landscape/058-totem", "/advance/ADV-GATEWAY-010/status"] {
         let (status, body) = get(&router, uri).await;
         assert_eq!(
             status,
@@ -82,7 +99,7 @@ async fn the_fallback_never_shadows_an_api_route() {
 
 #[tokio::test]
 async fn health_and_discovery_still_answer_as_themselves() {
-    let router = app().await;
+    let (_dir, router) = app().await;
 
     let (status, body) = get(&router, "/health").await;
     assert_eq!(status, StatusCode::OK);

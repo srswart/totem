@@ -133,7 +133,8 @@ pub fn router(state: AppState) -> Router {
 /// fail-closed default, not a misconfiguration to work around.
 pub fn authenticated_app(state: AppState) -> Router {
     let state_for_public = state.clone();
-    routes(state.clone())
+    let console_dir = state.console_dir.clone();
+    let app = routes(state.clone())
         .merge(mcp_http::routes(state.clone()))
         .layer(axum::middleware::from_fn_with_state(
             state,
@@ -146,7 +147,33 @@ pub fn authenticated_app(state: AppState) -> Router {
         // than punching per-route holes — is what makes it reviewable, and
         // `tests/auth.rs` pins both directions: /health answers without a
         // credential, and no other route does.
-        .merge(unauthenticated_routes(state_for_public))
+        .merge(unauthenticated_routes(state_for_public));
+
+    match console_dir {
+        Some(dir) => app.fallback_service(console_service(&dir)),
+        None => app,
+    }
+}
+
+/// Serve the console bundle, with an SPA fallback to `index.html`
+/// (ADV-GATEWAY-010).
+///
+/// Mounted with `fallback_service`, deliberately: a fallback only runs when
+/// no route matched, so it can never shadow an API path. The distinction
+/// matters — a greedy catch-all that answered `/recall` with `index.html`
+/// would turn an auth failure into a JSON parse error on the client, and
+/// `tests/console_serving.rs` asserts both directions of it.
+///
+/// The directory is configurable because the bundle's location differs
+/// between a container (baked in at a known path) and a workstation (built
+/// by `dx` into `target/`). A missing directory is not an error: the gateway
+/// still serves its API, and the console simply 404s — an API-only
+/// deployment is a legitimate configuration, not a broken one.
+fn console_service(
+    dir: &std::path::Path,
+) -> tower_http::services::ServeDir<tower_http::services::ServeFile> {
+    tower_http::services::ServeDir::new(dir)
+        .fallback(tower_http::services::ServeFile::new(dir.join("index.html")))
 }
 
 /// Every route that is reachable without a credential. Adding to this list is

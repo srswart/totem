@@ -20,12 +20,26 @@ WORKDIR /build
 COPY . .
 RUN cargo build --release -p totem-gateway --features rocksdb
 
+# The console bundle (ADV-GATEWAY-010), built in its own stage so a console
+# change does not invalidate the gateway's (much longer) compile.
+FROM rust:1.96-slim-bookworm AS console
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+RUN rustup target add wasm32-unknown-unknown
+RUN cargo install dioxus-cli --version 0.7.3 --locked
+WORKDIR /build
+COPY . .
+RUN cd crates/totem-console && dx build --platform web --release
+
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /build/target/release/totem-gateway /usr/local/bin/totem-gateway
+COPY --from=console /build/target/dx/totem-console/release/web/public /console
+ENV TOTEM_CONSOLE_DIR=/console
 
 # The volume mounts here; the gateway opens it exclusively (DEP-001).
 ENV TOTEM_DATA_DIR=/data

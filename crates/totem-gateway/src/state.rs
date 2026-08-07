@@ -27,6 +27,12 @@ pub struct AppState {
     pub store: Store<Db>,
     /// The embedder every `/save` and `/recall` call uses.
     pub embedder: Arc<dyn Embedder>,
+    /// Where the console bundle lives, when this deployment serves one
+    /// (ADV-GATEWAY-010). `None` is an API-only gateway — a legitimate
+    /// configuration, not a broken one. Held in state rather than read from
+    /// the environment inside the router, so tests set it per-instance
+    /// instead of racing on a process-global.
+    pub console_dir: Option<std::path::PathBuf>,
     /// The OAuth resource-server verifier, when the deployment configures one
     /// (ADV-GATEWAY-013). `None` on a workstation with no authorization
     /// server, where static bearer credentials are the only path.
@@ -49,6 +55,7 @@ impl AppState {
     pub fn over(store: Store<Db>) -> Self {
         Self {
             store,
+            console_dir: None,
             // Configured by the binary from the environment when a deployment
             // has an authorization server; absent on a workstation.
             oauth: None,

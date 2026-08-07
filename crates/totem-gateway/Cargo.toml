@@ -28,6 +28,9 @@ anyhow = "1.0"
 # dependency tree, so this adds no new crate to the build.
 async-stream = "0.3"
 axum = "0.8"
+# Static file serving for the console (ADV-GATEWAY-010). `fs` only — the
+# gateway needs a directory server and an SPA fallback, nothing else.
+tower-http = { version = "0.6", default-features = false, features = ["fs"] }
 # Already in the lock via surrealdb; direct dependencies here so the OAuth
 # resource server (ADV-GATEWAY-013) validates tokens with the same version.
 jsonwebtoken = "10.3"
@@ -72,6 +75,7 @@ uuid.workspace = true
 rocksdb = ["totem-store/rocksdb"]
 
 [dev-dependencies]
+tempfile = "3"
 http-body-util = "0.1"
 tower = { version = "0.5", features = ["util"] }
 # Client-side transports for the tool-dispatch tests: a real rmcp client over
