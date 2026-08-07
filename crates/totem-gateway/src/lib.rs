@@ -38,7 +38,10 @@ mod dto;
 mod error;
 pub mod eval;
 mod handlers;
-mod mcp;
+/// The MCP tool surface. Public so tests can assert the *published* input
+/// schema an external client reads — the surface ADV-GATEWAY-013 found
+/// unexercised (claude.ai stringified an untyped parameter).
+pub mod mcp;
 mod mcp_http;
 mod oauth;
 mod ops;
