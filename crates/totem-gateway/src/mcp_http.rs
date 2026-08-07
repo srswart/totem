@@ -35,9 +35,19 @@ pub(crate) fn routes(state: AppState) -> Router {
     // Totem's tools are all request/response, and rmcp still falls back to SSE
     // by itself if a handler ever emits something mid-call.
     config.json_response = true;
-    // `allowed_hosts` is left at its loopback-only default on purpose: a
-    // public deployment must widen it to its own hostnames, and that belongs
-    // with the deployment that has one (ADV-INFRA-001), not hard-coded here.
+    // `allowed_hosts` defaults to loopback-only (rmcp's DNS-rebinding
+    // protection). A deployment with a public hostname names it via
+    // TOTEM_MCP_ALLOWED_HOSTS (comma-separated host or host:port entries) —
+    // executed first by the ADV-GATEWAY-011 connector probe, whose tunnel
+    // Host the default rightly refused with `403 Host header is not allowed`.
+    if let Ok(hosts) = std::env::var("TOTEM_MCP_ALLOWED_HOSTS") {
+        config.allowed_hosts.extend(
+            hosts
+                .split(',')
+                .map(|host| host.trim().to_string())
+                .filter(|host| !host.is_empty()),
+        );
+    }
 
     let service = StreamableHttpService::new(
         move || Ok(TotemMcp::token_bound(state.clone())),
