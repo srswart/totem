@@ -38,8 +38,12 @@ mod dto;
 mod error;
 pub mod eval;
 mod handlers;
-mod mcp;
+/// The MCP tool surface. Public so tests can assert the *published* input
+/// schema an external client reads — the surface ADV-GATEWAY-013 found
+/// unexercised (claude.ai stringified an untyped parameter).
+pub mod mcp;
 mod mcp_http;
+mod oauth;
 mod ops;
 mod sse;
 mod state;
@@ -60,6 +64,7 @@ pub use dto::{
 };
 pub use error::GatewayError;
 pub use mcp::TotemMcp;
+pub use oauth::{OAuthVerifier, PROTECTED_RESOURCE_METADATA_PATH, from_env as oauth_from_env};
 pub use state::AppState;
 
 /// The REST routes themselves, with no caller attached.
@@ -127,10 +132,34 @@ pub fn router(state: AppState) -> Router {
 /// An [`AppState`] with an empty [`TokenRegistry`] serves nothing: that is the
 /// fail-closed default, not a misconfiguration to work around.
 pub fn authenticated_app(state: AppState) -> Router {
+    let state_for_public = state.clone();
     routes(state.clone())
         .merge(mcp_http::routes(state.clone()))
         .layer(axum::middleware::from_fn_with_state(
             state,
             auth::authenticate,
         ))
+        // Merged *outside* the auth layer, deliberately. Two independent
+        // clients cannot present a credential and still need an answer:
+        // platform health checks (ADV-INFRA-002) and OAuth discovery
+        // (MCP-014). Keeping the exception in one named function — rather
+        // than punching per-route holes — is what makes it reviewable, and
+        // `tests/auth.rs` pins both directions: /health answers without a
+        // credential, and no other route does.
+        .merge(unauthenticated_routes(state_for_public))
+}
+
+/// Every route that is reachable without a credential. Adding to this list is
+/// a security decision; the auth tests exist to make an accidental addition
+/// fail loudly.
+fn unauthenticated_routes(state: AppState) -> Router {
+    Router::new()
+        .route("/health", get(handlers::health))
+        // RFC 9728 discovery. Unauthenticated by necessity: a client that
+        // cannot read this cannot learn how to authenticate (MCP-014).
+        .route(
+            oauth::PROTECTED_RESOURCE_METADATA_PATH,
+            get(handlers::protected_resource_metadata),
+        )
+        .with_state(state)
 }

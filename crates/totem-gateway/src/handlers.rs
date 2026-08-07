@@ -24,6 +24,7 @@
 use axum::Json;
 use axum::body::{Body, Bytes};
 use axum::extract::{Extension, Path, Query, State};
+use axum::http::StatusCode;
 use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE};
 use axum::response::{IntoResponse, Response};
 use totem_core::{MemoryId, PromotionId, RepoId};
@@ -80,6 +81,32 @@ pub(crate) async fn save(
     let id = ops::save(&state, input, &caller, "/save").await?;
 
     Ok(Json(SaveResponse { id }))
+}
+
+/// `GET /health`: liveness only, no credential required.
+///
+/// Deliberately returns a constant. A health endpoint that reports build
+/// metadata, store paths, or record counts hands an unauthenticated caller
+/// free reconnaissance; platform health checks need none of it. See
+/// `crate::unauthenticated_routes` for why this route is outside the auth
+/// layer at all.
+pub(crate) async fn health() -> &'static str {
+    "ok"
+}
+
+/// `GET /.well-known/oauth-protected-resource`: RFC 9728 metadata.
+///
+/// Unauthenticated by necessity (MCP-014) and by design: the document names
+/// this server and its authorization server, and contains nothing secret. A
+/// gateway with no OAuth configured answers 404 — there is no authorization
+/// server to point at, and saying so is more honest than an empty document.
+pub(crate) async fn protected_resource_metadata(
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    match state.oauth.as_ref() {
+        Some(verifier) => Ok(Json(verifier.metadata())),
+        None => Err(StatusCode::NOT_FOUND),
+    }
 }
 
 pub(crate) async fn recall(

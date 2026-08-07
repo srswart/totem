@@ -162,6 +162,82 @@ fn enroll_body(arrive_id: &str, git_repo: &str) -> Value {
 // Authentication: is there a live credential at all?
 // ---------------------------------------------------------------------------
 
+/// The unauthenticated surface is an enumerated exception, not a hole.
+///
+/// Fly's health checks cannot present a credential (ADV-INFRA-002), the same
+/// way OAuth discovery clients cannot (MCP-014). `/health` is therefore
+/// deliberately outside the auth layer — and these tests pin *both*
+/// directions: it answers without a credential, and nothing else does.
+#[tokio::test]
+async fn health_answers_without_a_credential() {
+    let (router, _tokens) = app().await;
+
+    let response = send(
+        &router,
+        Request::builder()
+            .method("GET")
+            .uri("/health")
+            .body(Body::empty())
+            .expect("request builds"),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(body_text(response).await, "ok");
+}
+
+#[tokio::test]
+async fn health_reveals_nothing_but_liveness() {
+    let (router, _tokens) = app().await;
+
+    let response = send(
+        &router,
+        Request::builder()
+            .method("GET")
+            .uri("/health")
+            .body(Body::empty())
+            .expect("request builds"),
+    )
+    .await;
+    let body = body_text(response).await;
+
+    // A health endpoint that leaks build metadata, store paths, or counts
+    // hands an unauthenticated caller reconnaissance for free.
+    assert_eq!(body, "ok", "health must answer liveness only, got: {body}");
+}
+
+#[tokio::test]
+async fn no_route_other_than_health_answers_without_a_credential() {
+    let (router, _tokens) = app().await;
+
+    // One representative of every unauthenticated-reachable shape: a GET, a
+    // POST, the MCP surface, and a path that does not exist. None may serve
+    // data without a credential.
+    for (method, uri) in [
+        ("GET", "/landscape/058-totem"),
+        ("POST", "/recall"),
+        ("POST", "/mcp"),
+        ("GET", "/advance/ADV-INFRA-002/status"),
+    ] {
+        let response = send(
+            &router,
+            Request::builder()
+                .method(method)
+                .uri(uri)
+                .header("content-type", "application/json")
+                .body(Body::from("{}"))
+                .expect("request builds"),
+        )
+        .await;
+
+        assert_eq!(
+            response.status(),
+            StatusCode::UNAUTHORIZED,
+            "{method} {uri} must stay behind the auth layer"
+        );
+    }
+}
+
 #[tokio::test]
 async fn a_request_with_no_credential_is_refused() {
     let (router, _tokens) = app().await;

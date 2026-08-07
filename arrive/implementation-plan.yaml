@@ -305,13 +305,13 @@ passes:
               v4 through dx's native integration; before/after screenshots
               are evidence.
       - id: "phase-010"
-        title: "Dogfood trial (docs/dogfood/plan.md)"
+        title: "Dogfood trial: deployed authenticated gateway"
         order: 2
         items:
           - id: "ADV-GATEWAY-011"
             advance_id: "ADV-GATEWAY-011"
             title: "Investigation: cloud-routine connector reach to an external HTTPS MCP"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-GATEWAY-003"]
             notes: >-
@@ -321,24 +321,81 @@ passes:
           - id: "ADV-GATEWAY-012"
             advance_id: "ADV-GATEWAY-012"
             title: "Durable credential registry"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-GATEWAY-003", "ADV-INFRA-001"]
             notes: >-
               Cloud-eligible. TokenRegistry is in-memory today; grants must
               survive restarts, issuance becomes a privileged authenticated
               endpoint, fingerprints-only extends to durable rows.
+          - id: "ADV-GATEWAY-013"
+            advance_id: "ADV-GATEWAY-013"
+            title: "OAuth 2.1 resource server: protected-resource metadata + third-party token validation"
+            status: done
+            owner: "058-totem"
+            dependencies: ["ADV-GATEWAY-003", "ADV-GATEWAY-011"]
+            notes: >-
+              Cloud-eligible. ADV-GATEWAY-011 proved claude.ai connectors are
+              OAuth-only (MCP-013). Per the MCP spec Totem is a RESOURCE
+              server only — no authorization server, no login UI: RFC 9728
+              metadata outside the auth layer, resource_metadata in the 401,
+              and third-party token validation with mandatory audience
+              binding, mapping claims onto the existing repo+scope+actor
+              grant. Provider choice is recorded by the advance.
           - id: "ADV-INFRA-002"
             advance_id: "ADV-INFRA-002"
-            title: "Hosted deployment: container image, TLS, supervision, daily backup"
-            status: planned
+            title: "Fly.io deployment: image, single-machine volume, secrets, snapshots"
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-INFRA-001", "ADV-GATEWAY-011"]
             notes: >-
-              WORKSTATION — provision a small always-on host (decision
-              2026-08-07), Caddy TLS in front of the loopback gateway,
-              compose supervision, daily backup, migrate the workstation
-              estate. Trial-grade by design.
+              WORKSTATION — Fly.io app `totem-dev`, region `sin` (decision
+              2026-08-07); TLS and supervision come from the platform. The
+              work is DEP-001 vs Fly defaults: exactly one machine, no
+              rolling deploy, a volume for the estate, secrets via
+              `fly secrets`, rmcp `allowed_hosts` configuration, and an unauthenticated
+              /health route. Public resource URI `https://totem-dev.fly.dev` is the WorkOS
+              Resource Indicator.
+      - id: "phase-011"
+        title: "Dogfood trial: clients, quality, cutover"
+        order: 3
+        items:
+          - id: "ADV-GATEWAY-014"
+            advance_id: "ADV-GATEWAY-014"
+            title: "Trim recall payloads: embeddings out of client responses"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-GATEWAY-002"]
+            notes: >-
+              Cloud-eligible. Found in the first real agent use of the
+              deployed gateway: recall returns 384 floats per record to a
+              caller that pays per token and cannot use them. Recall is the
+              most frequent call in the trial, so the cost compounds.
+          - id: "ADV-CLI-002"
+            advance_id: "ADV-CLI-002"
+            title: "CLI authenticates to the gateway"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-GATEWAY-012"]
+            notes: >-
+              Cloud-eligible. enroll.rs sends no credential at all — the CLI
+              worked in demos only because the gateway was an unauthenticated
+              loopback composition. Without this the dogfood trial has no
+              landscape, since enroll and the sync hook both 401. Bearer from
+              flag/env/local store, with gateway-backed issuance.
+          - id: "ADV-GATEWAY-010"
+            advance_id: "ADV-GATEWAY-010"
+            title: "Console on the gateway: static hosting + AuthKit browser login"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-GATEWAY-013", "ADV-INFRA-002", "ADV-CONSOLE-004"]
+            notes: >-
+              Two gaps found while deploying INFRA-002: the console is not in
+              the image at all, and it sends no credential so it cannot talk
+              to the deployed gateway. Ships the wasm bundle from the gateway
+              (same origin, no proxy) and adds AuthKit browser login via PKCE,
+              reusing GATEWAY-013's validation path. Retires
+              ADV-CONSOLE-001's free-text-actor risk.
           - id: "ADV-STORE-008"
             advance_id: "ADV-STORE-008"
             title: "Real embedder in the deployed build (BGE-small-en-v1.5)"
@@ -355,7 +412,7 @@ passes:
             title: "Dogfood cutover: enroll, credentials, harness wiring, memory discipline, measurement"
             status: planned
             owner: "058-totem"
-            dependencies: ["ADV-GATEWAY-012", "ADV-INFRA-002", "ADV-STORE-008", "ADV-GATEWAY-009"]
+            dependencies: ["ADV-GATEWAY-012", "ADV-GATEWAY-013", "ADV-INFRA-002", "ADV-STORE-008", "ADV-GATEWAY-009"]
             notes: >-
               WORKSTATION — the switch-flip: per-identity credentials
               (cloud-opus, cloud-sonnet, shawn), MCP connectors on both
@@ -363,7 +420,7 @@ passes:
               CLAUDE.local.md, measurement collection starts.
       - id: "phase-009"
         title: "Evaluations (quality, security, performance)"
-        order: 3
+        order: 4
         items:
           - id: "ADV-GATEWAY-006"
             advance_id: "ADV-GATEWAY-006"

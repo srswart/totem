@@ -28,6 +28,10 @@ anyhow = "1.0"
 # dependency tree, so this adds no new crate to the build.
 async-stream = "0.3"
 axum = "0.8"
+# Already in the lock via surrealdb; direct dependencies here so the OAuth
+# resource server (ADV-GATEWAY-013) validates tokens with the same version.
+jsonwebtoken = "10.3"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 chrono.workspace = true
 # Pinned exactly, matching totem-mcp-spike's pin: docs/tech-direction/mcp.md
 # (ADV-GATEWAY-005) verified this exact version's stdio and streamable-HTTP

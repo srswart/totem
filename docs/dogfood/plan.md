@@ -51,12 +51,20 @@ routines already use for other connectors) — which requires the gateway's
   Standard answer: a reverse proxy (Caddy) terminating TLS in front of the
   loopback gateway, on a small domain. The single-owner invariant is
   unaffected — the proxy is a client, not a store owner.
-- **Probe first.** docs/tech-direction/mcp.md verified the transport
-  end-to-end in-sandbox but could NOT verify each harness's outbound
-  connector reach from primary sources. Before building anything: attach a
-  trivial HTTPS MCP endpoint as a connector to a test routine and prove a
-  cloud run can call one tool through it. One afternoon; de-risks the whole
-  plan.
+- **Probe executed 2026-08-07 (ADV-GATEWAY-011) — and it changed the plan.**
+  claude.ai connectors are **OAuth-only**: no static bearer can be
+  configured, and Dynamic Client Registration against Totem fails
+  (MCP-013). **Resolved 2026-08-07 by reading the spec: Totem implements
+  only the OAuth 2.1 *resource server* role** (ADV-GATEWAY-013) — RFC 9728
+  metadata, a discovery-friendly 401, and third-party token validation with
+  audience binding. The authorization server is a third-party identity
+  provider (explicitly out of scope per the MCP spec); Totem issues no OAuth
+  tokens and runs no login UI. This supersedes the interim "OAuth proxy
+  front" recommendation — keeping authorization in the gateway keeps it
+  where the scope invariants already live. Totem's own repo+scope+actor
+  grants stay as they are; the OAuth path maps onto them. Also: the OAuth discovery documents must sit outside the
+  auth layer (MCP-014), and public hostnames must be named via
+  `TOTEM_MCP_ALLOWED_HOSTS` (MCP-012, shipped).
 
 ### 3.2 Credentials that survive and identities that mean something
 
@@ -123,7 +131,13 @@ routines already use for other connectors) — which requires the gateway's
 | 4 | ADV-STORE-008 — real embedder in deployment | fastembed/BGE in the hosted build; re-embed; golden-query smoke | WORKSTATION |
 | 5 | ADV-INFRA-003 — cutover | Enroll, per-identity credentials, connector + harness wiring, memory discipline, measurement | WORKSTATION |
 
-All five are authored into **phase-010 ("Dogfood trial")**, sequenced before
+Split 2026-08-07 once four had landed: **phase-010 ("deployed authenticated
+gateway")** holds the completed server-side work — connector probe, durable
+credentials, OAuth resource server, Fly deployment — and **phase-011
+("clients, quality, cutover")** holds what remains: recall payload trimming,
+CLI auth, console login, the real embedder, and the cutover itself. The split
+lets the deployed gateway reach master rather than waiting on the whole
+trial. Originally all five were authored into **phase-010**, sequenced before
 the evaluations phase (now order 3) so the trial starts as soon as the
 workstation track completes; the security evaluation then runs against the
 deployed, dogfooding system.

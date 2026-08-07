@@ -91,7 +91,7 @@ async fn connect_store() -> Store<Db> {
 /// Returns the grant that was registered, or `None` when no bootstrap
 /// credential was configured. A *partially* configured one is an error, not a
 /// silent skip: half-set variables mean someone intended to authenticate.
-fn bootstrap(tokens: &TokenRegistry) -> Result<Option<TokenGrant>, AuthError> {
+fn bootstrap(tokens: &TokenRegistry) -> Result<Option<(TokenGrant, String)>, AuthError> {
     let configured: Vec<Option<String>> = [TOKEN_VAR, REPO_VAR, SCOPE_VAR, ACTOR_VAR]
         .iter()
         .map(|name| env::var(name).ok().filter(|value| !value.is_empty()))
@@ -121,24 +121,88 @@ fn bootstrap(tokens: &TokenRegistry) -> Result<Option<TokenGrant>, AuthError> {
     tokens.revoke(&issued);
     tokens.register(&token, grant.clone());
 
-    Ok(Some(grant))
+    Ok(Some((grant, TokenRegistry::fingerprint_of(&token))))
 }
 
 #[tokio::main]
 async fn main() {
     let store = connect_store().await;
     store.migrate().await.expect("migrations apply");
-    let state = AppState::over(store);
+    let mut state = AppState::over(store);
+
+    // OAuth resource-server mode (ADV-GATEWAY-013), when the deployment
+    // configures an authorization server. Absent it, static bearer
+    // credentials remain the only path — which is what a workstation runs.
+    state.oauth = totem_gateway::oauth_from_env();
+    match state.oauth.as_ref() {
+        Some(verifier) => println!("oauth: resource server for {}", verifier.metadata_url()),
+        None => println!(
+            "oauth: not configured (static bearer credentials only); set \
+             TOTEM_OAUTH_ISSUER/_RESOURCE/_REPO/_SCOPE to enable"
+        ),
+    }
+
+    // Durable grants first (ADV-GATEWAY-012): everything issued through the
+    // gateway survives the restart a deploy performs. The bootstrap
+    // credential is layered on top so a data directory that has lost its
+    // credentials — or a brand-new one — is still reachable.
+    let durable = match state.store.credentials().active().await {
+        Ok(rows) => match state.tokens.load_from(rows) {
+            Ok(0) => 0,
+            Ok(loaded) => {
+                println!("loaded {loaded} durable credential(s)");
+                loaded
+            }
+            Err(error) => {
+                eprintln!("refusing to start: stored credentials are unreadable: {error}");
+                std::process::exit(1);
+            }
+        },
+        Err(error) => {
+            // Fail closed and loudly: continuing would silently serve a
+            // gateway that has forgotten who may call it.
+            eprintln!("refusing to start: cannot read stored credentials: {error}");
+            std::process::exit(1);
+        }
+    };
 
     match bootstrap(&state.tokens) {
-        Ok(Some(grant)) => println!(
-            "registered bootstrap credential: repo {}, scope {}, actor {}",
-            grant.repo, grant.scope, grant.actor
-        ),
-        Ok(None) => eprintln!(
+        Ok(Some((grant, fingerprint))) => {
+            // Persist it like any other grant, so a later `credential list`
+            // shows every credential that can reach this gateway rather than
+            // all-but-the-bootstrap-one.
+            let row = totem_store::CredentialGrantRow {
+                fingerprint,
+                repo: grant.repo.to_string(),
+                scope: grant.scope.to_string(),
+                actor: grant.actor.to_string(),
+                expires_at: grant.expires_at,
+                revoked: false,
+            };
+            match state.store.credentials().record(&row).await {
+                Ok(()) => println!(
+                    "registered bootstrap credential: repo {}, scope {}, actor {}",
+                    grant.repo, grant.scope, grant.actor
+                ),
+                Err(error) => {
+                    // A revoked bootstrap fingerprint is the interesting case:
+                    // someone revoked this credential deliberately, and the
+                    // environment still carries it. Refuse rather than quietly
+                    // honouring a revoked token.
+                    eprintln!("refusing to start: bootstrap credential rejected: {error}");
+                    std::process::exit(1);
+                }
+            }
+        }
+        // Only warn when the gateway genuinely cannot be reached. Before
+        // ADV-GATEWAY-012 an absent bootstrap meant an empty registry; now
+        // durable grants may already have filled it, and warning anyway told
+        // an operator their credentials were gone when they were not.
+        Ok(None) if durable == 0 => eprintln!(
             "warning: no credential is registered, so every request will be refused with 401. \
              Set {TOKEN_VAR}/{REPO_VAR}/{SCOPE_VAR}/{ACTOR_VAR} to seed one."
         ),
+        Ok(None) => {}
         Err(error) => {
             eprintln!("refusing to start: {error}");
             std::process::exit(1);

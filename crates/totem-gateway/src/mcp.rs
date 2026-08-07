@@ -77,6 +77,81 @@ pub struct RecallParams {
     pub turn: Option<u32>,
 }
 
+/// A JSON value that a client may deliver either as a real object or as a
+/// *string containing JSON* (ADV-GATEWAY-013 bug fix).
+///
+/// The primary fix for the stringification bug is the schema: parameters now
+/// declare their shape, so a well-behaved client sends an object. This is the
+/// belt to that braces. claude.ai's connector stringified an untyped
+/// parameter, and there is no reason to assume it is the only harness that
+/// will — accepting a JSON-encoded string costs one parse attempt and turns a
+/// class of interop failure into a non-event.
+///
+/// It is deliberately *not* silent about malformed input: a string that does
+/// not parse as JSON still fails, with the parse error.
+fn json_or_stringified<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::de::DeserializeOwned,
+{
+    let value = JsonValue::deserialize(deserializer)?;
+    let value = match value {
+        JsonValue::String(text) => serde_json::from_str(&text).map_err(serde::de::Error::custom)?,
+        other => other,
+    };
+    serde_json::from_value(value).map_err(serde::de::Error::custom)
+}
+
+/// `Option<SubjectParam>` with the same string tolerance as
+/// [`json_or_stringified`].
+fn optional_subject<'de, D>(deserializer: D) -> Result<Option<SubjectParam>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<JsonValue>::deserialize(deserializer)?;
+    match value {
+        None | Some(JsonValue::Null) => Ok(None),
+        Some(JsonValue::String(text)) if text.is_empty() => Ok(None),
+        Some(JsonValue::String(text)) => serde_json::from_str(&text)
+            .map(Some)
+            .map_err(serde::de::Error::custom),
+        Some(other) => serde_json::from_value(other)
+            .map(Some)
+            .map_err(serde::de::Error::custom),
+    }
+}
+
+/// Who is writing a record.
+///
+/// A typed parameter rather than a bare JSON value so the *published* schema
+/// says `object` — see this module's tests and the bug this shape fixes.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct AuthorParam {
+    /// `"human"`, `"agent"`, or `"curator"`.
+    pub kind: String,
+    /// The identity behind the write, e.g. `"ada"`.
+    pub actor: String,
+}
+
+impl AuthorParam {
+    fn into_author(self) -> Result<Author, ErrorData> {
+        serde_json::from_value(serde_json::json!({
+            "kind": self.kind,
+            "actor": self.actor,
+        }))
+        .map_err(invalid_params)
+    }
+}
+
+/// The entity or ARRIVE artifact a record concerns.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SubjectParam {
+    /// The kind of thing referenced, e.g. `"component"`, `"advance"`.
+    pub kind: String,
+    /// The referenced id in that kind's own namespace, e.g. `"gateway"`.
+    pub id: String,
+}
+
 /// Parameters for `totem_save`.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct SaveParams {
@@ -93,16 +168,18 @@ pub struct SaveParams {
     pub scope: String,
     /// The entity or ARRIVE artifact this record concerns, if any:
     /// `{"kind": "component", "id": "gateway"}`.
-    pub subject: Option<JsonValue>,
+    #[serde(default, deserialize_with = "crate::mcp::optional_subject")]
+    pub subject: Option<SubjectParam>,
     /// The memory's content.
     pub body: String,
     /// Free-form tags.
     #[serde(default)]
     pub tags: Vec<String>,
     /// Who is writing, e.g. `{"kind": "agent", "actor": "ada"}`.
-    pub author: JsonValue,
-    /// Which harness this call arrived through.
-    pub harness: JsonValue,
+    #[serde(deserialize_with = "crate::mcp::json_or_stringified")]
+    pub author: AuthorParam,
+    /// Which harness this call arrived through, e.g. `"claude_code"`.
+    pub harness: String,
     /// The harness session this call belongs to.
     pub session: String,
     /// The turn within that session, when the harness reports one.
@@ -295,11 +372,17 @@ fn parse_save_input(params: SaveParams) -> Result<SaveInput, ErrorData> {
     let scope: Scope = params.scope.parse().map_err(invalid_params)?;
     let subject: Option<SubjectRef> = params
         .subject
-        .map(serde_json::from_value)
+        .map(|subject| {
+            serde_json::from_value(serde_json::json!({
+                "kind": subject.kind,
+                "id": subject.id,
+            }))
+        })
         .transpose()
         .map_err(invalid_params)?;
-    let author: Author = serde_json::from_value(params.author).map_err(invalid_params)?;
-    let harness: Harness = serde_json::from_value(params.harness).map_err(invalid_params)?;
+    let author: Author = params.author.into_author()?;
+    let harness: Harness =
+        serde_json::from_value(JsonValue::String(params.harness)).map_err(invalid_params)?;
     let session = SessionId::new(params.session).map_err(invalid_params)?;
 
     Ok(SaveInput {

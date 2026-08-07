@@ -1,0 +1,21 @@
+# Keep the Docker build context small (ADV-INFRA-002).
+#
+# Without this, `COPY . .` ships target/ — multiple gigabytes after any local
+# build — to Fly's remote builder. The first deploy attempt did exactly that
+# and appeared to hang for over an hour while uploading it.
+target/
+.git/
+.github/
+docs/
+node_modules/
+.totem/
+*.log
+
+# Keep: Cargo manifests, crates/, and the workspace lockfile — the build
+# needs those.
+
+# The downloaded BGE model cache (128MB) — the deployed image fetches its own
+# when ADV-STORE-008 enables the fastembed feature; it must not ride along in
+# every build context.
+**/.fastembed_cache/
+arrive-linux

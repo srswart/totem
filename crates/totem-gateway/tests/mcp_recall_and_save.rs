@@ -251,3 +251,77 @@ async fn totem_landscape_without_a_repo_id_is_a_protocol_level_error() {
 
     client.cancel().await.expect("clean shutdown");
 }
+
+/// The *published schema* must declare object-typed parameters
+/// (ADV-GATEWAY-013 bug fix).
+///
+/// Found by the first real external client: claude.ai's connector read
+/// `totem_save`'s schema, found no `type` on `author` (because the field was
+/// `serde_json::Value`, which tells schemars nothing), and serialized the
+/// argument as a *string*. The server then rejected `"{\"kind\":...}"` because
+/// `Author` is adjacently tagged and has no string form — an error no caller
+/// could work around.
+///
+/// Every existing MCP test calls the tools in-process with typed Rust
+/// arguments, so none of them ever exercised the schema an external client
+/// actually reads. This one does.
+mod published_schema {
+    use rmcp::handler::server::wrapper::Parameters;
+    use rmcp::schemars::schema_for;
+    use serde_json::Value;
+    use totem_gateway::mcp::SaveParams;
+
+    fn schema() -> Value {
+        serde_json::to_value(schema_for!(SaveParams)).expect("schema serialises")
+    }
+
+    #[test]
+    fn save_declares_author_as_an_object() {
+        let schema = schema()["properties"]["author"].clone();
+        assert!(
+            schema.get("type").is_some() || schema.get("$ref").is_some(),
+            "author has no type in the published schema, so a client cannot \
+             know to send an object: {schema}"
+        );
+    }
+
+    #[test]
+    fn save_declares_subject_as_an_object() {
+        let schema = schema()["properties"]["subject"].clone();
+        assert!(
+            !schema.is_null(),
+            "subject missing from the published schema entirely"
+        );
+        let describes_object = schema.to_string().contains("object")
+            || schema.get("$ref").is_some()
+            || schema.get("anyOf").is_some();
+        assert!(
+            describes_object,
+            "subject has no object shape in the published schema: {schema}"
+        );
+    }
+
+    #[test]
+    fn no_save_parameter_is_left_untyped() {
+        // The class of bug, not just its two instances: an untyped parameter
+        // is one a client is free to stringify.
+        let schema = schema();
+        let properties = schema["properties"].as_object().expect("properties");
+        let untyped: Vec<&String> = properties
+            .iter()
+            .filter(|(_, value)| {
+                value.get("type").is_none()
+                    && value.get("$ref").is_none()
+                    && value.get("anyOf").is_none()
+                    && value.get("allOf").is_none()
+                    && value.get("oneOf").is_none()
+            })
+            .map(|(name, _)| name)
+            .collect();
+        assert!(
+            untyped.is_empty(),
+            "untyped parameters invite clients to stringify them: {untyped:?}"
+        );
+        let _ = std::marker::PhantomData::<Parameters<SaveParams>>;
+    }
+}
