@@ -9,7 +9,7 @@
 # because workstations run a newer toolchain. Pinned rather than `latest` so a
 # Rust release cannot break a deploy mid-trial, the same reasoning as the
 # surrealdb pin.
-FROM rust:1.96-slim-bookworm AS builder
+FROM rust:1.96-slim-trixie AS builder
 
 # RocksDB's build needs a C++ toolchain; SurrealDB's TLS needs pkg-config.
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -19,6 +19,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /build
 COPY . .
 # `fastembed` brings ONNX Runtime, which needs a C++ toolchain to link.
+#
+# Trixie rather than bookworm for every stage (ADV-STORE-008): the prebuilt
+# ONNX Runtime `ort` links against libstdc++ 13+ symbols (`_M_replace_cold`),
+# which bookworm's GCC 12 runtime does not define. The failure is a linker
+# error deep in `ort-sys` that names a C++ mangled symbol and nothing about
+# Debian releases. The runtime stage must match, since the binary needs that
+# libstdc++ at run time too.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends pkg-config libssl-dev build-essential \
     && rm -rf /var/lib/apt/lists/*
@@ -33,7 +40,7 @@ RUN /build/target/release/totem-gateway --warm-embedder
 
 # The console bundle (ADV-GATEWAY-010), built in its own stage so a console
 # change does not invalidate the gateway's (much longer) compile.
-FROM rust:1.96-slim-bookworm AS console
+FROM rust:1.96-slim-trixie AS console
 # dioxus-cli links against OpenSSL; without these its build fails with
 # "Could not find directory of OpenSSL installation". This layer sits before
 # `COPY . .` so Docker caches the CLI build across deploys — a source change
@@ -47,7 +54,7 @@ WORKDIR /build
 COPY . .
 RUN cd crates/totem-console && dx build --platform web --release
 
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
     && rm -rf /var/lib/apt/lists/*
