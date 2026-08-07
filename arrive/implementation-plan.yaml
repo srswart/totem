@@ -409,8 +409,8 @@ passes:
               still runs.
           - id: "ADV-INFRA-004"
             advance_id: "ADV-INFRA-004"
-            title: "Memory discipline as synced agent rules and a Totem skill"
-            status: planned
+            title: "Memory discipline: standalone rules and a Totem skill (trial v1)"
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-GATEWAY-013"]
             notes: >-
