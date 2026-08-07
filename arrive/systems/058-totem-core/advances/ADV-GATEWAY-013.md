@@ -95,21 +95,68 @@ all of it); provider selection and tenant configuration (an
 ADV-INFRA-002 deployment concern); console human auth (reserved
 ADV-GATEWAY-010).
 
-## Open decision this advance must record
+## Provider: WorkOS AuthKit (decided 2026-08-07, Shawn)
 
-**Which identity provider**, and **how many identities**. The provider must
-serve RFC 8414 metadata and should support Dynamic Client Registration
-(RFC 7591) — the claude.ai connector attempts DCR first and falls back to a
-manually supplied Client ID, so a provider without DCR is usable but needs a
-pre-registered client. Candidates: Auth0 (free tier, DCR), WorkOS AuthKit
-(MCP-oriented), Okta, Cloudflare Access.
+Chosen over Auth0/Okta/self-hosted Keycloak: AuthKit documents the MCP
+resource-server pattern directly, supports both Client ID Metadata Documents
+(CIMD) and Dynamic Client Registration, and needs no service of our own to
+run. Self-hosting an authorization server was rejected as more operations
+than the entire rest of the deployment; building one inside Totem was
+rejected as the security surface this advance exists to avoid.
 
-Note for the dogfood identity model: if both routines authenticate as the
-same human, Totem sees one actor and the per-routine identities
-(`cloud-opus`, `cloud-sonnet`) that ADV-INFRA-003 assumes collapse into one.
-Either provision an identity per routine, or accept a single `cloud` actor
-and record that the access log cannot separate them. Decide before the
-cutover, not during it.
+The provider is named in exactly one place (the metadata document's
+`authorization_servers`), so this choice stays swappable.
+
+**Configuration the deployment supplies** (WorkOS dashboard →
+*Connect* → *Configuration*, per workos.com/docs/authkit/mcp, fetched
+2026-08-07):
+
+- Enable **CIMD** (MCP client discovery) **and DCR** — the claude.ai
+  connector was observed attempting DCR first (MCP-013), so both paths
+  should exist.
+- Register Totem's public MCP URL as a **valid Resource Indicator**, and set
+  it as the default Resource Indicator so clients that omit `resource` still
+  work.
+
+**Values this advance consumes** (from the AuthKit domain, `$AUTHKIT`):
+
+| Purpose | Value |
+|---|---|
+| Issuer (`iss` check) | `https://$AUTHKIT` |
+| AS metadata (client-side discovery) | `https://$AUTHKIT/.well-known/oauth-authorization-server` |
+| JWKS (signature verification) | `https://$AUTHKIT/oauth2/jwks` |
+| Audience (`aud` check) | Totem's canonical resource URI |
+
+**Protected Resource Metadata to serve** at
+`/.well-known/oauth-protected-resource`:
+
+```json
+{
+  "resource": "https://<totem-host>",
+  "authorization_servers": ["https://<authkit-domain>"],
+  "bearer_methods_supported": ["header"]
+}
+```
+
+Configuration is environment-supplied, never compiled in: the issuer, JWKS
+URL, and canonical resource URI are deployment values (workstation, host,
+and test all differ), and the tests must be able to run against a fake
+issuer without network access.
+
+**Sequencing note:** the Resource Indicator must be Totem's real public URL,
+which does not exist until ADV-INFRA-002 provisions a hostname. Either
+configure AuthKit with a placeholder and correct it during INFRA-002, or do
+the AuthKit registration as an INFRA-002 step. Do not let this advance block
+on a hostname it does not own.
+
+## Open decision: how many identities
+
+If both routines authenticate as the same human, Totem sees one actor and the
+per-routine identities (`cloud-opus`, `cloud-sonnet`) that ADV-INFRA-003
+assumes collapse into one — the access log could no longer say which routine
+recalled or saved what, weakening the dogfood measurement. Either provision
+an AuthKit user per routine, or accept a single `cloud` actor and record the
+loss plainly. Decide before the cutover, not during it.
 
 ## Risk + Rollback
 
