@@ -209,6 +209,65 @@ Cursor's own docs or a live session first.
 | Anthropic cloud agents via the Claude API MCP connector | Streamable HTTP or SSE only, server must be public HTTPS; no stdio | OAuth Bearer token (`authorization_token`), caller-managed | **Documented** — primary source (`platform.claude.com/docs/en/agents-and-tools/mcp-connector`), fetched live |
 | Cursor (local IDE agent) | stdio, streamable HTTP (per secondary sources) | Not confirmed | **Unverified** — `docs.cursor.com` blocked in this sandbox; secondary sources only |
 | Cursor (background agents) | Reported: child process or HTTP, matching local agent | Not confirmed | **Unverified** — same block; secondary sources only |
+| claude.ai **scheduled routines** (the cloud agents building Totem) | Streamable HTTP, public HTTPS, attached as a custom connector | **OAuth 2.1 only** — no static-header option exists in the connector dialog; the client attempts RFC 7591 Dynamic Client Registration, then falls back to a manually supplied OAuth Client ID/Secret | **Executed 2026-08-07 (ADV-GATEWAY-011)** — MCP-012..MCP-014 below |
+
+### MCP-012 — rmcp's host allowlist refuses public hostnames by default
+
+`StreamableHttpServerConfig::allowed_hosts` defaults to
+`["localhost", "127.0.0.1", "::1"]` (DNS-rebinding protection). Reaching the
+gateway through a public hostname returns, verbatim:
+
+    Forbidden: Host header is not allowed   (HTTP 403)
+
+Fixed in this advance: `TOTEM_MCP_ALLOWED_HOSTS` (comma-separated
+`host` or `host:port`) extends the list; the default stays loopback-only, so
+a deployment must name its own hostnames deliberately.
+
+### MCP-013 — claude.ai connectors cannot carry a static bearer token
+
+The "Add custom connector" dialog offers name, URL, and — under Advanced —
+**OAuth Client ID and Client Secret only**. There is no header field, no
+bearer field. On Add, the client attempted **Dynamic Client Registration**
+against Totem and failed:
+
+    Couldn't register with Totem's sign-in service. You can try again, or add
+    an OAuth Client ID in the connector settings.
+
+**This refutes ADV-GATEWAY-011's H1** ("the connector mechanism passes a
+configured bearer header through to the MCP server"). ADV-GATEWAY-003's
+bearer credentials remain correct for `curl`, the CLI, Claude Code's own
+`--transport http` registration, and the Claude API MCP connector
+(`authorization_token`) — but they cannot, alone, make Totem reachable from a
+claude.ai scheduled routine.
+
+### MCP-014 — auth in front of everything hides the discovery documents
+
+A spec-compliant client that receives `401` + `WWW-Authenticate: Bearer`
+looks for OAuth metadata at `/.well-known/oauth-protected-resource` and
+`/.well-known/oauth-authorization-server`. Totem answers **401 on those paths
+too** (ADV-GATEWAY-003 authenticates every route), so a client cannot learn
+how to authenticate; our `WWW-Authenticate` also omits the spec's
+`resource_metadata` parameter. Whatever OAuth path is chosen, the discovery
+documents must sit **outside** the auth layer — a deliberate, tested
+exception to "everything behind auth", not an oversight.
+
+### Consequence for the dogfood plan
+
+Reaching a claude.ai routine requires one of:
+
+1. **An OAuth front** — e.g. Cloudflare Access or `oauth2-proxy` in front of
+   the gateway (fits the "secure but not over-complicated" constraint; no
+   OAuth server code in Totem, and the proxy can carry the identity Totem's
+   own credentials then bind).
+2. **OAuth 2.1 in the gateway** — protected-resource metadata + an
+   authorization server with DCR. Correct long-term, materially more work,
+   and a second security surface to evaluate.
+3. **Sidestep connectors** — the Claude API MCP connector *does* accept a
+   caller-managed bearer (`authorization_token`), so an agent invoked through
+   the API can reach Totem today; scheduled claude.ai routines cannot.
+
+Recorded for ADV-GATEWAY-012 (credential model), ADV-INFRA-002 (what the
+deployment must terminate), and docs/dogfood/plan.md §3.1.
 
 ## 4. Recommendation
 
