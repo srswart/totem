@@ -42,7 +42,8 @@ use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use chrono::{DateTime, Utc};
 use sha2::{Digest, Sha256};
-use totem_core::{AccessLogEntry, ActorId, RefusalReason, RepoId, Scope, TeamId};
+use totem_core::{AccessLogEntry, ActorId, RefusalReason, RepoId, Scope, ScopeParseError, TeamId};
+use totem_store::CredentialGrantRow;
 use uuid::Uuid;
 
 use crate::error::GatewayError;
@@ -425,6 +426,22 @@ impl std::fmt::Debug for TokenRegistry {
     }
 }
 
+/// Parse a hex fingerprint back into registry key bytes.
+///
+/// Durable rows (ADV-GATEWAY-012) store the hex form — it is what an operator
+/// reads in a refusal log entry and types into a revoke command — while the
+/// registry keys on the raw digest.
+fn fingerprint_from_hex(hex: &str) -> Option<Fingerprint> {
+    if hex.len() != 64 {
+        return None;
+    }
+    let mut bytes = [0u8; 32];
+    for (index, byte) in bytes.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(hex.get(index * 2..index * 2 + 2)?, 16).ok()?;
+    }
+    Some(bytes)
+}
+
 fn fingerprint(token: &str) -> Fingerprint {
     Sha256::digest(token.as_bytes()).into()
 }
@@ -515,6 +532,54 @@ impl TokenRegistry {
     /// admin surface can tell "revoked" from "never existed".
     pub fn revoke(&self, token: &str) -> bool {
         self.write().remove(&fingerprint(token)).is_some()
+    }
+
+    /// Load every durable grant into this registry (ADV-GATEWAY-012).
+    ///
+    /// Called once at start-up. The registry stays the hot path — verification
+    /// is a hash and a map lookup, never a database round trip — and the store
+    /// is what makes it survive the restart a deploy performs.
+    pub fn load_from(&self, rows: Vec<CredentialGrantRow>) -> Result<usize, AuthError> {
+        let mut loaded = 0;
+        for row in rows {
+            let repo = RepoId::new(&row.repo)
+                .map_err(|error| AuthError::InvalidBinding(error.to_string()))?;
+            let actor = ActorId::new(&row.actor)
+                .map_err(|error| AuthError::InvalidBinding(error.to_string()))?;
+            let scope: Scope = row
+                .scope
+                .parse()
+                .map_err(|error: ScopeParseError| AuthError::InvalidBinding(error.to_string()))?;
+            let Some(key) = fingerprint_from_hex(&row.fingerprint) else {
+                return Err(AuthError::InvalidBinding(format!(
+                    "stored credential fingerprint is not 64 hex characters: {}",
+                    row.fingerprint
+                )));
+            };
+            self.write().insert(
+                key,
+                TokenGrant {
+                    repo,
+                    scope,
+                    actor,
+                    expires_at: row.expires_at,
+                },
+            );
+            loaded += 1;
+        }
+        Ok(loaded)
+    }
+
+    /// The fingerprint a token hashes to, so a caller that must persist a
+    /// grant can do so without the registry handing back token text.
+    pub fn fingerprint_of(token: &str) -> String {
+        fingerprint_hex(token)
+    }
+
+    /// Revoke by fingerprint rather than by token text — the durable path,
+    /// where the token is long gone and only its hash was ever stored.
+    pub fn revoke_fingerprint(&self, hex: &str) -> bool {
+        fingerprint_from_hex(hex).is_some_and(|key| self.write().remove(&key).is_some())
     }
 
     /// The grant behind a presented token, or why it is not acceptable.

@@ -29,6 +29,15 @@ pub enum StoreError {
     /// The record does not exist, or is not visible to this caller.
     #[error("memory {0} is not present in the caller's scope chain")]
     NotFound(MemoryId),
+    /// No credential with this fingerprint has ever been recorded. Revoking
+    /// one is an error rather than a silent no-op — see
+    /// [`CredentialRepository::revoke`](crate::CredentialRepository::revoke).
+    #[error("no credential is recorded with fingerprint {0}")]
+    CredentialNotFound(String),
+    /// The credential was revoked; re-recording the same fingerprint would
+    /// undo that, so it is refused.
+    #[error("credential {0} is revoked and cannot be re-recorded")]
+    CredentialRevoked(String),
     /// A policy rule refused a scope change.
     #[error(transparent)]
     Promotion(#[from] PromotionError),

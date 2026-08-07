@@ -321,7 +321,7 @@ passes:
           - id: "ADV-GATEWAY-012"
             advance_id: "ADV-GATEWAY-012"
             title: "Durable credential registry"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-GATEWAY-003", "ADV-INFRA-001"]
             notes: >-
