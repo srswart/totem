@@ -58,7 +58,7 @@ mod record;
 mod scope;
 mod scoring;
 
-pub use access_log::{AccessLogEntry, AccessOperation};
+pub use access_log::{AccessLogEntry, AccessOperation, RefusalReason};
 pub use category::{CategoryLifecycle, MemoryCategory, Mutability, ReviewPolicy};
 pub use curation::{CurationError, CurationEvent, CurationEventKind, CurationPolicy, Supersession};
 pub use feedback::{FeedbackSignal, apply_feedback};

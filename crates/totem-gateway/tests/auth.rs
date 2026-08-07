@@ -427,10 +427,9 @@ async fn an_authorization_refusal_is_logged_with_the_bound_callers_fingerprint()
         entries[0].refusal_reason,
         Some(RefusalReason::ActorNotBound)
     );
-    let fingerprint = entries[0]
-        .credential_fingerprint
-        .as_deref()
-        .expect("a live, bound credential is fingerprinted even when the request it made is refused");
+    let fingerprint = entries[0].credential_fingerprint.as_deref().expect(
+        "a live, bound credential is fingerprinted even when the request it made is refused",
+    );
     assert!(is_hex_sha256(fingerprint));
 }
 

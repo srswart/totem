@@ -313,6 +313,29 @@ pub(crate) const REPO_GIT_IDENTITY_SCHEMA_V8: &str = r#"
 DEFINE FIELD git_repo ON repo TYPE option<string>;
 "#;
 
+/// Migration 9 — the `refused` access-log operation (ADV-CORE-006).
+///
+/// A refusal is logged before any identity is confirmed, so `actor`,
+/// `harness`, and `session` — required on every prior migration's rows —
+/// widen to `option<string>` here: `OVERWRITE` again, so an existing row's
+/// non-empty value still satisfies the widened assertion unchanged. Two new
+/// fields carry what a refusal *does* know: `refusal_reason` (the
+/// [`totem_core::RefusalReason`] key) and `credential_fingerprint` (hex, never
+/// the token text) — both `option<string>` because only a `refused` row ever
+/// sets them.
+pub(crate) const ACCESS_LOG_REFUSAL_SCHEMA_V9: &str = r#"
+DEFINE FIELD OVERWRITE actor ON access_log TYPE option<string>
+    ASSERT $value = NONE OR $value != '';
+DEFINE FIELD OVERWRITE harness ON access_log TYPE option<string>
+    ASSERT $value = NONE OR $value != '';
+DEFINE FIELD OVERWRITE session ON access_log TYPE option<string>
+    ASSERT $value = NONE OR $value != '';
+DEFINE FIELD OVERWRITE operation ON access_log TYPE string
+    ASSERT $value IN ['recall', 'save', 'feedback', 'propose', 'promotion_decision', 'resolve', 'refused'];
+DEFINE FIELD refusal_reason ON access_log TYPE option<string>;
+DEFINE FIELD credential_fingerprint ON access_log TYPE option<string>;
+"#;
+
 #[cfg(test)]
 mod tests {
     //! Enforcement the repository API cannot be trusted to provide.

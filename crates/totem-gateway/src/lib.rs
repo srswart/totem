@@ -124,8 +124,10 @@ pub fn router(state: AppState) -> Router {
 /// An [`AppState`] with an empty [`TokenRegistry`] serves nothing: that is the
 /// fail-closed default, not a misconfiguration to work around.
 pub fn authenticated_app(state: AppState) -> Router {
-    let tokens = state.tokens.clone();
-    routes(state.clone()).merge(mcp_http::routes(state)).layer(
-        axum::middleware::from_fn_with_state(tokens, auth::authenticate),
-    )
+    routes(state.clone())
+        .merge(mcp_http::routes(state.clone()))
+        .layer(axum::middleware::from_fn_with_state(
+            state,
+            auth::authenticate,
+        ))
 }

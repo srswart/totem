@@ -1,11 +1,10 @@
 //! Access log entries: one per read or write, so any memory's access history
-//! is reconstructable (docs/project-brief.md G3; ADV-GATEWAY-001).
+//! is reconstructable (docs/project-brief.md G3; ADV-GATEWAY-001) — and, since
+//! ADV-CORE-006, one per *refused* request too: an attempt is worth an audit
+//! record even though it touched no memory.
 //!
 //! An entry is deliberately not a [`crate::MemoryRecord`] — it is not memory a
-//! reader recalls, it is the audit trail *of* recalling and saving memory, and
-//! it must exist even for callers who touch nothing (a denied write is still
-//! worth a record, though this type only carries what a *successful* operation
-//! did; the caller decides whether to log a refusal).
+//! reader recalls, it is the audit trail *of* recalling and saving memory.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -36,19 +35,55 @@ pub enum AccessOperation {
     /// it (ADV-CONSOLE-002) — the governance-state twin of
     /// [`AccessOperation::Feedback`].
     Resolve,
+    /// A request was refused before it reached the store — an authentication
+    /// or authorization failure, not a completed read or write (ADV-CORE-006).
+    Refused,
 }
 
-/// Who touched memory, from where, when, and via which surface.
+/// Why a request was refused, for a [`AccessOperation::Refused`] entry
+/// (ADV-CORE-006).
+///
+/// Deliberately its own vocabulary rather than a re-export of a surface's own
+/// error type: `totem-core` sits beneath every surface that can refuse a
+/// request (`totem-gateway`'s `AuthError` today, and it is not the last),
+/// so the reason has to outlive any one of them. The split mirrors the one
+/// every refusing surface already makes: "we do not know who you are"
+/// ([`RefusalReason::MissingCredential`], [`RefusalReason::UnknownCredential`],
+/// [`RefusalReason::Expired`]) versus "we know who you are, and this is
+/// outside your grant" ([`RefusalReason::ActorNotBound`],
+/// [`RefusalReason::RepoNotBound`], [`RefusalReason::ScopeNotBound`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RefusalReason {
+    /// No credential was presented at all.
+    MissingCredential,
+    /// The presented credential is not recognized (forged or revoked).
+    UnknownCredential,
+    /// The presented credential has expired.
+    Expired,
+    /// The request asserted an identity the credential is not bound to.
+    ActorNotBound,
+    /// The request named a repo the credential is not bound to.
+    RepoNotBound,
+    /// The request reached a scope outside the credential's binding.
+    ScopeNotBound,
+}
+
+/// Who touched memory, from where, when, and via which surface — or, for a
+/// [`AccessOperation::Refused`] entry, who a refusal could not confirm.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AccessLogEntry {
     /// The caller's own identity — never another actor's, since it is always
     /// read from the caller's own request, the same source a [`crate::ScopeChain`]
-    /// is resolved from.
-    pub actor: ActorId,
-    /// Which harness the access arrived through.
-    pub harness: Harness,
-    /// The harness session the access belongs to.
-    pub session: SessionId,
+    /// is resolved from. `None` on a [`AccessOperation::Refused`] entry: there
+    /// was no confirmed identity to record.
+    pub actor: Option<ActorId>,
+    /// Which harness the access arrived through. `None` on a refusal that
+    /// never reached the point where a harness is known.
+    pub harness: Option<Harness>,
+    /// The harness session the access belongs to. `None` on a refusal that
+    /// never reached the point where a session is known.
+    pub session: Option<SessionId>,
     /// The turn within that session, when the harness reports one.
     pub turn: Option<u32>,
     /// Which operation this entry records.
@@ -59,6 +94,15 @@ pub struct AccessLogEntry {
     pub memory_id: Option<MemoryId>,
     /// How many records a [`AccessOperation::Recall`] entry returned.
     pub result_count: Option<u64>,
+    /// Why a [`AccessOperation::Refused`] entry was refused. `None` for
+    /// every other operation.
+    pub refusal_reason: Option<RefusalReason>,
+    /// A hex-encoded fingerprint of the credential presented on a
+    /// [`AccessOperation::Refused`] entry, when one was presented at all —
+    /// never the token text itself. `None` for every other operation, and for
+    /// a refusal that had no credential to fingerprint (e.g.
+    /// [`RefusalReason::MissingCredential`]).
+    pub credential_fingerprint: Option<String>,
     /// When the access happened.
     pub at: DateTime<Utc>,
 }
@@ -76,14 +120,35 @@ impl AccessLogEntry {
         at: DateTime<Utc>,
     ) -> Self {
         Self {
-            actor,
-            harness,
-            session,
+            actor: Some(actor),
+            harness: Some(harness),
+            session: Some(session),
             turn: None,
             operation,
             endpoint: endpoint.into(),
             memory_id: None,
             result_count: None,
+            refusal_reason: None,
+            credential_fingerprint: None,
+            at,
+        }
+    }
+
+    /// Record a refusal (ADV-CORE-006): a request turned away before it
+    /// reached the store, so there is no confirmed identity, turn, memory, or
+    /// result count to attach — only why, via which endpoint, and when.
+    pub fn refused(reason: RefusalReason, endpoint: impl Into<String>, at: DateTime<Utc>) -> Self {
+        Self {
+            actor: None,
+            harness: None,
+            session: None,
+            turn: None,
+            operation: AccessOperation::Refused,
+            endpoint: endpoint.into(),
+            memory_id: None,
+            result_count: None,
+            refusal_reason: Some(reason),
+            credential_fingerprint: None,
             at,
         }
     }
@@ -103,6 +168,13 @@ impl AccessLogEntry {
     /// Attach how many records a [`AccessOperation::Recall`] entry returned.
     pub fn with_result_count(mut self, count: u64) -> Self {
         self.result_count = Some(count);
+        self
+    }
+
+    /// Attach the fingerprint of the credential a refused request presented,
+    /// when it presented one at all (ADV-CORE-006).
+    pub fn with_fingerprint(mut self, fingerprint: impl Into<String>) -> Self {
+        self.credential_fingerprint = Some(fingerprint.into());
         self
     }
 }

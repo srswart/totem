@@ -460,19 +460,43 @@ impl TotemMcp {
     /// per-request grant reaches a handler the transport builds per session.
     /// A token-bound handler with no verified caller refuses: there is no
     /// path from "the credential layer is missing" to "the call proceeds".
-    fn caller(&self, extensions: &Extensions) -> Result<Caller, ErrorData> {
+    ///
+    /// In ordinary operation this refusal is unreachable — [`crate::lib`]'s
+    /// [`crate::authenticated_app`](crate::authenticated_app) always mounts
+    /// [`crate::auth::authenticate`] ahead of the MCP surface, so a missing
+    /// credential is refused there first (and logged there — see
+    /// [`crate::auth::authenticate`]'s own doc). This defense-in-depth path
+    /// logs its own refusal too (ADV-CORE-006), best-effort, so the
+    /// invariant holds structurally rather than by construction luck alone —
+    /// a future route that mounts this handler without that layer still
+    /// leaves a trace.
+    async fn caller(&self, extensions: &Extensions) -> Result<Caller, ErrorData> {
         match self.auth {
             McpAuth::Trusted => Ok(Caller::Trusted),
-            McpAuth::TokenBound => extensions
-                .get::<Parts>()
-                .and_then(|parts| parts.extensions.get::<Caller>())
-                .cloned()
-                .ok_or_else(|| {
+            McpAuth::TokenBound => {
+                let found = extensions
+                    .get::<Parts>()
+                    .and_then(|parts| parts.extensions.get::<Caller>())
+                    .cloned();
+                if found.is_none() {
+                    let entry = totem_core::AccessLogEntry::refused(
+                        totem_core::RefusalReason::MissingCredential,
+                        "mcp",
+                        Utc::now(),
+                    );
+                    if let Err(log_error) = self.state.store.access_log().record(&entry).await {
+                        eprintln!(
+                            "warning: failed to append a refusal to the access log (mcp): {log_error}"
+                        );
+                    }
+                }
+                found.ok_or_else(|| {
                     ErrorData::invalid_params(
                         "this MCP surface requires a verified bearer credential",
                         None,
                     )
-                }),
+                })
+            }
         }
     }
 }
@@ -491,7 +515,7 @@ impl TotemMcp {
         Parameters(params): Parameters<RecallParams>,
         extensions: Extensions,
     ) -> Result<String, ErrorData> {
-        let caller = self.caller(&extensions)?;
+        let caller = self.caller(&extensions).await?;
         let input = parse_recall_input(params)?;
         let records = ops::recall(&self.state, input, &caller, "mcp:totem_recall")
             .await
@@ -509,7 +533,7 @@ impl TotemMcp {
         Parameters(params): Parameters<SaveParams>,
         extensions: Extensions,
     ) -> Result<String, ErrorData> {
-        let caller = self.caller(&extensions)?;
+        let caller = self.caller(&extensions).await?;
         let input = parse_save_input(params)?;
         let id = ops::save(&self.state, input, &caller, "mcp:totem_save")
             .await
@@ -532,7 +556,7 @@ impl TotemMcp {
         Parameters(params): Parameters<LandscapeParams>,
         extensions: Extensions,
     ) -> Result<String, ErrorData> {
-        let caller = self.caller(&extensions)?;
+        let caller = self.caller(&extensions).await?;
         let Some(repo) = params.repo else {
             return Err(invalid_params(
                 "totem_landscape requires `repo`: the ARRIVE registry id (registry.yaml's \
@@ -558,9 +582,8 @@ impl TotemMcp {
             .and_then(|repo_view| repo_view.git_repo.clone())
             .unwrap_or_else(|| repo.clone());
         let git_repo = RepoId::new(git_repo).map_err(invalid_params)?;
-        caller
-            .authorize_repo(&git_repo)
-            .map_err(GatewayError::Auth)
+        ops::authorize_repo(&self.state, &caller, &git_repo, "mcp:totem_landscape")
+            .await
             .map_err(gateway_error)?;
 
         serde_json::to_string(&view).map_err(internal_error)
@@ -579,7 +602,7 @@ impl TotemMcp {
         Parameters(params): Parameters<FeedbackParams>,
         extensions: Extensions,
     ) -> Result<String, ErrorData> {
-        let caller = self.caller(&extensions)?;
+        let caller = self.caller(&extensions).await?;
         let input = parse_feedback_input(params)?;
         let record = ops::feedback(&self.state, input, &caller, "mcp:totem_feedback")
             .await
@@ -599,7 +622,7 @@ impl TotemMcp {
         Parameters(params): Parameters<ContestParams>,
         extensions: Extensions,
     ) -> Result<String, ErrorData> {
-        let caller = self.caller(&extensions)?;
+        let caller = self.caller(&extensions).await?;
         let input = parse_contest_input(params)?;
         let id = ops::contest(&self.state, input, &caller, "mcp:totem_contest")
             .await
@@ -618,7 +641,7 @@ impl TotemMcp {
         Parameters(params): Parameters<AdvanceLogParams>,
         extensions: Extensions,
     ) -> Result<String, ErrorData> {
-        let caller = self.caller(&extensions)?;
+        let caller = self.caller(&extensions).await?;
         let input = parse_advance_log_input(params)?;
         let id = ops::advance_log(&self.state, input, &caller, "mcp:totem_advance_log")
             .await
@@ -641,7 +664,7 @@ impl TotemMcp {
     ) -> Result<String, ErrorData> {
         // Read from the landscape mirror, not scoped memory: authenticated,
         // with no identity bound — the same reasoning as `totem_landscape`.
-        let _ = self.caller(&extensions)?;
+        let _ = self.caller(&extensions).await?;
         let advance = ops::advance_status(&self.state, &params.advance_id)
             .await
             .map_err(gateway_error)?;

@@ -8,7 +8,9 @@
 
 use surrealdb::types::{Object, SurrealValue, Value};
 use surrealdb::{Connection, Surreal};
-use totem_core::{AccessLogEntry, AccessOperation, ActorId, MemoryId, ScopeChain, SessionId};
+use totem_core::{
+    AccessLogEntry, AccessOperation, ActorId, MemoryId, RefusalReason, ScopeChain, SessionId,
+};
 
 use crate::error::{StoreError, StoreResult};
 use crate::memory::MemoryRepository;
@@ -24,6 +26,7 @@ fn operation_key(operation: AccessOperation) -> &'static str {
         AccessOperation::Propose => "propose",
         AccessOperation::PromotionDecision => "promotion_decision",
         AccessOperation::Resolve => "resolve",
+        AccessOperation::Refused => "refused",
     }
 }
 
@@ -35,17 +38,58 @@ fn operation_from(key: &str) -> Result<AccessOperation, RowError> {
         "propose" => Ok(AccessOperation::Propose),
         "promotion_decision" => Ok(AccessOperation::PromotionDecision),
         "resolve" => Ok(AccessOperation::Resolve),
+        "refused" => Ok(AccessOperation::Refused),
         other => Err(row::malformed(format!(
             "unknown access log operation: {other}"
         ))),
     }
 }
 
+fn refusal_reason_key(reason: RefusalReason) -> &'static str {
+    match reason {
+        RefusalReason::MissingCredential => "missing_credential",
+        RefusalReason::UnknownCredential => "unknown_credential",
+        RefusalReason::Expired => "expired",
+        RefusalReason::ActorNotBound => "actor_not_bound",
+        RefusalReason::RepoNotBound => "repo_not_bound",
+        RefusalReason::ScopeNotBound => "scope_not_bound",
+    }
+}
+
+fn refusal_reason_from(key: &str) -> Result<RefusalReason, RowError> {
+    match key {
+        "missing_credential" => Ok(RefusalReason::MissingCredential),
+        "unknown_credential" => Ok(RefusalReason::UnknownCredential),
+        "expired" => Ok(RefusalReason::Expired),
+        "actor_not_bound" => Ok(RefusalReason::ActorNotBound),
+        "repo_not_bound" => Ok(RefusalReason::RepoNotBound),
+        "scope_not_bound" => Ok(RefusalReason::ScopeNotBound),
+        other => Err(row::malformed(format!("unknown refusal reason: {other}"))),
+    }
+}
+
 fn to_row(entry: &AccessLogEntry) -> Object {
     let mut row = Object::new();
-    row.insert("actor", entry.actor.to_string());
-    row.insert("harness", row::harness_key(&entry.harness));
-    row.insert("session", entry.session.to_string());
+    row.insert(
+        "actor",
+        entry
+            .actor
+            .as_ref()
+            .map_or(Value::None, |actor| actor.to_string().into_value()),
+    );
+    row.insert(
+        "harness",
+        entry.harness.as_ref().map_or(Value::None, |harness| {
+            row::harness_key(harness).into_value()
+        }),
+    );
+    row.insert(
+        "session",
+        entry
+            .session
+            .as_ref()
+            .map_or(Value::None, |session| session.to_string().into_value()),
+    );
     row.insert(
         "turn",
         entry
@@ -66,21 +110,59 @@ fn to_row(entry: &AccessLogEntry) -> Object {
             .result_count
             .map_or(Value::None, |count| (count as i64).into_value()),
     );
+    row.insert(
+        "refusal_reason",
+        entry.refusal_reason.map_or(Value::None, |reason| {
+            refusal_reason_key(reason).into_value()
+        }),
+    );
+    row.insert(
+        "credential_fingerprint",
+        entry
+            .credential_fingerprint
+            .clone()
+            .map_or(Value::None, |fingerprint| fingerprint.into_value()),
+    );
     row.insert("at", row::instant(entry.at));
     row
 }
 
+fn optional_string(row: &Object, field: &str) -> Result<Option<String>, RowError> {
+    match row.get(field) {
+        None | Some(Value::None) | Some(Value::Null) => Ok(None),
+        Some(_) => Ok(Some(row::string(row, field)?)),
+    }
+}
+
 fn from_row(row: &Object) -> Result<AccessLogEntry, RowError> {
-    let actor = ActorId::new(row::string(row, "actor")?)
+    let actor = optional_string(row, "actor")?
+        .map(ActorId::new)
+        .transpose()
         .map_err(|error| row::malformed(format!("stored actor is invalid: {error}")))?;
-    let harness = row::harness_from(&row::string(row, "harness")?)?;
-    let session = SessionId::new(row::string(row, "session")?)
+    let harness = optional_string(row, "harness")?
+        .map(|harness| row::harness_from(&harness))
+        .transpose()?;
+    let session = optional_string(row, "session")?
+        .map(SessionId::new)
+        .transpose()
         .map_err(|error| row::malformed(format!("stored session is invalid: {error}")))?;
     let operation = operation_from(&row::string(row, "operation")?)?;
     let endpoint = row::string(row, "endpoint")?;
     let at = row::datetime(row, "at")?;
 
-    let mut entry = AccessLogEntry::new(actor, harness, session, operation, endpoint, at);
+    let mut entry = AccessLogEntry {
+        actor,
+        harness,
+        session,
+        turn: None,
+        operation,
+        endpoint,
+        memory_id: None,
+        result_count: None,
+        refusal_reason: None,
+        credential_fingerprint: None,
+        at,
+    };
 
     entry.turn = match row.get("turn") {
         None | Some(Value::None) | Some(Value::Null) => None,
@@ -102,6 +184,10 @@ fn from_row(row: &Object) -> Result<AccessLogEntry, RowError> {
                 .ok_or_else(|| row::malformed("result_count is not a non-negative integer"))?,
         ),
     };
+    entry.refusal_reason = optional_string(row, "refusal_reason")?
+        .map(|reason| refusal_reason_from(&reason))
+        .transpose()?;
+    entry.credential_fingerprint = optional_string(row, "credential_fingerprint")?;
 
     Ok(entry)
 }
