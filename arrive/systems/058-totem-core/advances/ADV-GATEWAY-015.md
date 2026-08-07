@@ -6,20 +6,20 @@ advance:
   primary_component: "gateway"
   components: ["gateway"]
   started_at: "2026-08-07T20:00:00Z"
-  implementation_completed_at: ~
+  implementation_completed_at: "2026-08-07T22:15:00Z"
   review_time_estimate_minutes: 30
   review_time_actual_minutes: ~
   pr_links: []
   external_refs: []
-  reviewability_score: 0
+  reviewability_score: 25
   risk_flags: ["concurrency"]
-  evidence: []
+  evidence: ["tests:integration", "investigation:findings"]
   model_usage: []
   schema_version: 2
   mode: implementation
   facets: [software]
   work_products: [production_code]
-  status: planned
+  status: complete
 ---
 
 ## Objective
@@ -57,12 +57,48 @@ After this advance:
 
 ## Planned Implementation Tasks
 
-- [ ] branch / claim
-- [ ] reproduce: a tool call over HTTP that mutates and then hangs; capture
-      server logs, response framing, and session headers
-- [ ] tidy: preparatory refactoring (no behavior change)
-- [ ] test: a client-shaped HTTP test asserting every tool call terminates
-- [ ] feat/fix: whatever the diagnosis names
+- [x] branch / claim
+- [x] reproduce — **attempted and failed to reproduce**; see below
+- [x] tidy: none needed
+- [x] test: client-shaped HTTP tests asserting every tool call terminates
+- [x] fix: the defects the investigation actually found
+
+## Outcome: not reproduced, and that is the finding
+
+Three tests drive a **real rmcp client over real HTTP** against the
+authenticated application — a save, a recall, and three consecutive saves on
+one session, each with a ten-second patience. All acknowledge. Against the
+deployed gateway, `curl` also receives a complete response in under a second
+and the stream closes.
+
+So the server terminates its responses correctly for a well-behaved MCP
+client. The advance explicitly permitted this outcome: *"If the cause proves
+to be client-side rather than ours, that is recorded as the finding and the
+advance closes honestly rather than inventing a server-side change to justify
+itself."* No server-side change was invented.
+
+**What remains unexplained:** why claude.ai's connector waited. The most
+plausible mechanism, established below, is that responses are SSE-framed and
+carry an SSE `retry` directive, which invites reconnect semantics in a client
+that treats the stream as long-lived. That is a hypothesis, not a diagnosis —
+it was not confirmed, and saying so is the point.
+
+## Two defects the investigation did find
+
+**1. `json_response = true` is dead configuration.** rmcp 3.1.0 consults it on
+the *stateless* paths only (`tower.rs` 1255, 1983). Once a client holds a
+session — every client, immediately after `initialize`, because the service is
+mounted with a `LocalSessionManager` — a POSTed request returns
+`sse_stream_response(..)` unconditionally. The comment beside the setting
+claimed Totem answers tool calls with plain JSON. It does not. The claim
+survived because **no test drove the transport**; the comment is now accurate,
+and the setting is kept because it is correct for the session-less callers it
+does reach.
+
+**2. The gateway compiled two HTTP stacks.** rmcp pulls `reqwest 0.13.4`; the
+OAuth work (ADV-GATEWAY-013) added `reqwest 0.12`. The TLS feature rename
+between them (`rustls-tls` → `rustls`) is what hid the duplication — the same
+rename that bit ADV-CLI-002 from the other direction. Aligned to 0.13.
 
 ## Scope and Boundaries
 
@@ -84,17 +120,58 @@ the REST surface, which has not shown this.
   first for exactly this reason.
 - Rollback: revert branch; behaviour returns to the current hang.
 
+## Reviewability
+
+`arrive score --base origin/advance/phase-011`: **25 [GREEN]**.
+
 ## Evidence
 
-- [ ] reproduction: captured, with logs and framing verbatim
-- [ ] diagnosis: which of the candidate causes it actually was
-- [ ] tests:integration — a client-shaped HTTP test that fails on the old
-      behaviour
+- [x] tests:integration — `crates/totem-gateway/tests/mcp_http_acknowledgement.rs`:
+      three tests driving a real rmcp client over real HTTP, each bounded by a
+      timeout so a hang fails rather than hangs the suite. This crate had
+      **no transport-level coverage at all** before now, which is the same
+      blind spot that produced the published-schema bug (ADV-GATEWAY-013) and
+      the CLI's missing TLS (ADV-CLI-002). The tests are the durable outcome
+      of this advance, more than any fix.
+- [x] investigation:findings — the two defects above, with the rmcp line
+      numbers that establish the first.
+- [ ] **Not claimed: a reproduction, a diagnosis, or a fix for the reported
+      hang.** It did not reproduce. Recording a hypothesis as a diagnosis
+      would be exactly the kind of confident-sounding wrongness this
+      project's honesty rules exist to prevent.
+
+## What would advance this if it recurs
+
+- Capture the client side: whether claude.ai reconnects to the SSE stream
+  after the response, and whether it is waiting on the POST response or the
+  standalone GET stream.
+- Compare a session-less call (which *does* get plain JSON) against a
+  session-bearing one from the same client.
+- Rule Fly's proxy in or out by reproducing against the deployment with the
+  rmcp client rather than only on loopback.
 
 ## Changes Made
 
-- None yet
+### 2026-08-07 - test: [ADV-GATEWAY-015] client-shaped HTTP tests; correct a false claim
+- crates/totem-gateway/tests/mcp_http_acknowledgement.rs: new — three
+  timeout-bounded tests over a real HTTP transport
+- crates/totem-gateway/src/mcp_http.rs: the `json_response` comment now says
+  what the setting actually does
+- crates/totem-gateway/Cargo.toml: reqwest aligned to rmcp's 0.13
 
 ## Check for Understanding
 
-(placeholder — written during implementation)
+1. This advance closed without fixing the bug it was written for. What did
+   its own Behavioral Change section permit, and why is that permission more
+   valuable than a change that made the advance look productive?
+2. `config.json_response = true` had no effect on any real client. Which
+   condition decides whether rmcp consults it, and what does mounting a
+   `LocalSessionManager` guarantee about that condition?
+3. The comment beside that setting was wrong for as long as it existed. What
+   kind of test would have caught it, and why did 66 passing tests not?
+4. Two reqwest versions were compiled into one binary. What made the
+   duplication easy to miss, and where had the same detail already caused
+   trouble in a different crate?
+5. The advance lists three things that would advance the investigation if the
+   hang recurs. Which of them distinguishes a client-side cause from a
+   Fly-proxy cause, and why can loopback tests not settle that question?

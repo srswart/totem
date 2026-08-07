@@ -30,10 +30,21 @@ pub(crate) fn routes(state: AppState) -> Router {
     // `StreamableHttpServerConfig` is `#[non_exhaustive]`, so it is built by
     // mutation rather than struct-update syntax.
     let mut config = StreamableHttpServerConfig::default();
-    // Plain JSON replies for simple request/response tools. MCP-001 observed
-    // that the default frames even a trivial response as `text/event-stream`;
-    // Totem's tools are all request/response, and rmcp still falls back to SSE
-    // by itself if a handler ever emits something mid-call.
+    // Plain JSON replies — but **only for session-less requests**.
+    //
+    // ADV-GATEWAY-015 established what this setting actually does in rmcp
+    // 3.1.0: it is consulted on the stateless paths only. Once a client holds
+    // a session (every client, immediately after `initialize`, because this
+    // service is mounted with a `LocalSessionManager`), a POSTed request
+    // returns `sse_stream_response(..)` unconditionally. The comment that
+    // used to sit here claimed Totem answers tool calls with plain JSON; it
+    // does not, and that inaccuracy survived because no test drove the
+    // transport.
+    //
+    // Kept rather than deleted because it is correct for the session-less
+    // callers it does reach, and because deleting it would erase the record
+    // of what was investigated. If SSE framing ever proves to be the cause of
+    // a client hang, the lever is upstream (or a stateless mount), not here.
     config.json_response = true;
     // `allowed_hosts` defaults to loopback-only (rmcp's DNS-rebinding
     // protection). A deployment with a public hostname names it via
