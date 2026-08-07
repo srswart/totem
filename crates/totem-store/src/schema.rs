@@ -354,6 +354,23 @@ DEFINE FIELD revoked ON credential TYPE bool DEFAULT false;
 DEFINE INDEX credential_fingerprint ON credential FIELDS fingerprint UNIQUE;
 "#;
 
+/// ADV-STORE-008. Rows carry the model that embedded them.
+///
+/// Without this, nothing distinguishes a vector written by the deterministic
+/// stub from one written by BGE-small-en-v1.5, and a partially re-embedded
+/// index is indistinguishable from a uniform one. Cosine distance between two
+/// unrelated geometries is not merely degraded — it is meaningless, and the
+/// index would keep returning confident, arbitrary rankings. The label is what
+/// lets the re-embed pass be targeted, idempotent, and auditable.
+///
+/// `option<string>`, not `string`: every row written before this migration
+/// has no label, and defaulting them to the current model would assert
+/// something untrue about vectors written by a previous one. An absent label
+/// means "unknown space", which the re-embed pass treats as stale.
+pub(crate) const EMBEDDING_MODEL_SCHEMA_V11: &str = r#"
+DEFINE FIELD embedding_model ON memory TYPE option<string>;
+"#;
+
 #[cfg(test)]
 mod tests {
     //! Enforcement the repository API cannot be trusted to provide.
