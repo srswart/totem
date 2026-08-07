@@ -580,6 +580,28 @@ async fn enrolling_a_snapshot_cannot_rebind_an_arrive_id_another_repo_already_ow
 }
 
 #[tokio::test]
+async fn enrolling_a_snapshot_with_a_blank_arrive_id_is_a_client_error() {
+    let (router, tokens) = app().await;
+    let token = project_token(&tokens);
+
+    // An empty or untrimmed ARRIVE id must be refused outright — not synced
+    // as an ambiguous store key, and not silently swapped for the caller's
+    // own repo if it later feeds an auth error (Copilot review, PR #44).
+    for arrive_id in ["", " 058-totem"] {
+        let response = send(
+            &router,
+            post("/enroll", Some(&token), enroll_body(arrive_id, REPO)),
+        )
+        .await;
+        assert_eq!(
+            response.status(),
+            StatusCode::BAD_REQUEST,
+            "arrive_id {arrive_id:?} must be refused as malformed input"
+        );
+    }
+}
+
+#[tokio::test]
 async fn enrolling_a_snapshot_for_the_bound_repo_succeeds() {
     let (router, tokens) = app().await;
     let token = project_token(&tokens);
