@@ -525,17 +525,14 @@ impl TotemMcp {
     /// rather than an error, since "not yet enrolled" is a normal state, not
     /// a fault.
     #[tool(
-        description = "The ARRIVE landscape for an enrolled repo: systems, components, and advances (planned/in-progress/done), plus each component's current owners. `repo` is the ARRIVE registry id (registry.yaml's `repo_id`, e.g. `058-totem`), not the `owner/name` scope form. A repo that has not been synced yet returns an empty landscape rather than an error."
+        description = "The ARRIVE landscape for an enrolled repo: systems, components, and advances (planned/in-progress/done), plus each component's current owners. `repo` is the ARRIVE registry id (registry.yaml's `repo_id`, e.g. `058-totem`), not the `owner/name` scope form. A repo that has not been synced yet returns an empty landscape rather than an error. Over streamable HTTP, refused if the caller's credential is bound to a different repo (ADV-GATEWAY-009)."
     )]
     async fn totem_landscape(
         &self,
         Parameters(params): Parameters<LandscapeParams>,
         extensions: Extensions,
     ) -> Result<String, ErrorData> {
-        // The landscape mirror is not scoped memory, so there is no identity
-        // to bound here — but an unauthenticated caller must still not reach
-        // it, so the credential is checked and its grant then unused.
-        let _ = self.caller(&extensions)?;
+        let caller = self.caller(&extensions)?;
         let Some(repo) = params.repo else {
             return Err(invalid_params(
                 "totem_landscape requires `repo`: the ARRIVE registry id (registry.yaml's \
@@ -550,6 +547,22 @@ impl TotemMcp {
             .await
             .map_err(GatewayError::from)
             .map_err(gateway_error)?;
+
+        // See `handlers::landscape`'s twin comment: `repo` names the ARRIVE
+        // registry id, so the credential's `owner/name` binding is checked
+        // against the landscape's own resolved identity instead (falling
+        // back to the raw path when unsynced or pre-ADV-GATEWAY-009).
+        let git_repo = view
+            .repo
+            .as_ref()
+            .and_then(|repo_view| repo_view.git_repo.clone())
+            .unwrap_or_else(|| repo.clone());
+        let git_repo = RepoId::new(git_repo).map_err(invalid_params)?;
+        caller
+            .authorize_repo(&git_repo)
+            .map_err(GatewayError::Auth)
+            .map_err(gateway_error)?;
+
         serde_json::to_string(&view).map_err(internal_error)
     }
 

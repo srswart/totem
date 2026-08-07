@@ -34,10 +34,21 @@ const SYNC_RUN_TABLE: &str = "sync_run";
 /// One repo, as the landscape mirrors it (`arrive/registry.yaml`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RepoArtifact {
-    /// The repo id (`registry.repo_id`).
+    /// The ARRIVE registry id (`registry.repo_id`), e.g. `"058-totem"` — what
+    /// this repo's `repo` record is keyed by, and what
+    /// `GET /landscape/:repo` and `totem_landscape` take as their `repo`
+    /// parameter. Left unchanged by ADV-GATEWAY-009 so existing landscape
+    /// readers (the console, this repo's own dogfood tests) keep working.
     pub id: String,
     /// Its display name.
     pub name: String,
+    /// The `owner/name` GitHub identity (`registry.git_repo`) — the same id
+    /// space a gateway credential's `repo` binding speaks (`totem-gateway`'s
+    /// `TokenGrant::repo`). A credential's binding is checked against this
+    /// field, not against [`RepoArtifact::id`]: the two are different id
+    /// spaces (ADV-GATEWAY-003's disclosed residual), and this field is
+    /// ADV-GATEWAY-009's unification of them.
+    pub git_repo: String,
 }
 
 /// One system within a repo (`arrive/systems/<id>/system.yaml`).
@@ -144,6 +155,11 @@ pub struct RepoView {
     pub id: String,
     /// Its display name.
     pub name: String,
+    /// The `owner/name` GitHub identity ([`RepoArtifact::git_repo`]). `None`
+    /// only for a row synced before ADV-GATEWAY-009 and not yet re-synced —
+    /// re-running `sync` converges it, the same idempotent convergence every
+    /// other landscape field already gets.
+    pub git_repo: Option<String>,
 }
 
 /// One system, as read back from the landscape.
@@ -276,7 +292,10 @@ impl<'a, C: Connection> LandscapeRepository<'a, C> {
 
         vars.insert("repo_id", repo_thing(&snapshot.repo.id));
         vars.insert("repo_name", snapshot.repo.name.clone());
-        sql.push_str("UPSERT $repo_id CONTENT { name: $repo_name };\n");
+        vars.insert("repo_git_repo", snapshot.repo.git_repo.clone());
+        sql.push_str(
+            "UPSERT $repo_id CONTENT { name: $repo_name, git_repo: $repo_git_repo };\n",
+        );
 
         for (index, system) in snapshot.systems.iter().enumerate() {
             let id_key = format!("sys{index}_id");
@@ -385,6 +404,7 @@ impl<'a, C: Connection> LandscapeRepository<'a, C> {
                 Ok(RepoView {
                     id: repo_id.to_string(),
                     name: row::string(row, "name")?,
+                    git_repo: opt_row_string(row, "git_repo")?,
                 })
             })
             .transpose()?;
@@ -564,5 +584,66 @@ fn count(row: &Object, key: &str) -> StoreResult<usize> {
         Some(Value::Number(Number::Int(value))) => usize::try_from(*value)
             .map_err(|_| malformed(format!("`{key}` is out of range for usize: {value}")).into()),
         other => Err(malformed(format!("`{key}` is not a non-negative integer: {other:?}")).into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::store::Store;
+
+    fn unified_snapshot() -> LandscapeSnapshot {
+        LandscapeSnapshot {
+            repo: RepoArtifact {
+                id: "058-totem".to_string(),
+                name: "058 Totem".to_string(),
+                git_repo: "srswart/totem".to_string(),
+            },
+            systems: Vec::new(),
+            components: Vec::new(),
+            advances: Vec::new(),
+        }
+    }
+
+    /// ADV-GATEWAY-009's migration story: a `repo` row written by a
+    /// pre-unification sync has no `git_repo` field at all (the shape every
+    /// already-enrolled repo's row has today). Re-syncing must converge it
+    /// onto the unified id — the same idempotent convergence `sync`'s own doc
+    /// already promises every other landscape field — rather than requiring a
+    /// bespoke migration step.
+    #[tokio::test]
+    async fn a_repo_synced_before_id_unification_gains_git_repo_on_the_next_sync() {
+        let store = Store::in_memory()
+            .await
+            .expect("embedded engine connects");
+        store.migrate().await.expect("migrations apply");
+        let db = store.connection();
+
+        db.query("UPSERT $id CONTENT { name: $name };")
+            .bind(("id", repo_thing("058-totem")))
+            .bind(("name", "058 Totem"))
+            .await
+            .expect("pre-unification seed executes")
+            .check()
+            .expect("pre-unification seed has no per-statement errors");
+
+        let landscape = LandscapeRepository::new(db);
+        let pre_migration = landscape.view("058-totem").await.expect("view succeeds");
+        assert_eq!(
+            pre_migration.repo.expect("repo present").git_repo,
+            None,
+            "the seeded row has no git_repo, matching a real pre-unification row"
+        );
+
+        landscape
+            .sync(&unified_snapshot(), "test")
+            .await
+            .expect("sync succeeds");
+
+        let post_migration = landscape.view("058-totem").await.expect("view succeeds");
+        assert_eq!(
+            post_migration.repo.expect("repo present").git_repo.as_deref(),
+            Some("srswart/totem"),
+        );
     }
 }

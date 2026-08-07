@@ -113,6 +113,7 @@ struct RegistryFile {
 struct RegistryFields {
     repo_id: String,
     name: String,
+    git_repo: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -208,6 +209,7 @@ fn read_registry(arrive_root: &Path) -> Result<(RepoArtifact, Vec<String>), Inge
         RepoArtifact {
             id: file.registry.repo_id,
             name: file.registry.name,
+            git_repo: file.registry.git_repo,
         },
         file.systems,
     ))

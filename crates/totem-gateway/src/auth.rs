@@ -252,6 +252,26 @@ impl TokenGrant {
             })
         }
     }
+
+    /// Refuse a landscape enroll/read naming a different repo than this
+    /// credential's binding (ADV-GATEWAY-009).
+    ///
+    /// `requested` is the landscape entity's own `owner/name` identity —
+    /// `totem_store::RepoArtifact::git_repo` / `RepoView::git_repo` — the same
+    /// id space [`TokenGrant::repo`] speaks once a caller has resolved it.
+    /// Before that resolution existed, `/enroll` and `GET /landscape/:repo`
+    /// had no comparable value to bind against at all — ADV-GATEWAY-003's
+    /// disclosed residual this advance closes.
+    pub fn authorize_repo(&self, requested: &RepoId) -> Result<(), AuthError> {
+        if requested == &self.repo {
+            Ok(())
+        } else {
+            Err(AuthError::RepoNotBound {
+                bound: self.repo.clone(),
+                requested: requested.clone(),
+            })
+        }
+    }
 }
 
 /// Who is calling, and how far their word is taken for it.
@@ -287,6 +307,15 @@ impl Caller {
         match self {
             Caller::Trusted => Ok(()),
             Caller::Bound(grant) => grant.authorize_scope(scope),
+        }
+    }
+
+    /// Refuse a landscape enroll/read naming a different repo than this
+    /// caller's credential — see [`TokenGrant::authorize_repo`].
+    pub fn authorize_repo(&self, requested: &RepoId) -> Result<(), AuthError> {
+        match self {
+            Caller::Trusted => Ok(()),
+            Caller::Bound(grant) => grant.authorize_repo(requested),
         }
     }
 }
@@ -674,6 +703,25 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_grant_permits_its_own_repo_and_refuses_another() {
+        let grant = project_grant();
+
+        assert!(grant.authorize_repo(&repo("srswart/totem")).is_ok());
+        assert_eq!(
+            grant.authorize_repo(&repo("srswart/other")),
+            Err(AuthError::RepoNotBound {
+                bound: repo("srswart/totem"),
+                requested: repo("srswart/other"),
+            })
+        );
+    }
+
+    #[test]
+    fn a_trusted_caller_has_no_repo_binding_to_check() {
+        assert!(Caller::Trusted.authorize_repo(&repo("any/repo")).is_ok());
     }
 
     #[test]

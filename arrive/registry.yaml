@@ -3,6 +3,12 @@ registry:
   repo_id: 058-totem
   name: "058 Totem"
   description: "Totem — durable, auditable typed-memory and shared-context system for AI agents, mirroring the ARRIVE landscape of enrolled repos"
+  # The `owner/name` GitHub identity, in the same id space
+  # `totem_recall`/`totem_save`'s `project` field and gateway credentials
+  # (`TokenGrant.repo`) use. Distinct from `repo_id` above (ARRIVE's own
+  # governance-registry id, e.g. `058-totem`) — the two id spaces
+  # ADV-GATEWAY-009 unifies so a credential can be bound to its landscape.
+  git_repo: srswart/totem
 
 # Optional org placement for fleet/portfolio rollups (ARRIVE Adoption Intelligence,
 # TD-INSIGHT-009). Aggregate / team-level only — never per-developer. All fields

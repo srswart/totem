@@ -300,6 +300,19 @@ DEFINE FIELD OVERWRITE operation ON access_log TYPE string
     ASSERT $value IN ['recall', 'save', 'feedback', 'propose', 'promotion_decision', 'resolve'];
 "#;
 
+/// Migration 8 — the repo's `owner/name` GitHub identity (ADV-GATEWAY-009).
+///
+/// `repo` was keyed by the ARRIVE registry id alone (`registry.repo_id`,
+/// e.g. `"058-totem"`); a gateway credential's binding speaks a different id
+/// space (`owner/name`, e.g. `"srswart/totem"`). `option<string>` because a
+/// row synced before this migration has no value until its next sync
+/// converges it (`LandscapeRepository::sync`'s `UPSERT CONTENT` always
+/// writes it going forward) — no backfill statement, so a row nobody
+/// re-syncs is simply not yet confirmed, not corrupted.
+pub(crate) const REPO_GIT_IDENTITY_SCHEMA_V8: &str = r#"
+DEFINE FIELD git_repo ON repo TYPE option<string>;
+"#;
+
 #[cfg(test)]
 mod tests {
     //! Enforcement the repository API cannot be trusted to provide.

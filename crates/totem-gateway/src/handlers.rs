@@ -23,7 +23,7 @@
 
 use axum::Json;
 use axum::extract::{Extension, Path, State};
-use totem_core::{MemoryId, PromotionId};
+use totem_core::{MemoryId, PromotionId, RepoId};
 
 use crate::auth::Caller;
 use crate::dto::{
@@ -178,8 +178,13 @@ pub(crate) async fn advance_status(
 
 pub(crate) async fn enroll(
     State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
     Json(request): Json<EnrollRequest>,
 ) -> Result<Json<EnrollResponse>, GatewayError> {
+    let git_repo = RepoId::new(request.snapshot.repo.git_repo.clone())
+        .map_err(|error| GatewayError::InvalidRequest(format!("snapshot repo.git_repo: {error}")))?;
+    caller.authorize_repo(&git_repo)?;
+
     let summary = state
         .store
         .landscape()
@@ -196,6 +201,7 @@ pub(crate) async fn enroll(
 
 pub(crate) async fn landscape(
     State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
     Path(repo): Path<String>,
 ) -> Result<Json<LandscapeView>, GatewayError> {
     let view = state
@@ -204,6 +210,20 @@ pub(crate) async fn landscape(
         .view(&repo)
         .await
         .map_err(GatewayError::from)?;
+
+    // The path names the ARRIVE registry id, not the credential's own
+    // `owner/name` id space — resolve the landscape's own bound identity
+    // (falling back to the raw path when the repo has never synced, or its
+    // row predates ADV-GATEWAY-009) so a `Caller::Bound` credential has
+    // something to check against either way. A `Caller::Trusted` caller's
+    // `authorize_repo` never inspects this value.
+    let git_repo = view
+        .repo
+        .as_ref()
+        .and_then(|repo_view| repo_view.git_repo.clone())
+        .unwrap_or_else(|| repo.clone());
+    let git_repo = RepoId::new(git_repo).map_err(|error| GatewayError::InvalidRequest(error.to_string()))?;
+    caller.authorize_repo(&git_repo)?;
 
     Ok(Json(view))
 }
