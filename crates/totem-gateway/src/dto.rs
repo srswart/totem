@@ -88,6 +88,17 @@ pub struct RecallRequest {
     pub turn: Option<u32>,
 }
 
+/// `POST /console/token`: the console's half of a PKCE exchange
+/// (ADV-GATEWAY-010). The client id and redirect URI come from server
+/// configuration, not from here — a caller cannot redirect the exchange.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ConsoleTokenRequest {
+    /// The authorization code returned to the callback.
+    pub code: String,
+    /// The PKCE verifier held by the tab that began the sign-in.
+    pub code_verifier: String,
+}
+
 /// `POST /recall` response: the merged, scope-resolved view.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecallResponse {

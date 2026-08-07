@@ -437,16 +437,17 @@ passes:
           - id: "ADV-GATEWAY-010"
             advance_id: "ADV-GATEWAY-010"
             title: "Console on the gateway: static hosting + AuthKit browser login"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-GATEWAY-013", "ADV-INFRA-002", "ADV-CONSOLE-004"]
             notes: >-
-              Two gaps found while deploying INFRA-002: the console is not in
-              the image at all, and it sends no credential so it cannot talk
-              to the deployed gateway. Ships the wasm bundle from the gateway
-              (same origin, no proxy) and adds AuthKit browser login via PKCE,
-              reusing GATEWAY-013's validation path. Retires
-              ADV-CONSOLE-001's free-text-actor risk.
+              Done 2026-08-08. WORKSTATION: the evidence is a human signing
+              in, which no sandbox can produce. Deviation on record — the
+              browser cannot call AuthKit's token endpoint (permissive CORS
+              preflight, no header on the actual response), so the code
+              exchange relays through POST /console/token on our own origin.
+              Scored 85 (Red) and was not split; the seam was serving vs
+              sign-in.
           - id: "ADV-STORE-008"
             advance_id: "ADV-STORE-008"
             title: "Real embedder in the deployed build (BGE-small-en-v1.5)"
