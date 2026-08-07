@@ -52,7 +52,10 @@ After this advance:
   against the ARRIVE id.
 - `POST /enroll` (REST and any MCP equivalent) refuses a snapshot whose repo
   identity is not the presenting credential's repo, with an `AuthError` that
-  names both.
+  names both — and separately refuses a snapshot that would *rebind* an
+  ARRIVE id another repo already owns, even when the submitted `git_repo`
+  matches the caller's own binding (see Bug Fixes: this second check was
+  missing at first merge and landed in a follow-up fix).
 - `GET /landscape/:repo` and the `totem_landscape` MCP tool refuse a repo the
   credential is not bound to. No route can enumerate other repos' landscapes.
 - Negative tests prove both refusals, plus a control proving the bound repo
@@ -70,7 +73,26 @@ After this advance:
 
 ## Bug Fixes
 
-- [ ] None yet
+- [x] **Enroll rebind / landscape hijack (found by Copilot review on the
+      merged PR #43, fixed in a follow-up sub-PR since #43 had already
+      merged before the review comment landed).** `sync()` upserts by the
+      snapshot's ARRIVE id and unconditionally overwrites `git_repo`. The
+      original `enroll` handler only checked that the *submitted* snapshot
+      named the caller's own repo — it never checked whether the ARRIVE id
+      being enrolled already belonged to a *different* repo. A credential
+      bound to repo B could therefore take over an ARRIVE id already owned by
+      repo A simply by asserting `git_repo: B` in the snapshot, rewriting A's
+      landscape out from under it — a hijack, not merely an unauthorized
+      read, and strictly worse than the enumeration vector this advance set
+      out to close. Fixed: `enroll` now looks up any existing row for the
+      named ARRIVE id and, for a `Caller::Bound` credential, refuses unless
+      that row is unowned (first claim) or its `git_repo` already matches the
+      caller's own binding — an existing row with no confirmed `git_repo` yet
+      is refused the same way an unconfirmed landscape *read* already was.
+      Proven by
+      `enrolling_a_snapshot_cannot_rebind_an_arrive_id_another_repo_already_owns`,
+      which also asserts the rightful owner can still read its landscape
+      afterward and can still re-sync it.
 
 ## Scope and Boundaries
 
@@ -183,6 +205,16 @@ now suggested as ADV-GATEWAY-010).
 - crates/totem-gateway/src/handlers.rs, tests/auth.rs,
   crates/totem-store/src/landscape.rs: formatting only.
 
+### 2026-08-07 - test/fix: enroll rebind hijack (Bug Fixes)
+- crates/totem-gateway/tests/auth.rs: new
+  `enrolling_a_snapshot_cannot_rebind_an_arrive_id_another_repo_already_owns`
+  test, confirmed to fail (compiles, but the hijack succeeds with `200 OK`
+  instead of `403`) before the fix.
+- crates/totem-gateway/src/handlers.rs: `enroll` now looks up the existing
+  landscape row for the snapshot's ARRIVE id and, for `Caller::Bound`,
+  refuses to sync unless that row is unowned or its `git_repo` already
+  matches the caller's binding.
+
 ## Check for Understanding
 
 1. Why does `GET /landscape/:repo` compare a `Caller::Bound` credential
@@ -205,3 +237,13 @@ now suggested as ADV-GATEWAY-010).
    doing what looks like the same comparison. What does `Caller::Trusted`'s
    branch buy that inlining `TokenGrant::authorize_repo` everywhere would
    lose?
+6. `enroll`'s rebind check (Bug Fixes) only runs for `Caller::Bound`, never
+   for `Caller::Trusted`. Why is that the right split, given a Trusted caller
+   already skips every other `authorize_*` check in this codebase — and what
+   would a `Caller::Trusted` deployment need to add if it ever stopped being
+   single-user?
+7. The rebind check treats an existing row with `git_repo: None` (a
+   pre-migration row nobody has re-synced) as *not* matching any credential's
+   binding, refusing even the repo that "should" own it. Why is refusing the
+   safer default here, and what has to happen before that repo's own
+   credential can enroll into it again?

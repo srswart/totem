@@ -110,6 +110,30 @@ async fn a_sync_writes_the_repo_system_component_and_advance() {
 }
 
 #[tokio::test]
+async fn repo_reads_the_same_row_view_does_without_the_full_landscape() {
+    let store = common::store().await;
+    let landscape = store.landscape();
+    landscape
+        .sync(&snapshot(), "test")
+        .await
+        .expect("sync succeeds");
+
+    let repo = landscape
+        .repo("058-totem")
+        .await
+        .expect("repo lookup succeeds")
+        .expect("the repo was synced");
+    assert_eq!(repo.name, "058 Totem");
+    assert_eq!(repo.git_repo.as_deref(), Some("srswart/totem"));
+
+    let unsynced = landscape
+        .repo("nothing-here")
+        .await
+        .expect("repo lookup succeeds");
+    assert!(unsynced.is_none());
+}
+
+#[tokio::test]
 async fn a_view_for_an_unsynced_repo_is_empty() {
     let store = common::store().await;
     let view = store

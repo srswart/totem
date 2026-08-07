@@ -377,6 +377,27 @@ impl<'a, C: Connection> LandscapeRepository<'a, C> {
         })
     }
 
+    /// One repo's own row, or `None` if it has never synced — the lean read
+    /// a caller checking `git_repo` ownership needs (`handlers::enroll`'s
+    /// rebind guard, ADV-GATEWAY-009 follow-up). Unlike [`view`](Self::view),
+    /// this issues exactly one query rather than four: a caller with no use
+    /// for the systems/components/advances a full view materializes
+    /// shouldn't pay for them.
+    pub async fn repo(&self, repo_id: &str) -> StoreResult<Option<RepoView>> {
+        let repo = repo_thing(repo_id);
+        let mut response = self
+            .db
+            .query("SELECT * FROM $repo")
+            .bind(("repo", repo))
+            .await?
+            .check()?;
+
+        objects(response.take(0)?)?
+            .first()
+            .map(|row| repo_view(repo_id, row))
+            .transpose()
+    }
+
     /// The merged landscape view for one repo, in one round trip (G2).
     pub async fn view(&self, repo_id: &str) -> StoreResult<LandscapeView> {
         let repo = repo_thing(repo_id);
@@ -398,13 +419,7 @@ impl<'a, C: Connection> LandscapeRepository<'a, C> {
 
         let repo_view = objects(response.take(0)?)?
             .first()
-            .map(|row| -> StoreResult<RepoView> {
-                Ok(RepoView {
-                    id: repo_id.to_string(),
-                    name: row::string(row, "name")?,
-                    git_repo: opt_row_string(row, "git_repo")?,
-                })
-            })
+            .map(|row| repo_view(repo_id, row))
             .transpose()?;
 
         let systems = objects(response.take(1)?)?
@@ -523,6 +538,17 @@ fn objects(rows: Value) -> StoreResult<Vec<Object>> {
                 .map_err(|_| StoreError::Row("query row is not an object".to_string()))
         })
         .collect()
+}
+
+/// Parses one `repo` row into a [`RepoView`] — shared by [`LandscapeRepository::repo`]
+/// and [`LandscapeRepository::view`] so the two queries can't drift on what a
+/// repo row means.
+fn repo_view(repo_id: &str, row: &Object) -> StoreResult<RepoView> {
+    Ok(RepoView {
+        id: repo_id.to_string(),
+        name: row::string(row, "name")?,
+        git_repo: opt_row_string(row, "git_repo")?,
+    })
 }
 
 /// The key half of a `record<...>`-linked field (e.g. `system` on
