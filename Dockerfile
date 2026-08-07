@@ -3,7 +3,13 @@
 # Built with the `rocksdb` feature: this image is the DEP-001 durable single
 # instance, and the gateway refuses to start with TOTEM_DATA_DIR set unless
 # the feature is compiled in.
-FROM rust:1.85-slim-bookworm AS builder
+# Pinned to 1.96 (not the workspace's declared MSRV of 1.85): dependencies
+# have moved past it — fastnum 0.7.5 requires 1.94 and darling 0.23 requires
+# 1.88 — so the declared MSRV is already unachievable and only holds locally
+# because workstations run a newer toolchain. Pinned rather than `latest` so a
+# Rust release cannot break a deploy mid-trial, the same reasoning as the
+# surrealdb pin.
+FROM rust:1.96-slim-bookworm AS builder
 
 # RocksDB's build needs a C++ toolchain; SurrealDB's TLS needs pkg-config.
 RUN apt-get update && apt-get install -y --no-install-recommends \
