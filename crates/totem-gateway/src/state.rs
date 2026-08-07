@@ -10,7 +10,9 @@ use std::fmt;
 use std::sync::Arc;
 
 use surrealdb::engine::local::Db;
-use totem_store::{DeterministicEmbedder, Embedder, Store, StoreResult};
+#[cfg(not(feature = "fastembed"))]
+use totem_store::DeterministicEmbedder;
+use totem_store::{Embedder, Store, StoreResult};
 
 use crate::auth::TokenRegistry;
 
