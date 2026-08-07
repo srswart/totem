@@ -345,7 +345,7 @@ passes:
           - id: "ADV-INFRA-002"
             advance_id: "ADV-INFRA-002"
             title: "Fly.io deployment: image, single-machine volume, secrets, snapshots"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-INFRA-001", "ADV-GATEWAY-011"]
             notes: >-

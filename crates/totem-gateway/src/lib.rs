@@ -133,4 +133,19 @@ pub fn authenticated_app(state: AppState) -> Router {
             state,
             auth::authenticate,
         ))
+        // Merged *outside* the auth layer, deliberately. Two independent
+        // clients cannot present a credential and still need an answer:
+        // platform health checks (ADV-INFRA-002) and OAuth discovery
+        // (MCP-014). Keeping the exception in one named function — rather
+        // than punching per-route holes — is what makes it reviewable, and
+        // `tests/auth.rs` pins both directions: /health answers without a
+        // credential, and no other route does.
+        .merge(unauthenticated_routes())
+}
+
+/// Every route that is reachable without a credential. Adding to this list is
+/// a security decision; the auth tests exist to make an accidental addition
+/// fail loudly.
+fn unauthenticated_routes() -> Router {
+    Router::new().route("/health", get(handlers::health))
 }
