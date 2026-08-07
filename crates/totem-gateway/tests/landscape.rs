@@ -14,7 +14,7 @@ use serde_json::json;
 
 fn enroll_request(repo_id: &str, source: &str) -> serde_json::Value {
     json!({
-        "repo": { "id": repo_id, "name": "Totem" },
+        "repo": { "id": repo_id, "name": "Totem", "git_repo": "srswart/totem" },
         "systems": [
             { "id": "058-totem-core", "name": "Totem Core" }
         ],

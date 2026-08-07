@@ -262,7 +262,7 @@ passes:
           - id: "ADV-GATEWAY-009"
             advance_id: "ADV-GATEWAY-009"
             title: "Repo-bind enroll and landscape reads; unify the repo id spaces"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-GATEWAY-003"]
             notes: >-

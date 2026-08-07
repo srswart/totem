@@ -9,6 +9,7 @@ use chrono::{DateTime, Utc};
 use crate::schema::{
     ACCESS_LOG_FEEDBACK_SCHEMA_V4, ACCESS_LOG_GOVERNANCE_SCHEMA_V7, ACCESS_LOG_SCHEMA_V2,
     CURATION_SCHEMA_V6, LANDSCAPE_SYNC_SCHEMA_V3, MEMORY_SCHEMA_V1, PROMOTION_SCHEMA_V5,
+    REPO_GIT_IDENTITY_SCHEMA_V8,
 };
 
 /// One forward-only schema change.
@@ -61,6 +62,11 @@ pub const MIGRATIONS: &[Migration] = &[
         version: 7,
         name: "access_log_governance_operations",
         statements: ACCESS_LOG_GOVERNANCE_SCHEMA_V7,
+    },
+    Migration {
+        version: 8,
+        name: "repo_git_identity",
+        statements: REPO_GIT_IDENTITY_SCHEMA_V8,
     },
 ];
 

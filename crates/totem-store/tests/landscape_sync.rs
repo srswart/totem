@@ -19,6 +19,7 @@ fn snapshot() -> LandscapeSnapshot {
         repo: RepoArtifact {
             id: "058-totem".to_string(),
             name: "058 Totem".to_string(),
+            git_repo: "srswart/totem".to_string(),
         },
         systems: vec![SystemArtifact {
             id: "058-totem-core".to_string(),
@@ -78,6 +79,10 @@ async fn a_sync_writes_the_repo_system_component_and_advance() {
     assert_eq!(
         view.repo.as_ref().map(|repo| repo.name.as_str()),
         Some("058 Totem")
+    );
+    assert_eq!(
+        view.repo.as_ref().and_then(|repo| repo.git_repo.as_deref()),
+        Some("srswart/totem"),
     );
     assert_eq!(view.systems.len(), 1);
     assert_eq!(view.systems[0].id, "058-totem-core");
