@@ -472,6 +472,57 @@ pub async fn advance_status(
     Ok(state.store.landscape().advance(advance_id).await?)
 }
 
+/// Everything a landscape event-relay subscription needs, independent of
+/// transport (ADV-CONSOLE-003) — deliberately narrower than
+/// [`RecallInput`]/[`QueueReadInput`]: this route only ever serves the
+/// console's own live subscription (`crate::dto::LandscapeEventsQuery`'s own
+/// doc explains why `harness` is not a caller-supplied field here).
+#[derive(Debug, Clone)]
+pub struct LandscapeEventsInput {
+    /// The subscriber's own identity — the actor every relayed read is
+    /// logged under.
+    pub actor: ActorId,
+    /// The browser session subscribing.
+    pub session: SessionId,
+}
+
+/// Read one repo's current landscape view — unlogged.
+///
+/// Callers must log a read themselves once they know it will actually reach
+/// the caller (via [`log_landscape_read`]): [`crate::handlers::landscape`]
+/// and the relay's initial event both read this *before* authorizing the
+/// caller's repo binding (to learn the bound `git_repo` to check against),
+/// so logging here unconditionally would record a read for a request that
+/// is about to be refused.
+pub(crate) async fn landscape_view(
+    state: &AppState,
+    repo: &str,
+) -> Result<totem_store::LandscapeView, GatewayError> {
+    Ok(state.store.landscape().view(repo).await?)
+}
+
+/// Append one [`AccessOperation::Recall`] access-log entry for a landscape
+/// view the relay has just delivered (or is about to deliver) to an
+/// authorized subscriber — the "no unlogged access paths" invariant applied
+/// to a streaming read the same way [`recall`] applies it to a one-shot one.
+pub(crate) async fn log_landscape_read(
+    state: &AppState,
+    input: &LandscapeEventsInput,
+    endpoint: &str,
+) -> Result<(), GatewayError> {
+    let entry = AccessLogEntry::new(
+        input.actor.clone(),
+        Harness::Console,
+        input.session.clone(),
+        AccessOperation::Recall,
+        endpoint,
+        Utc::now(),
+    )
+    .with_result_count(1);
+    state.store.access_log().record(&entry).await?;
+    Ok(())
+}
+
 /// Everything a promotion proposal needs, independent of transport.
 #[derive(Debug, Clone)]
 pub struct ProposePromotionInput {

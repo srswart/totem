@@ -10,12 +10,17 @@
 //! `#[cfg(target_arch = "wasm32")]` on this module and `Cargo.toml`'s
 //! per-target `dioxus-web`/`gloo-net` dependencies.
 //!
-//! No live-query wiring yet (TD-009: the console must consume gateway
-//! events rather than open its own SurrealDB connection) — this is a
-//! documented gap, not an oversight; see `ADV-CONSOLE-001.md`'s Risk +
-//! Rollback section. Refresh here is manual (a button), not automatic.
+//! The landscape signal now also patches in place from the gateway's live
+//! relay (`GET /landscape/:repo/events`, ADV-CONSOLE-003) via
+//! [`subscribe_landscape_events`] — the gap `ADV-CONSOLE-001.md`'s Risk +
+//! Rollback section named. Refresh remains a working manual fallback: if the
+//! stream is unavailable (or the wasm32 `EventSource` API is absent — the
+//! browser-verification-required part of this task the advance body notes
+//! plainly), the console degrades to exactly the ADV-CONSOLE-001 behavior.
 
 use dioxus::prelude::*;
+use futures::StreamExt;
+use gloo_net::eventsource::futures::EventSource;
 use gloo_net::http::Request;
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use totem_core::{MemoryId, MemoryRecord, PromotionEvent, PromotionId, ReviewState};
@@ -23,7 +28,7 @@ use totem_core::{MemoryId, MemoryRecord, PromotionEvent, PromotionId, ReviewStat
 use crate::app::App;
 use crate::view_model::{
     AuditTrailViewModel, LandscapeViewModel, ViewModelError, parse_audit_trail, parse_landscape,
-    parse_memories, parse_promotion_queue, parse_uncertainty_queue,
+    parse_landscape_event, parse_memories, parse_promotion_queue, parse_uncertainty_queue,
 };
 
 /// `POST /recall`'s cap on this browser's own requests, in the absence of
@@ -240,9 +245,42 @@ pub async fn fetch_audit_trail(
     )?)
 }
 
+/// Subscribe to the gateway's live landscape relay for `repo` and patch
+/// `landscape` in place on every event, until the stream ends (the gateway
+/// closed it, or a malformed payload broke the connection) or this task is
+/// dropped (`use_future` cancels the previous run when `repo` changes, and
+/// every run when the component unmounts — Dioxus 0.6's own cancellation
+/// contract for the hook, not something this function manages itself).
+///
+/// `actor`/`session` are fixed rather than taken from the form: the relay's
+/// own access-log entries only need a stable subscriber identity, the same
+/// way `fetch_memories`'s `harness: "console"` is fixed rather than
+/// caller-supplied.
+async fn subscribe_landscape_events(repo: &str, landscape: &mut Signal<LandscapeViewModel>) {
+    let encoded = utf8_percent_encode(repo.trim(), NON_ALPHANUMERIC).to_string();
+    let url = format!("/landscape/{encoded}/events?actor=console&session=console-session");
+    let Ok(mut source) = EventSource::new(&url) else {
+        return;
+    };
+    let Ok(mut stream) = source.subscribe("landscape") else {
+        return;
+    };
+    while let Some(Ok((_event_type, message))) = stream.next().await {
+        let Some(data) = message.data().as_string() else {
+            continue;
+        };
+        if let Ok(view) = parse_landscape_event(&data) {
+            landscape.set(view);
+        }
+    }
+}
+
 /// The wasm entry point's root component: a repo/actor/project form over
-/// [`App`], with a manual "Refresh" button in place of the live-query
-/// auto-update the advance names as a stretch goal (see module docs).
+/// [`App`]. The landscape section updates live via
+/// [`subscribe_landscape_events`] (ADV-CONSOLE-003); the manual "Refresh"
+/// button remains as a fallback and is still the only update path for
+/// memories/promotions/uncertainty (ADV-CONSOLE-003's scope is the
+/// dashboard's landscape section — see the advance body).
 #[component]
 pub fn RootApp() -> Element {
     let mut repo = use_signal(|| "058-totem".to_string());
@@ -255,6 +293,17 @@ pub fn RootApp() -> Element {
     let promotions = use_signal(Vec::<PromotionEvent>::new);
     let uncertainty = use_signal(Vec::<MemoryRecord>::new);
     let audit = use_signal(|| Option::<AuditTrailViewModel>::None);
+
+    // Live landscape updates (ADV-CONSOLE-003): re-subscribes whenever
+    // `repo` changes, and `use_future` cancels the previous subscription's
+    // task for us — no manual EventSource lifecycle management here.
+    use_future(move || {
+        let repo_value = repo.read().clone();
+        let mut landscape = landscape;
+        async move {
+            subscribe_landscape_events(&repo_value, &mut landscape).await;
+        }
+    });
 
     let refresh = move || {
         let repo_value = repo.read().clone();

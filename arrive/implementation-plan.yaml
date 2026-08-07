@@ -283,7 +283,7 @@ passes:
           - id: "ADV-CONSOLE-003"
             advance_id: "ADV-CONSOLE-003"
             title: "Live landscape updates: gateway event relay + console subscription"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-CONSOLE-001", "ADV-GATEWAY-001"]
             notes: >-

@@ -102,6 +102,23 @@ pub fn parse_landscape(body: &str) -> Result<LandscapeViewModel, ViewModelError>
     })
 }
 
+/// Parse one relayed landscape event's `data:` payload (`GET
+/// /landscape/:repo/events`, ADV-CONSOLE-003).
+///
+/// The relay sends the exact same `LandscapeView` JSON shape in every
+/// emitted event that `GET /landscape/:repo` sends in its plain response
+/// body, so this delegates to [`parse_landscape`] rather than duplicating
+/// its parsing rules — the same "one parser, not two" discipline
+/// `totem-gateway`'s `ops.rs` already keeps between its REST and MCP
+/// surfaces, applied here to the polling and streaming reads of the same
+/// view. A browser's `EventSource`/`MessageEvent` has already stripped the
+/// `event:`/`data:` framing by the time this crate's wasm-only code (`api.rs`)
+/// sees the payload, so there is no frame to parse here — only the JSON body
+/// both paths share.
+pub fn parse_landscape_event(data: &str) -> Result<LandscapeViewModel, ViewModelError> {
+    parse_landscape(data)
+}
+
 /// `POST /recall`'s response body: the merged, scope-resolved records
 /// (mirrors `totem_gateway::RecallResponse`'s wire shape).
 #[derive(Debug, Clone, Deserialize)]
@@ -257,6 +274,14 @@ mod tests {
 
         assert!(view.repo.is_none());
         assert!(view.systems.is_empty());
+    }
+
+    #[test]
+    fn a_relayed_landscape_event_parses_identically_to_a_polled_fetch_body() {
+        let polled = parse_landscape(landscape_json()).expect("plain fetch body parses");
+        let relayed =
+            parse_landscape_event(landscape_json()).expect("relayed event payload parses");
+        assert_eq!(polled, relayed);
     }
 
     #[test]

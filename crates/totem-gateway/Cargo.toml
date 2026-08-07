@@ -22,6 +22,11 @@ path = "src/bin/mcp_stdio.rs"
 # server feature against, so ADV-GATEWAY-002 mounts on the same router with no
 # version reconciliation.
 anyhow = "1.0"
+# The landscape event relay (ADV-CONSOLE-003) builds its `text/event-stream`
+# body with the `stream!` macro rather than hand-rolling a `Stream` impl with
+# `futures::stream::unfold`; already present in `Cargo.lock` via rmcp's own
+# dependency tree, so this adds no new crate to the build.
+async-stream = "0.3"
 axum = "0.8"
 chrono.workspace = true
 # Pinned exactly, matching totem-mcp-spike's pin: docs/tech-direction/mcp.md
@@ -73,7 +78,7 @@ rmcp = { version = "=3.1.0", features = [
     "transport-child-process",
     "transport-streamable-http-client-reqwest",
 ] }
-tokio = { workspace = true, features = ["process"] }
+tokio = { workspace = true, features = ["process", "time"] }
 
 [lints]
 workspace = true
