@@ -33,6 +33,7 @@ use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig
 use rmcp::{RoleClient, ServiceExt};
 use serde_json::{Map, Value, json};
 use tokio::task::JoinHandle;
+use totem_core::{AccessOperation, RefusalReason};
 use totem_gateway::{AppState, TokenRegistry};
 use tower::ServiceExt as _;
 
@@ -49,6 +50,17 @@ async fn app() -> (Router, TokenRegistry) {
         .expect("embedded engine connects and migrations apply");
     let tokens = state.tokens.clone();
     (totem_gateway::authenticated_app(state), tokens)
+}
+
+/// Like [`app`], but also hands back the [`AppState`] so a test can read the
+/// access log a refusal is expected to have appended to (ADV-CORE-006).
+async fn app_with_state() -> (Router, TokenRegistry, AppState) {
+    let state = AppState::in_memory()
+        .await
+        .expect("embedded engine connects and migrations apply");
+    let tokens = state.tokens.clone();
+    let router = totem_gateway::authenticated_app(state.clone());
+    (router, tokens, state)
 }
 
 /// A token bound to `REPO` + `project:REPO` + `ADA` — the ordinary cloud-agent
@@ -255,6 +267,204 @@ async fn the_registry_never_retains_the_plaintext_token() {
     assert!(
         tokens.verify(&token, Utc::now()).is_ok(),
         "sanity: the token still verifies against its stored hash"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Refusals join the access log (ADV-CORE-006): the gateway's "no unlogged
+// access" invariant covers every *successful* read and write; these prove it
+// now also covers what it refused, and that the refusal itself is the only
+// store touch a refused request makes.
+// ---------------------------------------------------------------------------
+
+fn is_hex_sha256(fingerprint: &str) -> bool {
+    fingerprint.len() == 64 && fingerprint.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+#[tokio::test]
+async fn a_request_with_no_credential_leaves_exactly_one_refusal_entry() {
+    let (router, _tokens, state) = app_with_state().await;
+
+    let response = send(
+        &router,
+        post(
+            "/save",
+            None,
+            save_body(ADA, REPO, &format!("project:{REPO}"), "never written"),
+        ),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+    let entries = state
+        .store
+        .access_log()
+        .list()
+        .await
+        .expect("list succeeds");
+    assert_eq!(
+        entries.len(),
+        1,
+        "a refused write must not touch the store beyond the refusal itself: {entries:?}"
+    );
+    assert_eq!(entries[0].operation, AccessOperation::Refused);
+    assert_eq!(entries[0].endpoint, "/save");
+    assert_eq!(
+        entries[0].refusal_reason,
+        Some(RefusalReason::MissingCredential)
+    );
+    assert_eq!(
+        entries[0].credential_fingerprint, None,
+        "there was no credential to fingerprint"
+    );
+    assert_eq!(entries[0].actor, None);
+    assert_eq!(entries[0].harness, None);
+    assert_eq!(entries[0].session, None);
+}
+
+#[tokio::test]
+async fn an_unknown_credential_refusal_is_logged_with_its_fingerprint() {
+    let (router, _tokens, state) = app_with_state().await;
+
+    let response = send(
+        &router,
+        post(
+            "/recall",
+            Some("totem_cred_not_a_real_token"),
+            recall_body(ADA, Some(REPO), vec![]),
+        ),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+    let entries = state
+        .store
+        .access_log()
+        .list()
+        .await
+        .expect("list succeeds");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(
+        entries[0].refusal_reason,
+        Some(RefusalReason::UnknownCredential)
+    );
+    let fingerprint = entries[0]
+        .credential_fingerprint
+        .as_deref()
+        .expect("a presented, if forged, credential is still fingerprinted");
+    assert!(
+        is_hex_sha256(fingerprint),
+        "expected a hex-encoded SHA-256 digest, got {fingerprint}"
+    );
+    assert!(
+        !fingerprint.contains("totem_cred_not_a_real_token"),
+        "the fingerprint must never be (or contain) the token text"
+    );
+}
+
+#[tokio::test]
+async fn an_expired_credential_refusal_is_logged() {
+    let (router, tokens, state) = app_with_state().await;
+    let token = tokens
+        .issue(
+            REPO,
+            &format!("project:{REPO}"),
+            ADA,
+            Some(Utc::now() - Duration::seconds(1)),
+        )
+        .expect("an already-expired token still issues");
+
+    let response = send(
+        &router,
+        post(
+            "/recall",
+            Some(&token),
+            recall_body(ADA, Some(REPO), vec![]),
+        ),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+    let entries = state
+        .store
+        .access_log()
+        .list()
+        .await
+        .expect("list succeeds");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].refusal_reason, Some(RefusalReason::Expired));
+}
+
+#[tokio::test]
+async fn an_authorization_refusal_is_logged_with_the_bound_callers_fingerprint() {
+    let (router, tokens, state) = app_with_state().await;
+    let token = project_token(&tokens);
+
+    let response = send(
+        &router,
+        post(
+            "/recall",
+            Some(&token),
+            recall_body(GRACE, Some(REPO), vec![]),
+        ),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    let entries = state
+        .store
+        .access_log()
+        .list()
+        .await
+        .expect("list succeeds");
+    assert_eq!(
+        entries.len(),
+        1,
+        "a refused read must not touch the store beyond the refusal itself: {entries:?}"
+    );
+    assert_eq!(entries[0].operation, AccessOperation::Refused);
+    assert_eq!(
+        entries[0].refusal_reason,
+        Some(RefusalReason::ActorNotBound)
+    );
+    let fingerprint = entries[0]
+        .credential_fingerprint
+        .as_deref()
+        .expect("a live, bound credential is fingerprinted even when the request it made is refused");
+    assert!(is_hex_sha256(fingerprint));
+}
+
+#[tokio::test]
+async fn a_credential_refusal_over_the_mcp_surface_is_logged_too() {
+    let (router, _tokens, state) = app_with_state().await;
+
+    let response = send(
+        &router,
+        Request::builder()
+            .method("POST")
+            .uri("/mcp")
+            .header("content-type", "application/json")
+            .body(Body::from("{}"))
+            .expect("request builds"),
+    )
+    .await;
+    assert_eq!(
+        response.status(),
+        StatusCode::UNAUTHORIZED,
+        "the shared auth layer refuses before rmcp's own framing ever runs"
+    );
+
+    let entries = state
+        .store
+        .access_log()
+        .list()
+        .await
+        .expect("list succeeds");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].endpoint, "/mcp");
+    assert_eq!(
+        entries[0].refusal_reason,
+        Some(RefusalReason::MissingCredential)
     );
 }
 

@@ -5,7 +5,9 @@
 mod common;
 
 use common::{ADA, GRACE, chain, memory, store};
-use totem_core::{AccessLogEntry, AccessOperation, Harness, MemoryCategory, Scope, SessionId};
+use totem_core::{
+    AccessLogEntry, AccessOperation, Harness, MemoryCategory, RefusalReason, Scope, SessionId,
+};
 
 fn entry(operation: AccessOperation, endpoint: &str) -> AccessLogEntry {
     AccessLogEntry::new(
@@ -133,4 +135,38 @@ async fn entries_are_listed_oldest_first() {
 
     let entries = log.list().await.expect("list succeeds");
     assert_eq!(entries, vec![first, second]);
+}
+
+// ADV-CORE-006: a refused request still leaves an audit trail, even though it
+// never resolved an identity — the store write is the only touch a refusal
+// makes, so this is the whole of what a refusal entry needs to prove.
+#[tokio::test]
+async fn a_refusal_entry_round_trips_with_no_identity_fields() {
+    let store = store().await;
+    let log = store.access_log();
+
+    let recorded = AccessLogEntry::refused(
+        RefusalReason::UnknownCredential,
+        "/recall",
+        common::at("2026-08-05T06:00:00Z"),
+    )
+    .with_fingerprint("deadbeef");
+    log.record(&recorded)
+        .await
+        .expect("access log accepts a refusal entry");
+
+    let entries = log.list().await.expect("list succeeds");
+    assert_eq!(entries, vec![recorded]);
+    assert_eq!(entries[0].actor, None);
+    assert_eq!(entries[0].harness, None);
+    assert_eq!(entries[0].session, None);
+    assert_eq!(entries[0].operation, AccessOperation::Refused);
+    assert_eq!(
+        entries[0].refusal_reason,
+        Some(RefusalReason::UnknownCredential)
+    );
+    assert_eq!(
+        entries[0].credential_fingerprint,
+        Some("deadbeef".to_string())
+    );
 }

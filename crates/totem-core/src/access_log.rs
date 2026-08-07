@@ -150,4 +150,48 @@ mod tests {
         let back: AccessLogEntry = serde_json::from_str(&json).expect("deserialises");
         assert_eq!(back, original);
     }
+
+    // ADV-CORE-006: a refused request carries no identity — there was none to
+    // confirm — but still names why and, when a credential was presented at
+    // all, its fingerprint.
+    #[test]
+    fn a_refusal_entry_carries_no_identity_fields() {
+        let entry = AccessLogEntry::refused(
+            RefusalReason::MissingCredential,
+            "/recall",
+            "2026-08-05T06:00:00Z".parse().expect("valid timestamp"),
+        );
+        assert_eq!(entry.actor, None);
+        assert_eq!(entry.harness, None);
+        assert_eq!(entry.session, None);
+        assert_eq!(entry.memory_id, None);
+        assert_eq!(entry.result_count, None);
+        assert_eq!(entry.operation, AccessOperation::Refused);
+        assert_eq!(entry.refusal_reason, Some(RefusalReason::MissingCredential));
+        assert_eq!(entry.credential_fingerprint, None);
+    }
+
+    #[test]
+    fn with_fingerprint_attaches_the_presented_credentials_fingerprint() {
+        let entry = AccessLogEntry::refused(
+            RefusalReason::ScopeNotBound,
+            "/save",
+            "2026-08-05T06:00:00Z".parse().expect("valid timestamp"),
+        )
+        .with_fingerprint("deadbeef");
+        assert_eq!(entry.credential_fingerprint, Some("deadbeef".to_string()));
+    }
+
+    #[test]
+    fn a_refusal_entry_round_trips_through_json() {
+        let original = AccessLogEntry::refused(
+            RefusalReason::ActorNotBound,
+            "/recall",
+            "2026-08-05T06:00:00Z".parse().expect("valid timestamp"),
+        )
+        .with_fingerprint("deadbeef");
+        let json = serde_json::to_string(&original).expect("serialises");
+        let back: AccessLogEntry = serde_json::from_str(&json).expect("deserialises");
+        assert_eq!(back, original);
+    }
 }

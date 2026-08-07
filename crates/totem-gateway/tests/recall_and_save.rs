@@ -137,11 +137,11 @@ async fn every_request_appends_one_access_log_entry() {
     );
 
     assert_eq!(entries[0].endpoint, "/save");
-    assert_eq!(entries[0].actor, actor(ADA));
+    assert_eq!(entries[0].actor, Some(actor(ADA)));
     assert_eq!(entries[0].memory_id, Some(saved.id));
 
     assert_eq!(entries[1].endpoint, "/recall");
-    assert_eq!(entries[1].actor, actor(ADA));
+    assert_eq!(entries[1].actor, Some(actor(ADA)));
     assert_eq!(entries[1].result_count, Some(1));
 }
 
