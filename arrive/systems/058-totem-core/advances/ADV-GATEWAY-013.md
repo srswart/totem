@@ -143,11 +143,11 @@ URL, and canonical resource URI are deployment values (workstation, host,
 and test all differ), and the tests must be able to run against a fake
 issuer without network access.
 
-**Sequencing note:** the Resource Indicator must be Totem's real public URL,
-which does not exist until ADV-INFRA-002 provisions a hostname. Either
-configure AuthKit with a placeholder and correct it during INFRA-002, or do
-the AuthKit registration as an INFRA-002 step. Do not let this advance block
-on a hostname it does not own.
+**Resolved 2026-08-07:** the hostname exists — Fly.io app `totem-dev`,
+region `sin` (ADV-INFRA-002). Canonical resource URI
+`https://totem-dev.fly.dev`, MCP endpoint `https://totem-dev.fly.dev/mcp`.
+That is what registers as the WorkOS Resource Indicator and what the `aud`
+claim is validated against, so this advance no longer waits on a hostname.
 
 ## Open decision: how many identities
 
