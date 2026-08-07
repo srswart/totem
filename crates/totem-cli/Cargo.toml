@@ -21,7 +21,12 @@ clap = { version = "4.5", features = ["derive"] }
 # only today, and production deployment topology is still an open question
 # (docs/solution-intent.md §9), so this crate does not pay a TLS-stack compile
 # cost for a scheme the gateway cannot speak yet.
-reqwest = { version = "=0.13.4", default-features = false, features = ["json"] }
+# TLS is not optional (the feature is `rustls` on reqwest 0.13; the gateway
+# pins 0.12 where it is `rustls-tls`): the deployed gateway is HTTPS-only, and
+# without it reqwest refuses every https:// URL with "invalid URL, scheme is
+# not http" — the CLI could not reach a real deployment at all
+# (found by ADV-CLI-002 testing against totem-dev.fly.dev, not by any test).
+reqwest = { version = "=0.13.4", default-features = false, features = ["json", "rustls"] }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

@@ -425,7 +425,7 @@ passes:
           - id: "ADV-CLI-002"
             advance_id: "ADV-CLI-002"
             title: "CLI authenticates to the gateway"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-GATEWAY-012"]
             notes: >-
