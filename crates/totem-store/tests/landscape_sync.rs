@@ -113,7 +113,10 @@ async fn a_sync_writes_the_repo_system_component_and_advance() {
 async fn repo_reads_the_same_row_view_does_without_the_full_landscape() {
     let store = common::store().await;
     let landscape = store.landscape();
-    landscape.sync(&snapshot(), "test").await.expect("sync succeeds");
+    landscape
+        .sync(&snapshot(), "test")
+        .await
+        .expect("sync succeeds");
 
     let repo = landscape
         .repo("058-totem")
