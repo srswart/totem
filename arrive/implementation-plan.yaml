@@ -356,6 +356,17 @@ passes:
               `fly secrets`, rmcp `allowed_hosts` configuration, and an unauthenticated
               /health route. Public resource URI `https://totem-dev.fly.dev` is the WorkOS
               Resource Indicator.
+          - id: "ADV-GATEWAY-014"
+            advance_id: "ADV-GATEWAY-014"
+            title: "Trim recall payloads: embeddings out of client responses"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-GATEWAY-002"]
+            notes: >-
+              Cloud-eligible. Found in the first real agent use of the
+              deployed gateway: recall returns 384 floats per record to a
+              caller that pays per token and cannot use them. Recall is the
+              most frequent call in the trial, so the cost compounds.
           - id: "ADV-CLI-002"
             advance_id: "ADV-CLI-002"
             title: "CLI authenticates to the gateway"
