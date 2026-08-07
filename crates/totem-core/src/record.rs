@@ -67,6 +67,13 @@ pub struct Content {
     /// The memory itself, as written.
     pub body: String,
     /// The embedding used for vector recall, once one exists (ADV-STORE-002).
+    ///
+    /// Omitted from JSON entirely when absent (ADV-GATEWAY-014): client
+    /// responses strip it, and a rendered `"embedding": null` on every record
+    /// is noise on the most frequent call an agent makes. The store persists
+    /// this field through `totem-store`'s own row mapping, not through serde,
+    /// so this affects wire output only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub embedding: Option<Vec<f32>>,
     /// Free-form tags for filtering.
     pub tags: Vec<String>,

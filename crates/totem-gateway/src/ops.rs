@@ -192,6 +192,22 @@ pub async fn save(
 ///
 /// `endpoint` names the surface that handled the call (`/recall` for REST,
 /// `mcp:totem_recall` for MCP) so an audit query can tell them apart.
+/// Strip embedding vectors from records on their way to a client
+/// (ADV-GATEWAY-014).
+///
+/// A recalled record's 384-float vector (EMB-004) is useless to the caller —
+/// ranking already happened here — and recall is the most frequent call an
+/// agent makes, so the vectors are pure token cost on the path the value loop
+/// most needs to be cheap. The store keeps them; only the response loses
+/// them. Applied here rather than in each surface so REST and MCP cannot
+/// drift apart on what a client receives.
+fn without_embeddings(mut records: Vec<MemoryRecord>) -> Vec<MemoryRecord> {
+    for record in &mut records {
+        record.content.embedding = None;
+    }
+    records
+}
+
 pub async fn recall(
     state: &AppState,
     input: RecallInput,
@@ -242,7 +258,7 @@ pub async fn recall(
     }
     state.store.access_log().record(&entry).await?;
 
-    Ok(records)
+    Ok(without_embeddings(records))
 }
 
 /// Everything a feedback signal needs, independent of transport.
