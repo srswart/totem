@@ -77,8 +77,6 @@ pub struct RecallParams {
     pub turn: Option<u32>,
 }
 
-/// Parameters for `totem_save`.
-
 /// A JSON value that a client may deliver either as a real object or as a
 /// *string containing JSON* (ADV-GATEWAY-013 bug fix).
 ///
@@ -154,6 +152,7 @@ pub struct SubjectParam {
     pub id: String,
 }
 
+/// Parameters for `totem_save`.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct SaveParams {
     /// The writer's own project membership, if any.
