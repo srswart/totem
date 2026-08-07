@@ -202,6 +202,7 @@ impl<C: Connection> Store<C> {
         CredentialRepository { db: &self.db }
     }
 
+    /// Curator events: merges, supersessions, and their rollbacks.
     pub fn curation(&self) -> CurationRepository<'_, C> {
         self.curation_with_policy(totem_core::CurationPolicy::new())
     }

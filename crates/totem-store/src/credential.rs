@@ -38,6 +38,7 @@ pub struct CredentialGrantRow {
 }
 
 /// Reads and writes credential grants.
+#[derive(Debug)]
 pub struct CredentialRepository<'a, C: Connection> {
     pub(crate) db: &'a Surreal<C>,
 }

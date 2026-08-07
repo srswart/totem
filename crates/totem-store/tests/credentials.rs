@@ -40,8 +40,14 @@ async fn a_stored_grant_is_readable_back() {
 async fn revocation_removes_a_grant_from_the_active_set() {
     let store = store().await;
     let credentials = store.credentials();
-    credentials.record(&grant("fp-ada", "ada")).await.expect("record");
-    credentials.record(&grant("fp-grace", "grace")).await.expect("record");
+    credentials
+        .record(&grant("fp-ada", "ada"))
+        .await
+        .expect("record");
+    credentials
+        .record(&grant("fp-grace", "grace"))
+        .await
+        .expect("record");
 
     credentials.revoke("fp-ada").await.expect("revoke");
 
@@ -68,7 +74,10 @@ async fn revoking_an_unknown_fingerprint_is_refused_not_silently_ignored() {
 async fn a_revoked_grant_stays_revoked_and_is_never_resurrected() {
     let store = store().await;
     let credentials = store.credentials();
-    credentials.record(&grant("fp-ada", "ada")).await.expect("record");
+    credentials
+        .record(&grant("fp-ada", "ada"))
+        .await
+        .expect("record");
     credentials.revoke("fp-ada").await.expect("revoke");
 
     // Re-recording the same fingerprint must not undo a revocation: an
@@ -81,7 +90,10 @@ async fn a_revoked_grant_stays_revoked_and_is_never_resurrected() {
     );
 
     let active = credentials.active().await.expect("read");
-    assert!(active.is_empty(), "revoked credential came back: {active:?}");
+    assert!(
+        active.is_empty(),
+        "revoked credential came back: {active:?}"
+    );
 }
 
 #[tokio::test]
