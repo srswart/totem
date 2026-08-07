@@ -479,14 +479,18 @@ impl TotemMcp {
                     .and_then(|parts| parts.extensions.get::<Caller>())
                     .cloned();
                 if found.is_none() {
+                    // "/mcp" — the actual HTTP mount path (`mcp_http.rs`),
+                    // matching what the shared `authenticate` middleware
+                    // would have logged had it caught this refusal instead
+                    // (the ordinary case), not a synthetic surface name.
                     let entry = totem_core::AccessLogEntry::refused(
                         totem_core::RefusalReason::MissingCredential,
-                        "mcp",
+                        "/mcp",
                         Utc::now(),
                     );
                     if let Err(log_error) = self.state.store.access_log().record(&entry).await {
                         eprintln!(
-                            "warning: failed to append a refusal to the access log (mcp): {log_error}"
+                            "warning: failed to append a refusal to the access log (/mcp): {log_error}"
                         );
                     }
                 }

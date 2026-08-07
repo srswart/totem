@@ -147,6 +147,21 @@ fn from_row(row: &Object) -> Result<AccessLogEntry, RowError> {
         .transpose()
         .map_err(|error| row::malformed(format!("stored session is invalid: {error}")))?;
     let operation = operation_from(&row::string(row, "operation")?)?;
+    // `totem-core`'s own contract (`access_log.rs`'s doc comment): actor,
+    // harness, and session are `None` only on a `Refused` entry — every
+    // other operation confirmed an identity before it could touch the
+    // store. Enforced here, not just at the write path (`to_row` never
+    // constructs a row that would violate it, but a hand-written or
+    // pre-migration row could), so a row that breaks the contract is a
+    // decode-time `RowError`, not a silent `Option` a reader has to
+    // remember to check.
+    if operation != AccessOperation::Refused
+        && (actor.is_none() || harness.is_none() || session.is_none())
+    {
+        return Err(row::malformed(format!(
+            "a {operation:?} access log row is missing actor/harness/session — only a refused entry may omit them"
+        )));
+    }
     let endpoint = row::string(row, "endpoint")?;
     let at = row::datetime(row, "at")?;
 
@@ -273,4 +288,72 @@ fn rows_to_entries(rows: Value) -> StoreResult<Vec<AccessLogEntry>> {
         entries.push(from_row(&row)?);
     }
     Ok(entries)
+}
+
+#[cfg(test)]
+mod tests {
+    //! `from_row`/`to_row` are crate-private, so the row-shape enforcement
+    //! this module owns can only be exercised by writing a row directly
+    //! (bypassing `to_row`, which never produces a row that violates the
+    //! contract) — the same reason `schema.rs`'s own DB-level tests live
+    //! inside the crate rather than in `tests/`.
+
+    use crate::Store;
+
+    async fn migrated() -> Store<surrealdb::engine::local::Db> {
+        let store = Store::in_memory().await.expect("embedded engine connects");
+        store.migrate().await.expect("migrations apply");
+        store
+    }
+
+    #[tokio::test]
+    async fn a_non_refused_row_missing_its_identity_is_a_malformed_row_not_a_silent_option() {
+        let store = migrated().await;
+
+        // A hand-written row lacking `actor`/`harness`/`session` — exactly
+        // the shape a corrupted or pre-contract row could take. `to_row`
+        // never produces this for a `Save` entry; this proves `from_row`
+        // still catches it if something else does.
+        store
+            .connection()
+            .query(
+                "CREATE access_log CONTENT {
+                    operation: 'save', endpoint: '/save',
+                    at: d'2026-08-05T06:00:00Z'
+                }",
+            )
+            .await
+            .expect("sent")
+            .check()
+            .expect("the schema itself accepts the row — actor/harness/session are optional columns now");
+
+        let refused = store.access_log().list().await;
+        assert!(
+            matches!(refused, Err(crate::StoreError::Row(_))),
+            "expected a malformed-row refusal, got {refused:?}",
+        );
+    }
+
+    #[tokio::test]
+    async fn a_refused_row_with_no_identity_decodes_cleanly() {
+        let store = migrated().await;
+
+        store
+            .connection()
+            .query(
+                "CREATE access_log CONTENT {
+                    operation: 'refused', endpoint: '/save',
+                    refusal_reason: 'missing_credential',
+                    at: d'2026-08-05T06:00:00Z'
+                }",
+            )
+            .await
+            .expect("sent")
+            .check()
+            .expect("a refused row with no identity satisfies the schema");
+
+        let entries = store.access_log().list().await.expect("decodes cleanly");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].actor, None);
+    }
 }

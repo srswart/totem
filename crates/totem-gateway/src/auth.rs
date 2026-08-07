@@ -370,7 +370,8 @@ impl Caller {
 /// can write `return Err(refuse(...).await);` — logging is best-effort and
 /// never turns a refusal into a success or a success into a refusal
 /// (ADV-CORE-006's stated risk): a failed log write is reported via
-/// `tracing`, not propagated.
+/// `eprintln!` (this crate's existing warning convention — see `main.rs` —
+/// it has no `tracing` dependency), not propagated.
 ///
 /// `endpoint` should name the route (`/recall`, `mcp:totem_save`) the same
 /// way every successful [`crate::ops`] entry does, so a refusal is
