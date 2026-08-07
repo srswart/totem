@@ -339,8 +339,8 @@ passes:
               2026-08-07); TLS and supervision come from the platform. The
               work is DEP-001 vs Fly defaults: exactly one machine, no
               rolling deploy, a volume for the estate, secrets via
-              `fly secrets`, TOTEM_MCP_ALLOWED_HOSTS, and an unauthenticated
-              /health route. Public hostname totem-dev.fly.dev is the WorkOS
+              `fly secrets`, rmcp `allowed_hosts` configuration, and an unauthenticated
+              /health route. Public resource URI `https://totem-dev.fly.dev` is the WorkOS
               Resource Indicator.
           - id: "ADV-STORE-008"
             advance_id: "ADV-STORE-008"
