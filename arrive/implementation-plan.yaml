@@ -356,6 +356,18 @@ passes:
               `fly secrets`, rmcp `allowed_hosts` configuration, and an unauthenticated
               /health route. Public resource URI `https://totem-dev.fly.dev` is the WorkOS
               Resource Indicator.
+          - id: "ADV-CLI-002"
+            advance_id: "ADV-CLI-002"
+            title: "CLI authenticates to the gateway"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-GATEWAY-012"]
+            notes: >-
+              Cloud-eligible. enroll.rs sends no credential at all — the CLI
+              worked in demos only because the gateway was an unauthenticated
+              loopback composition. Without this the dogfood trial has no
+              landscape, since enroll and the sync hook both 401. Bearer from
+              flag/env/local store, with gateway-backed issuance.
           - id: "ADV-GATEWAY-010"
             advance_id: "ADV-GATEWAY-010"
             title: "Console on the gateway: static hosting + AuthKit browser login"
