@@ -6,20 +6,20 @@ advance:
   primary_component: "gateway"
   components: ["gateway", "console"]
   started_at: "2026-08-07T15:00:00Z"
-  implementation_completed_at: ~
+  implementation_completed_at: "2026-08-08T01:15:00Z"
   review_time_estimate_minutes: 40
   review_time_actual_minutes: ~
   pr_links: []
   external_refs: []
   reviewability_score: 85
   risk_flags: ["auth", "public_api", "large_diff"]
-  evidence: ["tests:unit", "tdd:red-green"]
+  evidence: ["tests:unit", "tdd:red-green", "login:executed"]
   model_usage: []
   schema_version: 2
   mode: implementation
   facets: [software, security]
   work_products: [production_code]
-  status: in_progress
+  status: complete
 ---
 
 ## Objective
@@ -188,11 +188,12 @@ A reviewer should read it in that order: `Dockerfile` + `lib.rs` +
       example, so the challenge derivation is verified against the spec
       rather than against itself) and four HTTP tests asserting the console
       is served *and* that API paths are never shadowed by the SPA fallback.
-- [ ] login:executed — **pending.** An earlier attempt reached AuthKit,
-      authenticated through Google, and came back — which is what found both
-      defects in the final commit; nothing in the suite could have. It then
-      failed at the token exchange, so no sign-in has yet completed. This
-      stays unchecked, and the advance stays `in_progress`, until one does.
+- [x] login:executed — Shawn signed in at `https://totem-dev.fly.dev`
+      through AuthKit and reached the console. Confirmed 2026-08-08.
+      The attempt *before* the fix is worth keeping in the record: it reached
+      AuthKit, authenticated, and came back, then failed at the token
+      exchange — and that failure is what found both defects in the final
+      commit. Nothing in the suite could have found either.
 - Not claimed: that the token store is safe against a compromised page. A
       browser-held token is reachable by any script on the page;
       `sessionStorage` narrows the window to the tab's lifetime and that is
