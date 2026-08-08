@@ -6,20 +6,20 @@ advance:
   primary_component: "store"
   components: ["store", "gateway"]
   started_at: "2026-08-07T04:30:00Z"
-  implementation_completed_at: ~
+  implementation_completed_at: "2026-08-08T03:30:00Z"
   review_time_estimate_minutes: 30
   review_time_actual_minutes: ~
   pr_links: []
   external_refs: []
   reviewability_score: 0
   risk_flags: ["migration", "deployment"]
-  evidence: ["tdd:red-green", "tests:unit"]
+  evidence: ["tdd:red-green", "tests:unit", "deployment:executed"]
   model_usage: []
   schema_version: 2
   mode: implementation
   facets: [software]
   work_products: [production_code]
-  status: in_progress
+  status: complete
 ---
 
 ## Objective
@@ -117,14 +117,22 @@ explicit call it can follow the backup this advance's risk section requires.
       the model.** The default build does not link `fastembed` — that is what
       the feature is for — so no test in this suite has ever loaded
       BGE-small-en-v1.5.
-- [ ] **golden-queries — pending.** EMB-004's paraphrase query, run against
-      the deployed instance, is the only thing that shows the real model is
-      in the path. Until it passes, this advance claims a re-embed mechanism
-      and an image that is *intended* to carry the model, and nothing about
-      recall quality.
+- [x] deployment:executed — `https://totem-dev.fly.dev` reports
+      `running: "fastembed-bge-small-en-v1.5"`. The re-embed pass rewrote all
+      seven stored memories (`examined: 7, reembedded: 7, skipped: 0`) and
+      `/admin/embedding` then reported `uniform: true` on a single model. The
+      real model is loaded, and the estate is in one vector space.
+- [ ] **golden-queries — NOT MET, and this advance closes without them.**
+      Four queries against the deployment, two of them verbatim copies of a
+      record's own body, returned the same seven records in the same order.
+      Recall does not rank by the query. See below: the cause is not this
+      advance's, and it is now **ADV-CORE-008**.
 - Not claimed: any measurement of load time or memory on the host. The
-      advance asked for the numbers; they come from the deployment, not from
-      here.
+      advance asked for the numbers and I did not take them.
+- Not claimed, most importantly: **that recall quality improved.** That was
+      this advance's stated purpose — "recall quality worth dogfooding" — and
+      it is not delivered. What is delivered is the real model in the path
+      and one uniform vector space, which are its preconditions.
 
 ## A build failure the suite could not have caught
 
@@ -142,6 +150,61 @@ build links `fastembed`. This is the fifth defect in three days to live at a
 boundary the suite does not cross (see
 `docs/overnight-experiment/log.md`, 2026-08-08).
 
+## Why this closes without its golden queries
+
+The golden query is the check that the real model is in the path rather than
+a stub that loaded successfully. It failed — but not in the way it was
+designed to fail.
+
+Asked four questions of the deployment, including two that were verbatim
+copies of a stored record's own text, every one returned the same seven
+records in the same order. That is not a model problem; it is not a query
+reaching a model at all.
+
+Reproduced locally in `crates/totem-store/tests/recall_ranking.rs`. Two
+tests:
+
+- **The re-embed pass is exonerated.** Ranking survives it: rows written by
+  one model, rewritten by another through `reembed_all`, still rank
+  correctly. Whatever is wrong, this advance did not cause it.
+- **The scoring function is implicated.**
+  `combined_score = relevance * value_score * currency * category_weight`.
+  `relevance_from_distance` is `1/(1+d)`, so across the *entire* cosine range
+  relevance varies by at most 3x. `value_score` has no such bound, and
+  `reinforce_usage` raises it on every record a recall returns — so whatever
+  ranks highly becomes more valuable and ranks highly more often. Past some
+  accumulation no query can outrank it. The test is `#[ignore]`d: the suite
+  stays green, the defect stays executable.
+
+Three reasons this advance closes rather than growing to absorb it:
+
+1. **It is pre-existing.** The formula predates this work. The deterministic
+   embedder concealed it, because nobody trusted those rankings anyway and so
+   nobody looked.
+2. **It belongs to ADV-CORE-002's value loop**, a different component's
+   design, with its own intent in `docs/solution-intent.md` §4.
+3. **The fix is a product decision, not a defect repair.** How much a
+   memory's history should be allowed to outweigh what was asked is a
+   question about what Totem is for. Deciding it inside an embedder-swap
+   advance would bury it.
+
+**ADV-CORE-008** carries it, and this advance's `golden-queries` box stays
+unchecked rather than being quietly re-scoped into something it could pass.
+
+## What this advance was for, and what it actually bought
+
+Stated objective: "recall quality worth dogfooding." Not delivered — recall
+quality is unchanged, because the query never reaches the ranking.
+
+What is delivered is every precondition for it: the real model loads in the
+deployed image, a build that asks for it and cannot have it refuses to start,
+every stored memory is in one vector space, the space is labelled and
+therefore auditable, and the pass that moves between spaces is targeted,
+idempotent and resumable.
+
+The honest summary is that this advance made the *next* one possible and its
+own headline claim false. Recording that is worth more than a green box.
+
 ## Changes Made
 
 ### 2026-08-08 - the label, and the pass
@@ -154,7 +217,7 @@ boundary the suite does not cross (see
   is a no-op on a second run, and **fails loudly** rather than reporting
   success over a still-mixed index when a row cannot be embedded.
 
-### 2026-08-08 - the real model in the image
+### 2026-08-08 - the real model in the image, and the road to it
 - `crates/totem-gateway/Cargo.toml`: a `fastembed` feature.
 - `crates/totem-gateway/src/state.rs`: feature-selected embedder; a failure
   to load is a start-up failure, not a silent downgrade.
@@ -166,7 +229,36 @@ boundary the suite does not cross (see
   and `POST /admin/reembed`, both authenticated — re-embedding rewrites every
   vector in the store.
 - `Dockerfile`: trixie throughout, `--features rocksdb,fastembed`, weights
-  baked at `/models`.
+  baked at `/models`, `CARGO_BUILD_JOBS=2`.
+
+### 2026-08-08 - four deployment failures, none of them visible to the suite
+- **Link error.** The prebuilt ONNX Runtime references libstdc++ 13+
+  (`_M_replace_cold`); Debian bookworm ships GCC 12. The message was a
+  `rust-lld` line naming a C++ mangled symbol inside `ort-sys` and said
+  nothing about Debian. All three stages moved to trixie — the runtime stage
+  too, since the binary needs that libstdc++ at run time.
+- **`rustc` OOM-killed** (signal 9) compiling `surrealdb-core`. ONNX Runtime
+  alongside the largest crate in the workspace exceeded the builder's memory.
+  Cargo names the crate that died, not the reason: `surrealdb-core` compiled
+  fine before and after. `CARGO_BUILD_JOBS=2`.
+- **The builder VM itself died** (`rpc error: Unavailable ... EOF`). Nothing
+  to fix on our side; a retry succeeded.
+- **`FASTEMBED_CACHE_DIR`, not `FASTEMBED_CACHE_PATH`.** I invented the
+  wrong name. The library ignores an unknown variable and falls back to
+  `.fastembed_cache` relative to the working directory, so the warm step
+  downloaded 130MB, **exited 0**, and the build failed three steps later on a
+  `COPY` that found nothing — an error that named a line that was correct.
+  The warm step now asserts `/models` is non-empty and prints where the
+  weights actually landed.
+- `crates/totem-store/Cargo.toml`: the `fastembed` feature was declared
+  inside the `[[test]]` table, so cargo read it as the unused key
+  `test.0.fastembed`. It resolved anyway — an optional dependency implies a
+  feature of its own name — so nothing failed and nothing said so.
+
+### 2026-08-08 - the finding
+- `crates/totem-store/tests/recall_ranking.rs`: the re-embed pass exonerated,
+  the scoring function implicated, the defect left executable under
+  `#[ignore]`.
 
 ## Check for Understanding
 
@@ -186,3 +278,9 @@ boundary the suite does not cross (see
    deployment rule out doing it at boot?
 6. The whole suite was green while the image could not link. What does that
    say about what `cargo test --workspace` is evidence *of*?
+7. This advance closes with its headline claim — "recall quality worth
+   dogfooding" — undelivered, and says so. What did closing it buy that
+   growing it to absorb ADV-CORE-008 would have cost?
+8. `relevance` varies by at most 3x; `value_score` is unbounded and is raised
+   by the very act of being recalled. Describe the loop in one sentence, and
+   say why a deterministic embedder concealed it.
