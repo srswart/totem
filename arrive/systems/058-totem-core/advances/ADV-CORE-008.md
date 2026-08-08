@@ -83,8 +83,28 @@ outweigh what was actually asked?* Some candidate shapes, none yet chosen:
    not count the same as one that fed a decision (`totem_feedback` already
    carries that signal and is currently not consulted here).
 
-(3) and (1) compose well and are the author's inclination, but the decision
-is Shawn's to confirm, because it changes what Totem returns.
+**Decided by Shawn, 2026-08-08: (3) + (1) — a relevance gate combined with a
+saturating value score.**
+
+Below a distance threshold a record does not compete at all, whatever its
+history; above it, `value_score` contributes on a saturating curve so a
+well-used memory carries a strong but *finite* advantage.
+
+Why this pair rather than either alone: the gate answers the failure directly
+— an irrelevant record cannot win no matter how much history it has
+accumulated — while saturation stops the runaway that produced this in the
+first place, without discarding the value loop. Widening relevance's range
+(2) alone would only move the crossover point; the loop would still win
+eventually, just later. Damping reinforcement (4) is worth doing and is
+recorded as out of scope: `totem_feedback` already carries a
+did-this-help signal that reinforcement ignores, and wiring it in is a
+separate change with its own evidence.
+
+Two numbers must be chosen and justified in the record rather than tuned
+until the tests pass: the gate's distance threshold, and the saturation
+point. Both are product decisions in miniature — the threshold decides what
+"not relevant enough to consider" means, and the saturation point decides how
+much history is enough.
 
 ## Behavioral Change
 
@@ -100,7 +120,10 @@ index it has overshot, and the tests should say so in both directions.
 ## Planned Implementation Tasks
 
 - [ ] branch / claim
-- [ ] decide the shape with Shawn; record the reasoning and what it rejects
+- [x] decide the shape with Shawn — relevance gate + saturating value score,
+      reasoning and rejected alternatives recorded above
+- [ ] choose and justify the two constants (gate threshold, saturation point)
+      from the corpus, not by tuning until tests pass
 - [ ] test: an exact body match outranks an unrelated high-`value_score`
       record (currently `#[ignore]`d in `recall_ranking.rs` — un-ignore it)
 - [ ] test: the converse — comparable relevance, and the well-used record

@@ -238,7 +238,7 @@ passes:
               Correction).
 
       - id: "phase-012"
-        title: "Deferred residuals: restore drill, MSRV, build caching"
+        title: "Fix recall ranking, and the deferred residuals: restore drill, MSRV, build caching"
         order: 4
         items:
           - id: "ADV-INFRA-005"
@@ -274,10 +274,13 @@ passes:
               seven records in the same order. relevance spans 3x;
               value_score is unbounded and is raised by being recalled.
               Reproduction is committed and #[ignore]d in
-              crates/totem-store/tests/recall_ranking.rs. The shape of the
-              fix is a product decision — confirm with Shawn before
-              implementing. Carries the golden-query evidence STORE-008
-              could not meet.
+              crates/totem-store/tests/recall_ranking.rs. Shape decided by
+              Shawn 2026-08-08: a relevance GATE (below a distance threshold
+              a record does not compete at all, whatever its history)
+              combined with a SATURATING value_score, so a well-used memory
+              keeps a strong but finite advantage and the value loop
+              survives. Blocks ADV-INFRA-003 (phase-013). Carries the
+              golden-query evidence STORE-008 could not meet.
           - id: "ADV-INFRA-006"
             advance_id: "ADV-INFRA-006"
             title: "Cache dependency builds so deploys are minutes, not quarter-hours"
@@ -411,7 +414,7 @@ passes:
               /health route. Public resource URI `https://totem-dev.fly.dev` is the WorkOS
               Resource Indicator.
       - id: "phase-011"
-        title: "Dogfood trial: clients, quality, cutover"
+        title: "Dogfood trial: clients, quality"
         order: 3
         items:
           - id: "ADV-GATEWAY-014"
@@ -489,20 +492,35 @@ passes:
               arrive/agent-rules + `arrive sync agent-rules` pipeline already
               reaches Claude Code, Cursor and skills from one source; this
               uses it. Must land before the cutover.
+      - id: "phase-013"
+        title: "Dogfood cutover: switch every session onto the hosted instance"
+        order: 5
+        items:
           - id: "ADV-INFRA-003"
             advance_id: "ADV-INFRA-003"
             title: "Dogfood cutover: enroll, credentials, harness wiring, memory discipline, measurement"
             status: planned
             owner: "058-totem"
-            dependencies: ["ADV-GATEWAY-012", "ADV-GATEWAY-013", "ADV-INFRA-002", "ADV-STORE-008", "ADV-GATEWAY-009", "ADV-CLI-002"]
+            dependencies: ["ADV-GATEWAY-012", "ADV-GATEWAY-013", "ADV-INFRA-002", "ADV-STORE-008", "ADV-GATEWAY-009", "ADV-CLI-002", "ADV-CORE-008"]
             notes: >-
               WORKSTATION — the switch-flip: per-identity credentials
               (cloud-opus, cloud-sonnet, shawn), MCP connectors on both
               routines, memory discipline into cloud-agent-notes.md and
               CLAUDE.local.md, measurement collection starts.
+
+              Moved out of phase-011 on 2026-08-08 and given a hard
+              dependency on ADV-CORE-008. Recall currently ignores the query
+              (same four records whatever is asked), and cutting over before
+              that is fixed would teach every session that "recall before
+              reading" is not worth calling — a habit that is hard to undo —
+              and would start the reuse-rate baseline against a broken
+              ranker, making every number before the fix worthless. It is
+              also a phase of its own rather than a residual: the cutover is
+              the milestone the trial exists for, not leftover work.
+
       - id: "phase-009"
         title: "Evaluations (quality, security, performance)"
-        order: 5
+        order: 6
         items:
           - id: "ADV-GATEWAY-006"
             advance_id: "ADV-GATEWAY-006"
