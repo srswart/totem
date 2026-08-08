@@ -41,8 +41,17 @@ RUN cargo build --release -p totem-gateway --features rocksdb,fastembed
 # ~276s because of this download, against ~124ms warm (EMB-004) — a first boot
 # paying that would fail its health check long before it served anything. Here
 # a slow step is merely slow.
-ENV FASTEMBED_CACHE_PATH=/models
-RUN /build/target/release/totem-gateway --warm-embedder
+# FASTEMBED_CACHE_DIR, not _PATH. The wrong name is silently ignored — the
+# library falls back to `.fastembed_cache` relative to the working directory,
+# the warm step succeeds, and the failure surfaces three steps later as a
+# COPY that finds nothing. Hence the check below: it fails at the step that
+# caused it, saying which directory is empty.
+ENV FASTEMBED_CACHE_DIR=/models
+RUN /build/target/release/totem-gateway --warm-embedder \
+    && test -n "$(ls -A /models 2>/dev/null)" \
+    || (echo "FATAL: /models is empty after warming — the weights went somewhere else." \
+        && echo "Found instead:" && find / -name '*.onnx' -not -path '*/target/*' 2>/dev/null | head \
+        && exit 1)
 
 # The console bundle (ADV-GATEWAY-010), built in its own stage so a console
 # change does not invalidate the gateway's (much longer) compile.
@@ -69,7 +78,7 @@ COPY --from=builder /build/target/release/totem-gateway /usr/local/bin/totem-gat
 # The baked weights, and the variable that makes the runtime look for them
 # here rather than trying to download to a working directory it cannot write.
 COPY --from=builder /models /models
-ENV FASTEMBED_CACHE_PATH=/models
+ENV FASTEMBED_CACHE_DIR=/models
 COPY --from=console /build/target/dx/totem-console/release/web/public /console
 ENV TOTEM_CONSOLE_DIR=/console
 
