@@ -171,6 +171,52 @@ artifact registries.
 - `infra/RUNBOOK.md`: the known-cost note replaced with expected build times
   per change type, and the symptom of the cache silently failing.
 
+## On Fly: the first deploy, and a correction to the warm estimate
+
+Deployed 2026-08-08, version 11, healthy. **34 minutes** — cold by
+construction: the Dockerfile itself changed, so every layer in it was new to
+Fly's builder and there was nothing to hit. This deploy bought no speed and
+was never going to; it exists to populate the cache.
+
+Per-stage, from the build output:
+
+| stage | cold on Fly | next deploy |
+|---|---|---|
+| `chef` apt packages | 32.7s | CACHED |
+| `cargo install cargo-chef` | 42.1s | CACHED |
+| `cargo chef prepare` | 0.2s | re-runs, negligible |
+| `cargo chef cook` | the bulk | CACHED unless a manifest changed |
+| `cargo build` | — | re-runs, ~30-60s |
+| `dx build` (console) | **90.1s** | **re-runs every time** |
+
+**Two corrections to what this advance claimed.**
+
+1. **34 minutes, against an estimate of 15-25.** Fly's amd64 builder is
+   slower than the workstation for this work, and `CARGO_BUILD_JOBS=2` — kept
+   deliberately, because the remote builder OOM-killed rustc without it
+   (ADV-STORE-008) — costs parallelism that the local run also paid but
+   evidently absorbed better. The local *ratio* still looks sound; the local
+   *absolute times* under-predicted Fly by roughly 3x, which is worth
+   remembering the next time a local measurement is used to set an
+   expectation.
+
+2. **The warm case will be ~3-5 minutes, not the ~1 minute the 52s figure
+   suggested.** That figure was `--target builder`, which excludes the
+   console stage entirely — recorded as a method note at the time, and now
+   the reason the headline number was optimistic. `dx build` is 90.1s and
+   `COPY . .` sits above it, so **any** source change invalidates the console
+   stage, including a change touching only the gateway.
+
+   The console stage's expensive layers (`cargo install dioxus-cli`, apt,
+   rustup target) did come back `CACHED`, so that part works as designed.
+
+**The cheap follow-up this measurement points at**, and the answer to the
+console task above: chef-ing the console's dependencies is *not* the prize.
+Narrowing its `COPY . .` to what the console actually needs is — it would let
+a gateway-only change skip `dx build` altogether, which is the common case
+for this project. Recorded here rather than done, because it is a Dockerfile
+change wanting its own before/after.
+
 ## Residual: the claim in the title is not yet proven on Fly
 
 The title says *deploys* are minutes. Everything measured here is a
@@ -182,6 +228,15 @@ The mechanism is proven and the ratio should carry, but "a source-only deploy
 takes about a minute" is a claim about Fly's builder and remains unmade until
 a deploy makes it. Record the first two real deploy times in this section
 rather than assuming the local numbers transfer.
+
+**Status after the first deploy (above): still open, and now with a specific
+question.** Deploy 1 was cold by construction and tells us nothing about the
+cache. **Deploy 2 is the test**, and the number to watch is whether
+`cargo chef cook` reports `CACHED`. If it does not — if Fly's builder does
+not retain layers between deploys — then this advance delivers nothing on Fly
+whatever it delivers locally, and that finding matters more than the speedup
+would have, because phase-014's calibration work assumes many
+deploy-and-measure cycles.
 
 ## Check for Understanding
 
