@@ -1,0 +1,55 @@
+# Golden queries — explained
+# host:    https://totem-dev.fly.dev
+# taken:   2026-08-08T10:09:16Z
+# commit:  45768c8
+# embedder:
+#   {"running":"fastembed-bge-small-en-v1.5","uniform":true,"rows_by_model":[{"model":"fastembed-bge-small-en-v1.5","rows":7}]}
+
+## The gateway owns the embedded store exclusively; a second process cannot open it.
+    IN  combined=0.664 dist=0.331 rel=0.751 val=1 cur=0.999 cat=0.885  DEP-001: the gateway owns an embedded RocksDB store at ~/.to
+    IN  combined=0.653 dist=0.53 rel=0.653 val=1 cur=1 cat=1  Always run arrive plan check before pushing plan edits.
+    IN  combined=0.643 dist=0.482 rel=0.675 val=1 cur=0.999 cat=0.954  Overnight experiment day 2: phase-007 in flight, Opus buildi
+    IN  combined=0.598 dist=0.478 rel=0.676 val=1 cur=0.999 cat=0.885  MCP write path verified after the typed-schema fix (ADV-GATE
+    IN  combined=0.576 dist=0.536 rel=0.651 val=1 cur=0.999 cat=0.885  The Totem MCP connector authenticated through WorkOS AuthKit
+    IN  combined=0.559 dist=0.583 rel=0.632 val=1 cur=0.999 cat=0.885  ack-probe: measuring whether the MCP response stream termina
+
+## Cursor's remote-MCP reach is untested.
+    IN  combined=0.684 dist=0.462 rel=0.684 val=1 cur=1 cat=1  Always run arrive plan check before pushing plan edits.
+    IN  combined=0.677 dist=0.306 rel=0.766 val=1 cur=0.999 cat=0.885  MCP write path verified after the typed-schema fix (ADV-GATE
+    IN  combined=0.671 dist=0.318 rel=0.759 val=1 cur=0.999 cat=0.885  ack-probe: measuring whether the MCP response stream termina
+    IN  combined=0.653 dist=0.459 rel=0.685 val=1 cur=0.999 cat=0.954  Overnight experiment day 2: phase-007 in flight, Opus buildi
+    IN  combined=0.636 dist=0.39 rel=0.72 val=1 cur=0.999 cat=0.885  The Totem MCP connector authenticated through WorkOS AuthKit
+    IN  combined=0.604 dist=0.464 rel=0.683 val=1 cur=0.999 cat=0.885  DEP-001: the gateway owns an embedded RocksDB store at ~/.to
+
+## Which process is allowed to open the SurrealDB engine?
+    IN  combined=0.701 dist=0.427 rel=0.701 val=1 cur=1 cat=1  Always run arrive plan check before pushing plan edits.
+    IN  combined=0.686 dist=0.389 rel=0.72 val=1 cur=0.999 cat=0.954  Overnight experiment day 2: phase-007 in flight, Opus buildi
+    IN  combined=0.644 dist=0.374 rel=0.728 val=1 cur=0.999 cat=0.885  DEP-001: the gateway owns an embedded RocksDB store at ~/.to
+    IN  combined=0.639 dist=0.383 rel=0.723 val=1 cur=0.999 cat=0.885  MCP write path verified after the typed-schema fix (ADV-GATE
+    IN  combined=0.611 dist=0.446 rel=0.691 val=1 cur=0.999 cat=0.885  The Totem MCP connector authenticated through WorkOS AuthKit
+    IN  combined=0.61 dist=0.45 rel=0.69 val=1 cur=0.999 cat=0.885  ack-probe: measuring whether the MCP response stream termina
+
+## What do we still not know about running Totem from Cursor?
+    IN  combined=0.675 dist=0.482 rel=0.675 val=1 cur=1 cat=1  Always run arrive plan check before pushing plan edits.
+    IN  combined=0.66 dist=0.444 rel=0.692 val=1 cur=0.999 cat=0.954  Overnight experiment day 2: phase-007 in flight, Opus buildi
+    IN  combined=0.628 dist=0.407 rel=0.711 val=1 cur=0.999 cat=0.885  The Totem MCP connector authenticated through WorkOS AuthKit
+    IN  combined=0.617 dist=0.432 rel=0.698 val=1 cur=0.999 cat=0.885  DEP-001: the gateway owns an embedded RocksDB store at ~/.to
+    IN  combined=0.615 dist=0.438 rel=0.695 val=1 cur=0.999 cat=0.885  MCP write path verified after the typed-schema fix (ADV-GATE
+    IN  combined=0.608 dist=0.455 rel=0.687 val=1 cur=0.999 cat=0.885  ack-probe: measuring whether the MCP response stream termina
+
+## How should an agent decide what is worth saving to memory?
+    IN  combined=0.743 dist=0.346 rel=0.743 val=1 cur=1 cat=1  Always run arrive plan check before pushing plan edits.
+    IN  combined=0.636 dist=0.391 rel=0.719 val=1 cur=0.999 cat=0.885  ack-probe: measuring whether the MCP response stream termina
+    IN  combined=0.632 dist=0.507 rel=0.664 val=1 cur=0.999 cat=0.954  Overnight experiment day 2: phase-007 in flight, Opus buildi
+    IN  combined=0.613 dist=0.442 rel=0.694 val=1 cur=0.999 cat=0.885  MCP write path verified after the typed-schema fix (ADV-GATE
+    IN  combined=0.602 dist=0.468 rel=0.681 val=1 cur=0.999 cat=0.885  DEP-001: the gateway owns an embedded RocksDB store at ~/.to
+    IN  combined=0.575 dist=0.537 rel=0.651 val=1 cur=0.999 cat=0.885  The Totem MCP connector authenticated through WorkOS AuthKit
+
+## What went wrong with the Docker build for the real embedder?
+    IN  combined=0.662 dist=0.51 rel=0.662 val=1 cur=1 cat=1  Always run arrive plan check before pushing plan edits.
+    IN  combined=0.659 dist=0.447 rel=0.691 val=1 cur=0.999 cat=0.954  Overnight experiment day 2: phase-007 in flight, Opus buildi
+    IN  combined=0.647 dist=0.367 rel=0.731 val=1 cur=0.999 cat=0.885  MCP write path verified after the typed-schema fix (ADV-GATE
+    IN  combined=0.635 dist=0.392 rel=0.718 val=1 cur=0.999 cat=0.885  DEP-001: the gateway owns an embedded RocksDB store at ~/.to
+    IN  combined=0.604 dist=0.463 rel=0.684 val=1 cur=0.999 cat=0.885  ack-probe: measuring whether the MCP response stream termina
+    IN  combined=0.601 dist=0.472 rel=0.679 val=1 cur=0.999 cat=0.885  The Totem MCP connector authenticated through WorkOS AuthKit
+
