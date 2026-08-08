@@ -155,10 +155,14 @@ cost; a remote build cache.
       the same mistake this advance is about, so the loop was verified in
       isolation against a command that fails twice then succeeds (recovers,
       exit 0) and one that never succeeds (three attempts, `FATAL`, exit 1).
-- [ ] deployment:executed — the computed count on Fly, and the resulting cold
-      build time against the 34-minute baseline. **Local numbers do not
-      transfer**: Fly took 1986s at the same `jobs=2` where this workstation
-      took 646s, so its cores are ~3x slower and its count is unknown.
+- [x] deployment:executed — 2026-08-08, cold build on Fly with the computed
+      count: `cargo chef cook` **715.0s against 1986.0s** at `jobs=2`, a
+      **2.78x** improvement, and `cargo build` 31.8s against 72.2s. Whole
+      build ~13 minutes against the 34-minute baseline.
+
+      The local measurement over-predicted the ratio (2-3x locally, 2.78x
+      here) but got the *direction and rough size* right — which is what
+      ADV-INFRA-006 said would transfer and what its absolute seconds did not.
 
 ## Check for Understanding
 

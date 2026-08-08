@@ -151,28 +151,82 @@ pub fn currency_weight(effective_currency: f32) -> f32 {
 /// meaning — a record must be positively similar to what was asked, not
 /// merely less dissimilar than its neighbours.
 ///
-/// That distinction is the whole defect. Before this gate, a record could
-/// place first while being unrelated to the query, purely on
-/// `category_weight` and `currency`: an `Instructions` memory carries a 2.3x
-/// structural advantage over a `Knowledge` one before any query is asked,
-/// and relevance's entire range is only 3x, so relevance could not always
-/// overcome it.
+/// **It is a backstop, and it rarely fires** (ADV-CORE-009). Real text does
+/// not reach orthogonality: two documents sharing no subject measured 0.767
+/// under the deterministic embedder and 0.824 on the deployment. The gate was
+/// originally expected to do the work of excluding irrelevant records, and
+/// ADV-GATEWAY-016 measured that it never fired at all. That job now belongs
+/// to [`RELEVANCE_SHARPNESS`], which suppresses a distant record smoothly
+/// rather than waiting for a threshold nothing crosses. The gate remains for
+/// the genuinely anti-correlated case, where "does not compete" should mean
+/// absent rather than merely unlikely.
 pub const RELEVANCE_GATE_DISTANCE: f64 = 1.0;
 
-/// How much better an exact match is than a record that only just passes the
-/// gate — relevance's own range **among records that actually compete**
-/// (ADV-CORE-008).
+/// How much a memory's accumulated history may multiply its score, in total
+/// (ADV-CORE-009).
 ///
-/// The gate changes this range, which is easy to get wrong: relevance spans
-/// `[0.33, 1.0]` (3x) over all distances, but a record past
-/// [`RELEVANCE_GATE_DISTANCE`] scores zero and is dropped, so among survivors
-/// it spans `[1/(1+gate), 1.0]`. That ratio is exactly `1 + gate`:
+/// **Chosen, and the only free choice in the ranking arithmetic.** The claim
+/// is *history may matter as much as a materially better match, and never
+/// more*. Everything else here is derived from this and
+/// [`MATERIAL_DISTANCE_GAP`].
+///
+/// ADV-CORE-008 derived this from relevance's *theoretical* range instead —
+/// the span `1/(1+d)` covers between an exact match and the gate. That was
+/// the defect ADV-GATEWAY-016 measured: real text never approaches the gate,
+/// so the theoretical range (2x) was far larger than the realised one (1.21x
+/// on the deployment), and the budget meant to be *smaller* than relevance's
+/// spread was in fact larger than it.
+pub const NON_RELEVANCE_BUDGET: f32 = 2.0;
+
+/// The cosine-distance difference that counts as "a materially better match"
+/// (ADV-CORE-009).
+///
+/// **Measured, not guessed.** Distances observed on real text with
+/// BGE-small-en-v1.5 span roughly `0.31..0.58` — a usable band of **0.277**
+/// — and the calibration corpus under the deterministic embedder spans
+/// `0.00..0.89`. A gap of `0.10` is therefore about a third of the real
+/// embedder's entire working band: comfortably beyond noise, and well inside
+/// what a genuinely better answer achieves.
+///
+/// The pair that motivated the whole advance sat `0.053` apart (DEP-001 at
+/// `0.374` against an unrelated instruction at `0.427`), which is half a
+/// material gap — so relevance should win it by roughly `sqrt(2)`, not lose
+/// it. It now does.
+pub const MATERIAL_DISTANCE_GAP: f64 = 0.10;
+
+/// How sharply relevance falls off with distance — **derived**, so that one
+/// [`MATERIAL_DISTANCE_GAP`] is worth exactly [`NON_RELEVANCE_BUDGET`].
 ///
 /// ```text
-/// relevance(0) / relevance(gate) = 1 / (1/(1+gate)) = 1 + gate = 2.0
+/// exp(-k * d1) / exp(-k * d0) = budget   where d1 - d0 = gap
+///   =>  k = ln(budget) / gap  =  ln(2) / 0.10  =  6.93
 /// ```
+///
+/// **Why an exponential rather than `1/(1+d)`.** The old transform is nearly
+/// flat over the band real text occupies: across the deployment's whole
+/// observed range it varied by 1.21x, less than the 1.13x that category
+/// weight alone contributed, so ordering was decided by category. An
+/// exponential has a *constant ratio per unit of distance*, which is the
+/// property that makes "a fixed distance gap is worth a fixed multiple"
+/// expressible at all — and it holds whatever absolute band an embedder
+/// happens to use, which is what stops this from being tuned to one model.
+/// A literal rather than the expression, because `f64::ln` is not `const` and
+/// this sits on the scoring hot path — it would otherwise run a logarithm and
+/// a division for every candidate of every recall. `the_sharpness_constant_is_
+/// its_own_derivation` asserts the literal against the formula, so the value
+/// cannot drift from the two constants it is supposed to follow: change either
+/// of them without restating this and the test fails.
+///
+/// Preferred over caching the computation (`OnceLock`) because it costs
+/// nothing at all rather than an atomic load, and because the test makes the
+/// derivation *checked* rather than merely *described*.
+pub const RELEVANCE_SHARPNESS: f64 = 6.931_471_805_599_453;
+
+/// The multiple a materially better match is worth — equal to
+/// [`NON_RELEVANCE_BUDGET`] by construction, which is the claim this
+/// arithmetic exists to make true.
 pub fn relevance_range() -> f32 {
-    1.0 + RELEVANCE_GATE_DISTANCE as f32
+    NON_RELEVANCE_BUDGET
 }
 
 /// How many factors other than relevance take part in [`combined_score`]:
@@ -273,7 +327,11 @@ pub fn saturating_value(value_score: f32) -> f32 {
 pub fn relevance_from_distance(distance: Option<f64>) -> f32 {
     match distance {
         Some(distance) if distance > RELEVANCE_GATE_DISTANCE => 0.0,
-        Some(distance) => (1.0 / (1.0 + distance.max(0.0))) as f32,
+        // Exponential decay, not `1/(1+d)` (ADV-CORE-009). Normalised so an
+        // exact match scores exactly 1.0, and every additional
+        // MATERIAL_DISTANCE_GAP of distance divides the score by
+        // NON_RELEVANCE_BUDGET.
+        Some(distance) => (-RELEVANCE_SHARPNESS * distance.max(0.0)).exp() as f32,
         None => 1.0,
     }
 }
@@ -418,14 +476,44 @@ mod tests {
     }
 
     #[test]
+    fn the_sharpness_constant_is_its_own_derivation() {
+        // RELEVANCE_SHARPNESS is written as a literal so the hot path pays
+        // nothing for it. This is what stops that being a licence to drift:
+        // it must remain exactly ln(budget)/gap, so changing either constant
+        // without restating it fails here rather than silently rescaling
+        // every recall in the system.
+        let derived = f64::from(NON_RELEVANCE_BUDGET).ln() / MATERIAL_DISTANCE_GAP;
+        assert!(
+            (RELEVANCE_SHARPNESS - derived).abs() < 1e-12,
+            "RELEVANCE_SHARPNESS is {RELEVANCE_SHARPNESS}, but ln({NON_RELEVANCE_BUDGET})/\
+             {MATERIAL_DISTANCE_GAP} is {derived} — the literal has drifted from the \
+             derivation it stands for"
+        );
+    }
+
+    #[test]
     fn no_non_relevance_factor_outweighs_relevance_s_own_range() {
         // The single rule this advance applies uniformly. If a new factor is
         // ever added to `combined_score` without obeying it, this is the test
         // that should be extended — and the failure it prevents is the one
         // that shipped: something other than the question deciding the answer.
-        let measured_relevance_range = relevance_from_distance(Some(0.0))
-            / relevance_from_distance(Some(RELEVANCE_GATE_DISTANCE));
-        assert!((measured_relevance_range - relevance_range()).abs() < 1e-5);
+        // The invariant is now about a MATERIAL GAP, not about the span up to
+        // the gate — and because the transform is exponential, it holds at
+        // every distance rather than only at the endpoints. That is a
+        // stronger property than the one it replaces, and it is the whole
+        // reason for the change: ADV-CORE-008 measured the span to the gate,
+        // which real text never approaches (ADV-GATEWAY-016).
+        for start in [0.0, 0.1, 0.3, 0.45, 0.6] {
+            let ratio = relevance_from_distance(Some(start))
+                / relevance_from_distance(Some(start + MATERIAL_DISTANCE_GAP));
+            assert!(
+                (ratio - relevance_range()).abs() < 1e-4,
+                "a material gap starting at {start} is worth {ratio}x, not {}x — the \
+                 constant-ratio property is what makes the budget meaningful at every \
+                 distance rather than only near zero",
+                relevance_range()
+            );
+        }
 
         // The three factors, each at its most and least favourable.
         let category_range = category_weight(MemoryCategory::Instructions)
