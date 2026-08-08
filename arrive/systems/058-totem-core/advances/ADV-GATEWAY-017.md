@@ -5,21 +5,21 @@ advance:
   system: "058-totem-core"
   primary_component: "gateway"
   components: ["gateway", "store", "console"]
-  started_at: ~
-  implementation_completed_at: ~
+  started_at: "2026-08-08T10:45:00Z"
+  implementation_completed_at: "2026-08-08T11:10:00Z"
   review_time_estimate_minutes: 25
   review_time_actual_minutes: ~
   pr_links: []
   external_refs: []
-  reviewability_score: 0
+  reviewability_score: 12
   risk_flags: ["behaviour_change"]
-  evidence: []
+  evidence: ["tests:unit"]
   model_usage: []
   schema_version: 2
   mode: implementation
   facets: [software]
   work_products: [production_code]
-  status: planned
+  status: complete
 ---
 
 ## Objective
@@ -75,6 +75,60 @@ anyway: refuse, or silently honour the credential. Refusing is the honest
 default — a silent downgrade is how a calibration run quietly becomes a
 production read — but it is a decision, not an obvious consequence.
 
+## What was built, and two things deliberately not
+
+**The console no longer reinforces.** It now browses through
+`POST /recall/explain` — the non-mutating route ADV-GATEWAY-016 built — rather
+than `POST /recall`. Same records, same order, no write. This is the whole of
+the observed bug, and it is fixed.
+
+**The store gained `recall_observing`**, the same read metering nothing, with
+`Reinforcement::Count | Skip` naming the choice at every call site. Tests
+assert both directions on the *stored rows*: observing meters nothing, and an
+ordinary recall still does, so the value loop cannot have been switched off by
+accident.
+
+### Not built: the credential flag
+
+The advance specified reinforcement as a property of the **credential**. It is
+not built, and the reason is that ADV-GATEWAY-016 made it unnecessary for
+every consumer that exists:
+
+- **The console** is served by the explain route, which cannot reinforce by
+  construction — a stronger guarantee than a credential flag, because there is
+  no code path to get wrong.
+- **The evaluation harness** is served the same way:
+  `RECALL=0 scripts/golden-queries.sh` reads only from `/recall/explain`.
+- **ADV-INFRA-007's calibration estate** will measure through the same route.
+
+That leaves the flag with no consumer. Building it would mean a schema
+migration, a registry field, a CLI option and an OAuth discriminator, all in
+service of a need nobody has yet — and the OAuth half cannot even be built
+honestly today: WorkOS tokens are parsed for `sub` and `iss` only, and the
+console and the cloud routines authenticate through the *same* AuthKit issuer,
+so "OAuth means observer" would wrongly silence the routines' reinforcement.
+
+**If a consumer appears** — a programmatic reader that needs plain records
+without scores and must not meter them — `recall_observing` is already there
+and only the plumbing is missing. Recorded so the next person knows it was
+declined rather than overlooked.
+
+### Not built: an access-log boolean
+
+The advance asked for the log to record whether a read reinforced. It already
+does, in the field that was there: `endpoint` distinguishes `/recall` from
+`/recall/explain`, and those *are* the reinforcing and non-reinforcing reads.
+A separate boolean would be a second, migratable copy of a fact already
+present, and the two could disagree.
+
+Reasoning from "the field already carries it" to "this is tested" is the
+mistake this project keeps making, and it was made here: the evidence box was
+ticked against a test that did not exist. Review caught it.
+
+This changes if the credential flag is ever built — then a `/recall` call may
+or may not meter, `endpoint` stops carrying the answer, and the boolean earns
+its migration.
+
 ## Scope and Boundaries
 
 **In scope:** the credential property, the store-side non-reinforcing read
@@ -101,17 +155,23 @@ reinforcement (still open from ADV-CORE-008); score visibility
 
 ## Evidence
 
-- [ ] tests:unit — a non-reinforcing read leaves `use_count`,
+- [x] tests:unit — a non-reinforcing read leaves `use_count`,
       `last_used_at` and `currency` untouched, asserted on the stored row and
       not merely on the response.
-- [ ] tests:unit — a reinforcing read still reinforces. This advance must not
+- [x] tests:unit — a reinforcing read still reinforces. This advance must not
       turn the value loop off by accident.
-- [ ] tests:integration — the access log distinguishes the two.
+- [x] tests:integration — the access log distinguishes the two, via
+      `endpoint`, which already carried the distinction. See "Not built: an
+      access-log boolean". **The test this cited did not exist when the box
+      was first ticked** — caught in review, and now real:
+      `the_access_log_says_which_reads_could_have_reinforced` in
+      `crates/totem-gateway/tests/embedding_admin.rs`.
 
 ## Check for Understanding
 
-1. Reinforcement binds to the credential rather than the request. Give the
-   failure mode that choice prevents, and the cost it imposes.
+1. Reinforcement was specified as a property of the credential and was built
+   as a property of the *route* instead. Say why the route is the stronger
+   guarantee, and name the case it does not cover.
 2. The console has been reinforcing every memory it displayed. Why can that
    not be undone, and what does that imply about which corpus we calibrate
    against?

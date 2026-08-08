@@ -61,6 +61,22 @@ cache busting correctly, not a regression.
 `target/` (~49 GB) and the 128 MB model cache, and the deploy appears to
 hang for hours while uploading.
 
+## Currency figures will fall after ADV-GATEWAY-017
+
+The console used to browse by calling `/recall`, which reinforces everything
+it returns — so every record you looked at had its `currency` reset to 1.0 and
+its `use_count` incremented. It now browses through `/recall/explain`, which
+does not write.
+
+**Expect currency on the dogfood estate to decay from here.** That is the
+correct behaviour finally showing, not a regression: those figures were being
+propped up by us looking at them.
+
+The inflation already recorded cannot be undone — nothing distinguishes a
+reinforcement that came from browsing from one that came from an agent using
+a memory. It is an argument for calibrating against a purpose-built corpus
+(ADV-STORE-009) rather than trying to rehabilitate this estate.
+
 ## Secrets and configuration
 
 Non-secret configuration lives in `fly.toml [env]`. Secrets are set with:

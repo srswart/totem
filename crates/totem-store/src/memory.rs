@@ -30,6 +30,24 @@ const DEFAULT_LIMIT: usize = 20;
 /// measures recall against a realistic corpus.
 const DEFAULT_SEARCH_EFFORT: usize = 40;
 
+/// Whether a read counts as a use of what it returns (ADV-GATEWAY-017).
+///
+/// An enum rather than a `bool` because the call sites read as claims about
+/// the caller — `Reinforcement::Skip` says *this reader's attention is not
+/// evidence* — where `false` would say nothing at all.
+///
+/// Crate-private: callers pick a *method* (`recall` or `recall_observing`),
+/// not a flag, so this never appears in a public signature and exporting it
+/// would widen the API for nobody.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Reinforcement {
+    /// Meter the read: this caller using a memory is evidence it earned its
+    /// keep.
+    Count,
+    /// Do not meter it. A human browsing, an evaluation, a calibration run.
+    Skip,
+}
+
 /// One record, why it ranked where it did, and whether
 /// [`MemoryRepository::recall`] would have returned it (ADV-GATEWAY-016).
 #[derive(Debug, Clone, PartialEq)]
@@ -558,6 +576,39 @@ impl<'a, C: Connection> MemoryRepository<'a, C> {
         reader: &ScopeChain,
         query: &RecallQuery,
     ) -> StoreResult<Vec<MemoryRecord>> {
+        self.recall_inner(reader, query, Reinforcement::Count).await
+    }
+
+    /// The same read, metering nothing (ADV-GATEWAY-017).
+    ///
+    /// For a caller whose reading is not evidence that a memory earned its
+    /// keep: a human browsing an inventory, an evaluation measuring the
+    /// ranker, a calibration run. Reinforcement is meant to record *agent
+    /// use*, and counting anything else feeds the value loop
+    /// (ADV-CORE-002) noise it cannot tell from signal.
+    ///
+    /// **Chosen by which method you call**, and nothing enforces that choice.
+    /// `docs/tech-direction/retrieval-and-inspection.md` argues reinforcement
+    /// should bind to the *caller's credential* so it cannot be forgotten;
+    /// that is not built (ADV-GATEWAY-017 records why). Today the guarantee
+    /// comes from the route: the console and the evaluation harness read
+    /// through `/recall/explain`, which has no reinforcing path at all. A new
+    /// caller reaching for `recall` when it meant this is a mistake the type
+    /// system will not catch.
+    pub async fn recall_observing(
+        &self,
+        reader: &ScopeChain,
+        query: &RecallQuery,
+    ) -> StoreResult<Vec<MemoryRecord>> {
+        self.recall_inner(reader, query, Reinforcement::Skip).await
+    }
+
+    async fn recall_inner(
+        &self,
+        reader: &ScopeChain,
+        query: &RecallQuery,
+        reinforcement: Reinforcement,
+    ) -> StoreResult<Vec<MemoryRecord>> {
         let rows = objects(self.run_recall(reader, query, false).await?)?;
         let mut scored = Vec::with_capacity(rows.len());
         for row in &rows {
@@ -594,7 +645,9 @@ impl<'a, C: Connection> MemoryRepository<'a, C> {
 
         let records: Vec<MemoryRecord> =
             ranked.into_iter().map(|(record, _score)| record).collect();
-        self.reinforce_usage(reader, &records, now).await?;
+        if reinforcement == Reinforcement::Count {
+            self.reinforce_usage(reader, &records, now).await?;
+        }
         Ok(records)
     }
 
