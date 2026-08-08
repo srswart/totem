@@ -92,6 +92,10 @@ pub struct CorpusRecord {
     pub economics: EconomicsSpec,
 }
 
+fn default_query_limit() -> usize {
+    5
+}
+
 fn fresh_economics() -> EconomicsSpec {
     EconomicsSpec {
         use_count: 0,
@@ -151,8 +155,22 @@ pub struct CorpusQuery {
     pub expect_present: Vec<String>,
     /// Record keys that must **not** appear — the assertion a corpus of
     /// near-misses exists to support, and the one a top-1 check cannot make.
+    ///
+    /// Only meaningful together with [`Self::limit`]: recall returns its
+    /// limit's worth of rows whether or not they are any good, so "absent"
+    /// without a limit asserts nothing.
     #[serde(default)]
     pub expect_absent: Vec<String>,
+    /// How many rows this query asks for — *what an agent would actually
+    /// receive*, not how many the index will rank.
+    ///
+    /// Added in ADV-CORE-009. Without it every query returned ten rows out of
+    /// a thirty-record corpus, so a record scoring 0.012 against a winner's
+    /// 0.730 still counted as "present" and `expect_absent` could never pass.
+    /// The question the corpus is asking is about the context window, and a
+    /// context window has a size.
+    #[serde(default = "default_query_limit")]
+    pub limit: usize,
 }
 
 /// A whole corpus artifact: manifest, records, and the queries that score it.
@@ -396,7 +414,9 @@ mod seeding {
             embedder: &dyn Embedder,
             query: &CorpusQuery,
         ) -> StoreResult<Vec<MemoryRecord>> {
-            let mut recall = RecallQuery::new().in_categories(query.categories.iter().copied());
+            let mut recall = RecallQuery::new()
+                .in_categories(query.categories.iter().copied())
+                .limit(query.limit);
             if let Some(probe) = &query.probe {
                 recall = recall.near(embedder.embed(probe)?)?.top_k(10);
             }

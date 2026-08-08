@@ -3,7 +3,7 @@
     "id": "calibration",
     "version": "v1",
     "description": "Ranking-calibration estate for ADV-CORE-005 and the ranking fix ADV-GATEWAY-016 showed is still needed. Built around topic clusters with genuine near-misses, because a corpus of unrelated records only tests that the embedder can tell one subject from another — which it always can. Every record carries explicit economics: ADV-CORE-008 proved a corpus with uniform economics cannot fail.",
-    "checksum": "e9d96f8b551698837c7cff4a81292963d55a470bd9b130dbfde9c146b1c65e08"
+    "checksum": "a07a08c20422bb68382343cb7b9770b5bd2a31ca1d46c9c2889525212b01f37c"
   },
   "records": [
     {
@@ -157,7 +157,7 @@
       "writer_actor": "corpus-nova",
       "writer_project": "corpus/beacon",
       "writer_teams": [],
-      "body": "Beacon's incident channel is the first place to look when the pager fires.",
+      "body": "Beacon on-call responders coordinate incident response in the pager channel.",
       "tags": [],
       "cluster": "loop",
       "created_at": "2026-07-01T09:00:00Z",
@@ -175,7 +175,7 @@
       "writer_actor": "corpus-nova",
       "writer_project": "corpus/beacon",
       "writer_teams": [],
-      "body": "Beacon's incident channel is where responders coordinate when the pager goes off.",
+      "body": "Beacon on-call responders coordinate incident handling in the pager channel.",
       "tags": [],
       "cluster": "loop",
       "created_at": "2026-07-01T09:00:00Z",
@@ -602,7 +602,8 @@
       "probe": "Rocket holds a canary deploy at ten percent of traffic for fifteen minutes before promoting.",
       "expect_top": "deploy-canary-hold",
       "expect_present": [],
-      "expect_absent": []
+      "expect_absent": [],
+      "limit": 5
     },
     {
       "name": "relevance_outranks_category_within_a_topic",
@@ -614,7 +615,8 @@
       "probe": "A rocket rollback is a redeploy of the previous tag; there is no automated revert.",
       "expect_top": "deploy-rollback",
       "expect_present": [],
-      "expect_absent": []
+      "expect_absent": [],
+      "limit": 5
     },
     {
       "name": "near_duplicates_both_surface",
@@ -629,7 +631,8 @@
         "storage-postgres-version",
         "storage-postgres-restated"
       ],
-      "expect_absent": []
+      "expect_absent": [],
+      "limit": 5
     },
     {
       "name": "an_unrelated_topic_does_not_intrude",
@@ -644,19 +647,21 @@
       "expect_absent": [
         "deploy-window",
         "deploy-approval"
-      ]
+      ],
+      "limit": 5
     },
     {
       "name": "a_well_used_memory_still_wins_at_comparable_relevance",
-      "rationale": "The guard against overcorrection. Two near-identical bodies, so relevance cannot separate them; only history can. If this fails, ranking has become a plain vector index and the value loop — much of Totem's thesis — has been discarded.",
+      "rationale": "The guard against overcorrection, and the fixture ADV-CORE-009 had to repair. The two bodies differ by ONE word the probe does not contain, so relevance cannot separate them and only economics can. The first version used loosely-related phrasings that measured 0.233 and 0.544 apart — three material gaps — so it was quietly a relevance test that passed only while relevance was too weak to win. If this fails, ranking has become a plain vector index and the value loop, much of Totem's thesis, has been discarded.",
       "reader_actor": "corpus-juniper",
       "reader_project": "corpus/beacon",
       "reader_teams": [],
       "categories": [],
-      "probe": "Beacon incident channel pager responders coordinate",
+      "probe": "Beacon on-call responders coordinate incident in the pager channel",
       "expect_top": "loop-proven",
       "expect_present": [],
-      "expect_absent": []
+      "expect_absent": [],
+      "limit": 5
     },
     {
       "name": "a_fresher_memory_wins_at_comparable_relevance",
@@ -668,7 +673,8 @@
       "probe": "Beacon rate limit requests per minute per tenant",
       "expect_top": "currency-fresh",
       "expect_present": [],
-      "expect_absent": []
+      "expect_absent": [],
+      "limit": 5
     },
     {
       "name": "the_narrower_scope_wins_a_duplicate",
@@ -680,7 +686,8 @@
       "probe": "The rocket project's default review SLA is two business days.",
       "expect_top": "precedence-actor",
       "expect_present": [],
-      "expect_absent": []
+      "expect_absent": [],
+      "limit": 5
     },
     {
       "name": "a_reader_never_sees_another_actors_private_copy",
@@ -694,7 +701,8 @@
       "expect_present": [],
       "expect_absent": [
         "leak-bait-juniper"
-      ]
+      ],
+      "limit": 5
     },
     {
       "name": "both_sides_of_a_contradiction_stay_visible",
@@ -711,7 +719,8 @@
         "contested-deprecate",
         "contested-keep"
       ],
-      "expect_absent": []
+      "expect_absent": [],
+      "limit": 5
     }
   ]
 }

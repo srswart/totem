@@ -516,6 +516,20 @@ passes:
               must carry economics and the golden queries must live in the
               same artifact — ADV-CORE-008 proved a corpus with uniform
               economics cannot fail.
+          - id: "ADV-CORE-009"
+            advance_id: "ADV-CORE-009"
+            title: "Relevance decides: derive ranking from the distances real text produces"
+            status: done
+            owner: "058-totem"
+            dependencies: ["ADV-GATEWAY-016", "ADV-STORE-009"]
+            notes: >-
+              WORKSTATION. The fix ADV-GATEWAY-016 measured the need for and
+              deliberately did not make. 1/(1+d) is nearly flat across the
+              band real text occupies (1.21x) — less than category weight's
+              own 1.13x — so ordering was decided by category. Replaced with
+              exp(-k*d), k derived so one measured material distance gap is
+              worth exactly the non-relevance budget. calibration-v1 7/9 ->
+              9/9; two of the failures were corpus fixtures, not the ranker.
           - id: "ADV-INFRA-007"
             advance_id: "ADV-INFRA-007"
             title: "A calibration estate: enrol, seed, measure, discard, repeat"
