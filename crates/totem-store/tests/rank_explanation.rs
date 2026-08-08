@@ -225,7 +225,30 @@ async fn explaining_a_ranking_does_not_reinforce_it() {
 async fn an_observing_recall_returns_the_same_records_and_meters_none_of_them() {
     // The value loop must survive this: an observing read is the *same read*,
     // not a weaker one. Only the metering differs (ADV-GATEWAY-017).
-    let store = store_with(&[MATCH, OTHER]).await;
+    //
+    // Currency is seeded **below 1.0 deliberately**. `Economics::fresh()`
+    // starts it at exactly 1.0, which is also what `reinforce_usage` resets it
+    // to — so against a fresh record the "does not refresh currency" claim is
+    // unobservable, and a regression that refreshed currency while leaving
+    // `use_count` alone would pass. The same shape as ADV-CORE-008's corpus,
+    // where uniform economics made `eval_quality` unable to fail.
+    const SEEDED_CURRENCY: f32 = 0.25;
+    let store = store().await;
+    for body in [MATCH, OTHER] {
+        let mut record = common::memory(
+            MemoryCategory::Knowledge,
+            Scope::Actor(common::actor(ADA)),
+            body,
+        );
+        record.content =
+            embed(&DeterministicEmbedder::new(), record.content).expect("embedding succeeds");
+        record.economics.currency = SEEDED_CURRENCY;
+        store
+            .memories()
+            .save(&chain(ADA), &record)
+            .await
+            .expect("save succeeds");
+    }
     let query = RecallQuery::new();
 
     let observed = store
@@ -257,6 +280,12 @@ async fn an_observing_recall_returns_the_same_records_and_meters_none_of_them() 
             "observing must not stamp last_used_at: {}",
             record.content.body
         );
+        assert_eq!(
+            record.economics.currency, SEEDED_CURRENCY,
+            "observing must not refresh currency — the claim the runbook makes \
+             to operators, and the one a fresh record cannot test: {}",
+            record.content.body
+        );
     }
 
     // And the ordinary path still meters, so this advance cannot have turned
@@ -274,5 +303,12 @@ async fn an_observing_recall_returns_the_same_records_and_meters_none_of_them() 
     assert!(
         metered.iter().all(|record| record.economics.use_count == 1),
         "an ordinary recall must still reinforce"
+    );
+    assert!(
+        metered
+            .iter()
+            .all(|record| record.economics.currency == 1.0),
+        "an ordinary recall must still refresh currency: seeded at \
+         {SEEDED_CURRENCY}, so 1.0 here can only have come from reinforcement"
     );
 }

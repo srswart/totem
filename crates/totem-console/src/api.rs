@@ -134,7 +134,15 @@ pub async fn fetch_landscape(repo: &str) -> Result<LandscapeViewModel, FetchErro
     Ok(parse_landscape(&body)?)
 }
 
-/// `POST /recall`, scoped to one actor's readable chain within one project.
+/// `POST /recall/explain`, scoped to one actor's readable chain within one
+/// project — the records only, discarding the scores.
+///
+/// **Not `/recall`**, which reinforces everything it returns
+/// (ADV-GATEWAY-017): browsing used to meter a use of every record displayed,
+/// so opening the memory tab inflated the economics of whatever it showed.
+/// The response shape differs accordingly — see [`parse_explained_memories`].
+///
+/// The discarded scores are what ADV-CONSOLE-005 will surface.
 pub async fn fetch_memories(actor: &str, project: &str) -> Result<Vec<MemoryRecord>, FetchError> {
     let request_body = serde_json::json!({
         "actor": actor.trim(),

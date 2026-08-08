@@ -121,6 +121,10 @@ does, in the field that was there: `endpoint` distinguishes `/recall` from
 A separate boolean would be a second, migratable copy of a fact already
 present, and the two could disagree.
 
+Reasoning from "the field already carries it" to "this is tested" is the
+mistake this project keeps making, and it was made here: the evidence box was
+ticked against a test that did not exist. Review caught it.
+
 This changes if the credential flag is ever built — then a `/recall` call may
 or may not meter, `endpoint` stops carrying the answer, and the boolean earns
 its migration.
@@ -158,7 +162,10 @@ reinforcement (still open from ADV-CORE-008); score visibility
       turn the value loop off by accident.
 - [x] tests:integration — the access log distinguishes the two, via
       `endpoint`, which already carried the distinction. See "Not built: an
-      access-log boolean".
+      access-log boolean". **The test this cited did not exist when the box
+      was first ticked** — caught in review, and now real:
+      `the_access_log_says_which_reads_could_have_reinforced` in
+      `crates/totem-gateway/tests/embedding_admin.rs`.
 
 ## Check for Understanding
 

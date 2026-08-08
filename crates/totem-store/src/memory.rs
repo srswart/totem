@@ -35,8 +35,12 @@ const DEFAULT_SEARCH_EFFORT: usize = 40;
 /// An enum rather than a `bool` because the call sites read as claims about
 /// the caller — `Reinforcement::Skip` says *this reader's attention is not
 /// evidence* — where `false` would say nothing at all.
+///
+/// Crate-private: callers pick a *method* (`recall` or `recall_observing`),
+/// not a flag, so this never appears in a public signature and exporting it
+/// would widen the API for nobody.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Reinforcement {
+pub(crate) enum Reinforcement {
     /// Meter the read: this caller using a memory is evidence it earned its
     /// keep.
     Count,
@@ -583,9 +587,14 @@ impl<'a, C: Connection> MemoryRepository<'a, C> {
     /// use*, and counting anything else feeds the value loop
     /// (ADV-CORE-002) noise it cannot tell from signal.
     ///
-    /// Bound to the caller rather than chosen per request — see
-    /// `docs/tech-direction/retrieval-and-inspection.md`. The gateway decides
-    /// from the credential; nothing here can be forgotten at a call site.
+    /// **Chosen by which method you call**, and nothing enforces that choice.
+    /// `docs/tech-direction/retrieval-and-inspection.md` argues reinforcement
+    /// should bind to the *caller's credential* so it cannot be forgotten;
+    /// that is not built (ADV-GATEWAY-017 records why). Today the guarantee
+    /// comes from the route: the console and the evaluation harness read
+    /// through `/recall/explain`, which has no reinforcing path at all. A new
+    /// caller reaching for `recall` when it meant this is a mistake the type
+    /// system will not catch.
     pub async fn recall_observing(
         &self,
         reader: &ScopeChain,
