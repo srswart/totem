@@ -5,21 +5,21 @@ advance:
   system: "058-totem-core"
   primary_component: "core"
   components: ["core", "store"]
-  started_at: ~
-  implementation_completed_at: ~
+  started_at: "2026-08-08T04:45:00Z"
+  implementation_completed_at: "2026-08-08T07:00:00Z"
   review_time_estimate_minutes: 30
   review_time_actual_minutes: ~
   pr_links: []
   external_refs: []
-  reviewability_score: 0
+  reviewability_score: 34
   risk_flags: ["behaviour_change"]
-  evidence: []
+  evidence: ["tdd:red-green", "tests:unit", "golden-queries"]
   model_usage: []
   schema_version: 2
   mode: implementation
   facets: [software]
   work_products: [production_code]
-  status: planned
+  status: complete
 ---
 
 ## Objective
@@ -250,8 +250,28 @@ index it has overshot, and the tests should say so in both directions.
 - [x] name the missed queries when `eval_quality` fails — it reported a bare
       `0.5` and left the reader to guess which of five queries produced it,
       in the one test whose purpose is to be read when something is wrong
-- [ ] golden queries on the deployed instance — the evidence ADV-STORE-008
-      could not meet
+- [x] golden queries on the deployed instance — the evidence ADV-STORE-008
+      could not meet. Taken; see "Measured result" above. **Half the
+      behavioural claim is met.** Recorded rather than rounded up.
+
+## Closing disposition
+
+Closed `complete` with the behavioural claim **partly** met, deliberately,
+rather than held open. What shipped is sound and independently valuable — the
+gate, the three bounds, the corpus economics fixtures, and an evaluation that
+can now fail. What is unresolved is a *diagnosis*, and it cannot be made from
+inside this advance: recall exposes no score, so there is no way to ask the
+deployment why it ordered anything.
+
+Holding CORE-008 open would block phase-012 and, behind it, the cutover
+(ADV-INFRA-003), waiting on an answer no amount of further work here can
+produce. The residue is handed to **ADV-GATEWAY-016**, which makes ranking
+observable, and the question is then decided in one call rather than guessed
+at.
+
+**What the next advance must not assume.** The 1.13x figure says the *weights*
+are unlikely to be the cause; it does not say the embedder is. Both remain
+open until measured.
 
 ## Relationship to ADV-CORE-005
 
