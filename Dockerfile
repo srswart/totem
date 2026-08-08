@@ -41,12 +41,36 @@ COPY . .
 RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS builder
-# Two jobs, not one per core. Adding `fastembed` put ONNX Runtime alongside
-# `surrealdb-core` — already the largest crate here — and the remote builder
-# OOM-killed rustc (SIGKILL) partway through. The failure reads as
-# "could not compile surrealdb-core", naming the victim rather than the cause,
-# and it appeared only once this feature was added (ADV-STORE-008).
-ENV CARGO_BUILD_JOBS=2
+# How many crates compile at once. Computed, not chosen (ADV-INFRA-008).
+#
+# **The constraint is memory, not cores.** Each concurrent `rustc` holds its
+# own working set, and adding `fastembed` put ONNX Runtime alongside
+# `surrealdb-core` — already the largest crate here — until the remote builder
+# OOM-killed one (SIGKILL). That read as "could not compile surrealdb-core",
+# naming the victim rather than the cause (ADV-STORE-008).
+#
+# The fix then was `CARGO_BUILD_JOBS=2`, which held for months and cost a
+# great deal: measured at 646s of dependency compile locally against 262s at
+# 6 jobs — **2.47x** — on the step that is ~94% of a cold build.
+#
+# So: `min(cores, RAM_in_GB)`, floored at 2. One gigabyte per job is a rule of
+# thumb, but a measured one: ten concurrent jobs completed this graph on
+# 7.7 GB, so ~0.8 GB/job sufficed and 1.0 leaves headroom.
+#
+# Computed rather than pinned because the number belongs to the *builder*, and
+# we do not control that machine. Fly's is a managed Depot builder whose shape
+# is not visible from here and can change without notice; a literal would
+# encode an assumption about it that is wrong in one direction or the other.
+# Override with `--build-arg CARGO_BUILD_JOBS=2` if a build ever misbehaves.
+ARG CARGO_BUILD_JOBS=""
+RUN if [ -n "$CARGO_BUILD_JOBS" ]; then \
+        echo "$CARGO_BUILD_JOBS" > /jobs; \
+    else \
+        awk -v c="$(nproc)" '/MemTotal/ {g=int($2/1048576); j=(g<c?g:c); print (j<2?2:j)}' \
+            /proc/meminfo > /jobs; \
+    fi; \
+    echo "cargo build jobs: $(cat /jobs) (nproc=$(nproc), \
+$(awk '/MemTotal/{printf "%.1fGB", $2/1048576}' /proc/meminfo))"
 
 # The expensive layer, and the whole point of this advance: compile every
 # dependency — SurrealDB, RocksDB, ONNX Runtime — from the recipe alone.
@@ -60,11 +84,11 @@ ENV CARGO_BUILD_JOBS=2
 # while looking like a cache hit, which is why the two lines are kept
 # adjacent.
 COPY --from=planner /build/recipe.json recipe.json
-RUN cargo chef cook --release --recipe-path recipe.json \
+RUN cargo chef cook --release --jobs "$(cat /jobs)" --recipe-path recipe.json \
         -p totem-gateway --features rocksdb,fastembed
 
 COPY . .
-RUN cargo build --release -p totem-gateway --features rocksdb,fastembed
+RUN cargo build --release --jobs "$(cat /jobs)" -p totem-gateway --features rocksdb,fastembed
 
 # Bake the model weights into the image (ADV-STORE-008). Cold construction is
 # ~276s because of this download, against ~124ms warm (EMB-004) — a first boot
@@ -79,7 +103,26 @@ ENV FASTEMBED_CACHE_DIR=/models
 # Grouped, not `A && B || C`: with the flat form, a warm step that fails for
 # any other reason still falls into the `||` branch and is misreported as an
 # empty cache directory. Here a warming failure fails on its own message.
-RUN /build/target/release/totem-gateway --warm-embedder \
+# Retried, because this step reaches the public internet and nothing else in
+# the build does (ADV-INFRA-008). Observed 2026-08-08: four builds in two
+# hours and the fifth failed instantly with "Failed to retrieve
+# onnx/model.onnx" — a rate limit, not a timeout. The compile had already
+# succeeded; a deploy died at a step unrelated to anything that changed.
+#
+# Three attempts with a widening pause. This does not survive a real outage —
+# for that the weights want vendoring into a base image — but it turns the
+# common transient into a slow build rather than a failed one.
+RUN for attempt in 1 2 3; do \
+        /build/target/release/totem-gateway --warm-embedder && break; \
+        if [ "$attempt" = 3 ]; then \
+            echo "FATAL: could not fetch the model weights after 3 attempts."; \
+            echo "This step is the build's only network dependency; a rate"; \
+            echo "limit or an upstream outage looks exactly like this."; \
+            exit 1; \
+        fi; \
+        echo "warm-embedder attempt $attempt failed; retrying in $((attempt * 20))s"; \
+        sleep $((attempt * 20)); \
+    done \
     && { test -n "$(ls -A /models 2>/dev/null)" \
          || { echo "FATAL: /models is empty after warming — the weights went elsewhere."; \
               echo "Found instead:"; \

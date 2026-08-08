@@ -499,7 +499,7 @@ passes:
           - id: "ADV-GATEWAY-016"
             advance_id: "ADV-GATEWAY-016"
             title: "Ranking is answerable: expose every score a recall computed"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-CORE-008"]
             notes: >-
@@ -549,6 +549,20 @@ passes:
               delete — the advance chooses namespace vs deployment vs local
               and records why. Depends on INFRA-006 because each iteration
               otherwise costs a full rebuild.
+          - id: "ADV-INFRA-008"
+            advance_id: "ADV-INFRA-008"
+            title: "Build parallelism is computed, and the one network step is retried"
+            status: done
+            owner: "058-totem"
+            dependencies: ["ADV-INFRA-006"]
+            notes: >-
+              WORKSTATION. CARGO_BUILD_JOBS=2, set during STORE-008 to stop a
+              real OOM and never revisited, throttled the step that is ~94%
+              of a cold build. Now computed as min(cores, RAM_GB) because the
+              constraint is memory per rustc and the builder is a managed
+              Depot one we cannot inspect. Also retries the model download —
+              the build's only network dependency, which failed a build
+              during this investigation and looked like an OOM.
           - id: "ADV-CONSOLE-005"
             advance_id: "ADV-CONSOLE-005"
             title: "An inventory, not a recall: see what is actually stored and why it ranked"
