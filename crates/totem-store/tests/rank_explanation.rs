@@ -220,3 +220,59 @@ async fn explaining_a_ranking_does_not_reinforce_it() {
         );
     }
 }
+
+#[tokio::test]
+async fn an_observing_recall_returns_the_same_records_and_meters_none_of_them() {
+    // The value loop must survive this: an observing read is the *same read*,
+    // not a weaker one. Only the metering differs (ADV-GATEWAY-017).
+    let store = store_with(&[MATCH, OTHER]).await;
+    let query = RecallQuery::new();
+
+    let observed = store
+        .memories()
+        .recall_observing(&chain(ADA), &query)
+        .await
+        .expect("observing succeeds");
+    assert_eq!(
+        observed.len(),
+        2,
+        "an observing read returns everything a metered one would"
+    );
+
+    // Asserted on the stored rows: a response could report pristine economics
+    // after the write had already happened.
+    let after = store
+        .memories()
+        .recall_observing(&chain(ADA), &query)
+        .await
+        .expect("observing succeeds");
+    for record in &after {
+        assert_eq!(
+            record.economics.use_count, 0,
+            "observing must not meter a use: {}",
+            record.content.body
+        );
+        assert!(
+            record.economics.last_used_at.is_none(),
+            "observing must not stamp last_used_at: {}",
+            record.content.body
+        );
+    }
+
+    // And the ordinary path still meters, so this advance cannot have turned
+    // the value loop off by accident.
+    store
+        .memories()
+        .recall(&chain(ADA), &query)
+        .await
+        .expect("recall succeeds");
+    let metered = store
+        .memories()
+        .recall_observing(&chain(ADA), &query)
+        .await
+        .expect("observing succeeds");
+    assert!(
+        metered.iter().all(|record| record.economics.use_count == 1),
+        "an ordinary recall must still reinforce"
+    );
+}

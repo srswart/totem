@@ -136,6 +136,40 @@ pub fn parse_memories(body: &str) -> Result<Vec<MemoryRecord>, ViewModelError> {
         })
 }
 
+/// `POST /recall/explain`'s response body, read for its records alone
+/// (ADV-GATEWAY-017).
+///
+/// The console browses through the explain route rather than `/recall`
+/// because **that route does not reinforce**. Browsing used to meter a use of
+/// every record it displayed, so opening this tab inflated the economics of
+/// whatever it showed — the tool for looking at the corpus was a writer to
+/// it. The scores are ignored here and are what ADV-CONSOLE-005 will surface.
+#[derive(Debug, Clone, Deserialize)]
+struct RankExplanationResponseModel {
+    candidates: Vec<RankExplanationEntryModel>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct RankExplanationEntryModel {
+    record: MemoryRecord,
+}
+
+/// The records from an explanation, in ranked order.
+pub fn parse_explained_memories(body: &str) -> Result<Vec<MemoryRecord>, ViewModelError> {
+    serde_json::from_str::<RankExplanationResponseModel>(body)
+        .map(|response| {
+            response
+                .candidates
+                .into_iter()
+                .map(|entry| entry.record)
+                .collect()
+        })
+        .map_err(|error| ViewModelError::Json {
+            what: "recall explanation",
+            detail: error.to_string(),
+        })
+}
+
 /// `POST /promotions/pending`'s response body: open proposals aimed at a
 /// scope the reader can reach (ADV-CONSOLE-002's promotion approval queue).
 #[derive(Debug, Clone, Deserialize)]

@@ -71,7 +71,7 @@ pub use landscape::{
     LandscapeSnapshot, LandscapeView, OwnerArtifact, RepoArtifact, RepoView, SyncRun, SyncSummary,
     SystemArtifact, SystemView,
 };
-pub use memory::{MemoryRepository, RankExplanation, RecallQuery, ReembedSummary};
+pub use memory::{MemoryRepository, RankExplanation, RecallQuery, ReembedSummary, Reinforcement};
 pub use migrate::{AppliedMigration, MIGRATIONS, Migration};
 pub use promotion::{PromotionOutcome, PromotionRepository};
 pub use schema::EMBEDDING_DIMENSIONS;

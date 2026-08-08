@@ -27,8 +27,9 @@ use totem_core::{MemoryId, MemoryRecord, PromotionEvent, PromotionId, ReviewStat
 
 use crate::app::App;
 use crate::view_model::{
-    AuditTrailViewModel, LandscapeViewModel, ViewModelError, parse_audit_trail, parse_landscape,
-    parse_landscape_event, parse_memories, parse_promotion_queue, parse_uncertainty_queue,
+    AuditTrailViewModel, LandscapeViewModel, ViewModelError, parse_audit_trail,
+    parse_explained_memories, parse_landscape, parse_landscape_event, parse_promotion_queue,
+    parse_uncertainty_queue,
 };
 
 /// `POST /recall`'s cap on this browser's own requests, in the absence of
@@ -147,7 +148,12 @@ pub async fn fetch_memories(actor: &str, project: &str) -> Result<Vec<MemoryReco
         "session": "console-session",
         "turn": null,
     });
-    let response = authorized(Request::post("/recall"))
+    // `/recall/explain`, not `/recall` (ADV-GATEWAY-017): the explain route
+    // does not reinforce. Browsing used to meter a use of every record it
+    // displayed, so opening this tab inflated the economics of whatever it
+    // showed — and some unknown fraction of the dogfood estate's history is
+    // an artifact of us looking at it.
+    let response = authorized(Request::post("/recall/explain"))
         .header("content-type", "application/json")
         .body(request_body.to_string())
         .map_err(|error| FetchError::Request(error.to_string()))?
@@ -162,7 +168,7 @@ pub async fn fetch_memories(actor: &str, project: &str) -> Result<Vec<MemoryReco
     if !(200..300).contains(&status) {
         return Err(FetchError::Status { status, body });
     }
-    Ok(parse_memories(&body)?)
+    Ok(parse_explained_memories(&body)?)
 }
 
 /// `POST` a JSON body and return the response text, or a [`FetchError`] for a
