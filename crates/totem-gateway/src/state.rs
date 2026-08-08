@@ -10,7 +10,9 @@ use std::fmt;
 use std::sync::Arc;
 
 use surrealdb::engine::local::Db;
-use totem_store::{DeterministicEmbedder, Embedder, Store, StoreResult};
+#[cfg(not(feature = "fastembed"))]
+use totem_store::DeterministicEmbedder;
+use totem_store::{Embedder, Store, StoreResult};
 
 use crate::auth::TokenRegistry;
 
@@ -67,12 +69,7 @@ impl AppState {
             // Configured by the binary from the environment when a deployment
             // has an authorization server; absent on a workstation.
             oauth: None,
-            // The deterministic, non-semantic embedder: real quality
-            // (BGE-small-en-v1.5 via `fastembed`, EMB-004) needs a model
-            // download this sandbox's egress policy blocks, so it stays behind
-            // the store's off-by-default `fastembed` feature until a
-            // workstation or CI runner with hub access builds with it enabled.
-            embedder: Arc::new(DeterministicEmbedder::new()),
+            embedder: default_embedder(),
             // Empty: a gateway that has been given no credentials refuses
             // every remote request rather than serving them unauthenticated.
             tokens: TokenRegistry::new(),
@@ -89,6 +86,39 @@ impl AppState {
         let store = Store::in_memory().await?;
         store.migrate().await?;
         Ok(Self::over(store))
+    }
+}
+
+/// The embedder this build runs with.
+///
+/// Feature-selected rather than configured, because the choice is made when
+/// the image is built: the weights must be present in the image for
+/// `fastembed` to load without reaching the network at boot.
+///
+/// A failure to load is **not** silently downgraded to the stub. Recall would
+/// keep answering, plausibly and wrongly, and the deployment would look
+/// healthy while its whole reason for existing was absent. ADV-STORE-008 asks
+/// for the stub to announce itself wherever it runs; a build that asked for
+/// the real model and could not have it is a start-up failure, not a banner.
+fn default_embedder() -> Arc<dyn Embedder> {
+    #[cfg(feature = "fastembed")]
+    {
+        match totem_store::FastembedEmbedder::try_new() {
+            Ok(embedder) => Arc::new(embedder),
+            Err(error) => panic!(
+                "this build requested the real embedder and could not load it: {error}. \
+                 Refusing to start rather than serve recall from the non-semantic stub \
+                 while reporting health (ADV-STORE-008)."
+            ),
+        }
+    }
+    #[cfg(not(feature = "fastembed"))]
+    {
+        // The non-semantic stand-in. It is announced at start-up and by
+        // `/health`, mirroring the EPHEMERAL banner's honesty: a deployment
+        // running this is not doing semantic recall, and nothing should have
+        // to read the build flags to find that out.
+        Arc::new(DeterministicEmbedder::new())
     }
 }
 

@@ -354,6 +354,45 @@ DEFINE FIELD revoked ON credential TYPE bool DEFAULT false;
 DEFINE INDEX credential_fingerprint ON credential FIELDS fingerprint UNIQUE;
 "#;
 
+/// ADV-STORE-008. Rows carry the model that embedded them.
+///
+/// Without this, nothing distinguishes a vector written by the deterministic
+/// stub from one written by BGE-small-en-v1.5, and a partially re-embedded
+/// index is indistinguishable from a uniform one. Cosine distance between two
+/// unrelated geometries is not merely degraded — it is meaningless, and the
+/// index would keep returning confident, arbitrary rankings. The label is what
+/// lets the re-embed pass be targeted, idempotent, and auditable.
+///
+/// `option<string>`, not `string`: every row written before this migration
+/// has no label, and defaulting them to the current model would assert
+/// something untrue about vectors written by a previous one. An absent label
+/// means "unknown space", which the re-embed pass treats as stale.
+pub(crate) const EMBEDDING_MODEL_SCHEMA_V11: &str = r#"
+DEFINE FIELD embedding_model ON memory TYPE option<string>;
+"#;
+
+/// ADV-STORE-008, after review. An empty `embedding_model` is indistinguishable
+/// from an absent one.
+///
+/// `embedding_models()` maps `None` to `""` for reporting, and the gateway
+/// renders `""` as `(unlabelled)` — so a row stamped with an empty string
+/// would be counted as unlabelled while *claiming* to carry a label. The
+/// operator's one question is "is this index in one space?", and this is
+/// exactly the input that answers it wrongly.
+///
+/// A separate migration rather than an edit to
+/// [`EMBEDDING_MODEL_SCHEMA_V11`]: v11 has already been applied to the
+/// deployment, and an applied migration is never re-run. Editing it would
+/// constrain fresh databases only, leaving the one database that matters
+/// unprotected — while the source read as though it were covered.
+///
+/// `OVERWRITE` because the field already exists; the assertion is what is
+/// being added.
+pub(crate) const EMBEDDING_MODEL_NONEMPTY_SCHEMA_V12: &str = r#"
+DEFINE FIELD OVERWRITE embedding_model ON memory TYPE option<string>
+    ASSERT $value = NONE OR $value != '';
+"#;
+
 #[cfg(test)]
 mod tests {
     //! Enforcement the repository API cannot be trusted to provide.
@@ -841,6 +880,28 @@ mod tests {
         assert!(
             refused.is_err(),
             "an unattributable curation event was accepted: {refused:?}",
+        );
+    }
+
+    #[tokio::test]
+    async fn an_empty_embedding_model_label_is_refused() {
+        // Raised in review of PR #72. `embedding_models()` maps `None` to
+        // `""` for reporting and the gateway renders `""` as `(unlabelled)`,
+        // so a row stamped with an empty string would be *counted* as
+        // unlabelled while claiming to carry a label. The operator's only
+        // question is "is this index in one space?", and that is precisely
+        // the input that answers it wrongly (migration v12).
+        let store = migrated().await;
+        let result = store
+            .connection()
+            .query("CREATE memory:test_empty_label SET embedding_model = ''")
+            .await
+            .and_then(|response| response.check());
+
+        assert!(
+            result.is_err(),
+            "an empty embedding_model must be refused by the database, not \
+             merely avoided by every current caller"
         );
     }
 

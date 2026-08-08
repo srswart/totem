@@ -75,6 +75,16 @@ pub struct Content {
     /// so this affects wire output only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub embedding: Option<Vec<f32>>,
+    /// Which model produced [`Self::embedding`] (ADV-STORE-008).
+    ///
+    /// Cosine distance between vectors from two different models is not a
+    /// weaker signal — it is not a signal at all, and an index holding both
+    /// still returns confidently-ordered nonsense. This label is what lets a
+    /// re-embed pass find the stale rows, skip the current ones, and prove
+    /// afterwards that only one space remains. `None` means the space is
+    /// unknown, which is treated as stale rather than assumed current.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub embedding_model: Option<String>,
     /// Free-form tags for filtering.
     pub tags: Vec<String>,
 }
@@ -85,6 +95,7 @@ impl Content {
         Self {
             body: body.into(),
             embedding: None,
+            embedding_model: None,
             tags: Vec::new(),
         }
     }

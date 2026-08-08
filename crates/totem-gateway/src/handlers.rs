@@ -94,6 +94,60 @@ pub(crate) async fn health() -> &'static str {
     "ok"
 }
 
+/// `GET /admin/embedding`: which model wrote the vectors in this store.
+///
+/// The operator's answer to "is this index in one space?". More than one entry
+/// means recall is ranking across geometries, and its ordering is not
+/// meaningful — a state that is otherwise invisible, because a mixed index
+/// still returns results in a confident order.
+pub(crate) async fn embedding_status(
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let rows = state
+        .store
+        .memories()
+        .embedding_models()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let uniform = rows.len() <= 1;
+    Ok(Json(serde_json::json!({
+        "running": state.embedder.model_name(),
+        "rows_by_model": rows
+            .iter()
+            .map(|(model, count)| serde_json::json!({
+                "model": if model.is_empty() { "(unlabelled)" } else { model },
+                "rows": count,
+            }))
+            .collect::<Vec<_>>(),
+        "uniform": uniform,
+    })))
+}
+
+/// `POST /admin/reembed`: rewrite every stale vector into the running model's
+/// space (ADV-STORE-008).
+///
+/// Explicit rather than automatic at start-up: DEP-001 makes this process the
+/// store's sole owner so the pass must run here, but doing it at boot would
+/// hold the health check open for its whole duration on a single-machine
+/// deployment, and would re-run on every restart with nobody deciding it
+/// should. **Back up first** — the runbook step precedes this call.
+pub(crate) async fn reembed(
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let summary = state
+        .store
+        .memories()
+        .reembed_all(state.embedder.as_ref())
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!({
+        "model": state.embedder.model_name(),
+        "examined": summary.examined,
+        "reembedded": summary.reembedded,
+        "skipped": summary.skipped,
+    })))
+}
+
 /// `GET /console/config`: what the console needs to start a sign-in
 /// (ADV-GATEWAY-010).
 ///

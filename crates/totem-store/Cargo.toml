@@ -15,15 +15,21 @@ default = []
 # runners must not pay for RocksDB they never touch.
 rocksdb = ["surrealdb/kv-rocksdb"]
 
+# The production embedder (BGE-small-en-v1.5 via `fastembed`) is opt-in for
+# the same reason: first use downloads model weights, which the cloud
+# sandbox's egress blocks (EMB-002/EMB-003, docs/tech-direction/embeddings.md).
+# Off by default so `cargo test --workspace` never attempts that download;
+# verified on a workstation with hub access, the ADV-STORE-006/007 split.
+#
+# This line lived inside the `[[test]]` table until ADV-STORE-008, where cargo
+# read it as the unused key `test.0.fastembed` and ignored it. The feature
+# resolved anyway — an optional dependency implies a feature of its own name —
+# so nothing failed and nothing said so. Declared here now, where it is read.
+fastembed = ["dep:fastembed"]
+
 [[test]]
 name = "durability"
 required-features = ["rocksdb"]
-# The production embedder (BGE-small-en-v1.5 via `fastembed`) is opt-in for
-# the same reason: first use downloads model weights, which this sandbox's
-# egress policy blocks (EMB-002/EMB-003, docs/tech-direction/embeddings.md).
-# Off by default so `cargo test --workspace` never attempts that download;
-# verify on a workstation with hub access, the ADV-STORE-006/007 split.
-fastembed = ["dep:fastembed"]
 
 [dependencies]
 chrono.workspace = true

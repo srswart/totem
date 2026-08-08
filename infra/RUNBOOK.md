@@ -77,6 +77,54 @@ fly volumes create totem_data -a totem-dev -r sin -n 1 --snapshot-id <snap-id>
 advance's Evidence section, where this is recorded as unverified rather than
 claimed. Verify it before the memory estate matters.
 
+## Changing the embedding model (ADV-STORE-008)
+
+Recall ranks by cosine distance. Vectors from two different models do not
+share a geometry, so an index holding both keeps returning results — in a
+confident order — that means nothing. There is no error and no symptom until
+somebody trusts a ranking. **Never leave the index mixed.**
+
+Ask what is in there:
+
+```sh
+curl -sH "Authorization: Bearer $TOKEN" https://totem-dev.fly.dev/admin/embedding
+```
+
+`uniform: true` and a single entry in `rows_by_model` is the healthy state.
+`(unlabelled)` is a row written before schema v11; the pass treats it as
+stale, which is correct — its space is genuinely unknown.
+
+To move the estate into a new model's space:
+
+1. **Snapshot first.** Re-embedding rewrites every vector; the pass is
+   resumable but not reversible.
+   ```sh
+   fly volumes snapshots create $(fly volumes list -a totem-dev --json | jq -r '.[0].id')
+   ```
+2. Deploy the image built with the new model.
+3. Run the pass. It only touches rows outside the running model's space, so
+   re-running after an interruption resumes rather than redoing:
+   ```sh
+   curl -sX POST -H "Authorization: Bearer $TOKEN" https://totem-dev.fly.dev/admin/reembed
+   ```
+4. Confirm `uniform: true`, then run the EMB-004 golden queries. The
+   paraphrase query is the one that matters: it is the query a lexical
+   baseline fails, so it is the only cheap check that the *real* model is in
+   the path rather than a stub that loaded successfully.
+
+The pass runs inside the gateway process because DEP-001 makes it the store's
+sole owner — there is no separate one-shot binary to run, and there cannot
+be while the gateway holds the engine lock. It is deliberately not a start-up
+migration: at boot it would hold the health check open for its whole duration
+on a machine count of one, and re-run on every restart with nobody deciding
+it should.
+
+**If the gateway will not start**, a build with `--features fastembed` that
+cannot load its model panics on purpose rather than falling back to the
+non-semantic stub. Check that `/models` is present in the image and
+`FASTEMBED_CACHE_DIR` points at it. A deployment that silently downgraded
+would report healthy while serving meaningless rankings.
+
 ## Health and logs
 
 ```sh
