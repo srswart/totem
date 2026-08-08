@@ -284,7 +284,7 @@ passes:
           - id: "ADV-INFRA-006"
             advance_id: "ADV-INFRA-006"
             title: "Cache dependency builds so deploys are minutes, not quarter-hours"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-INFRA-002"]
             notes: >-
