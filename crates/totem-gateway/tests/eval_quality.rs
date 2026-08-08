@@ -24,6 +24,23 @@ async fn golden_readers_score_near_perfect() {
         .await
         .expect("scoring succeeds");
 
+    // Name the queries that missed. A bare `assert_eq!(precision, 1.0)`
+    // reports a number and leaves the reader to guess which of the golden
+    // queries produced it — and this evaluation exists precisely to be read
+    // when it goes wrong (ADV-CORE-008).
+    let missed: Vec<&str> = report
+        .queries
+        .iter()
+        .filter(|q| q.expected_top_hit == Some(false) || q.must_appear_hits < q.must_appear_total)
+        .map(|q| q.name)
+        .collect();
+    assert!(
+        missed.is_empty(),
+        "golden queries missed: {missed:?} (precision@1 {:?}, recall@k {:?})",
+        report.precision_at_1,
+        report.recall_at_k
+    );
+
     assert_eq!(report.precision_at_1, Some(1.0));
     assert_eq!(report.recall_at_k, Some(1.0));
     assert_eq!(report.queries.len(), corpus::golden_queries().len());

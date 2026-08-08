@@ -702,8 +702,15 @@ fn rank_score(record: &MemoryRecord, distance: Option<f64>, now: DateTime<Utc>) 
         .last_used_at
         .unwrap_or(record.provenance.created_at);
     let elapsed = now - reference;
-    let currency =
-        totem_core::effective_currency(record.category, record.economics.currency, elapsed);
+    // Compressed onto relevance's own range (ADV-CORE-008): raw currency is
+    // `[0, 1]`, but its *ratio* between a memory read yesterday and one nobody
+    // has opened for three months is ~95x, which is enough for age alone to
+    // overturn an exact match.
+    let currency = totem_core::currency_weight(totem_core::effective_currency(
+        record.category,
+        record.economics.currency,
+        elapsed,
+    ));
     let relevance = totem_core::relevance_from_distance(distance);
     let weight = totem_core::category_weight(record.category);
     // Saturated, not raw (ADV-CORE-008): `CITATION_BOOST` is unbounded, so a

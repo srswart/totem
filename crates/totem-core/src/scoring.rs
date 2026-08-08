@@ -82,24 +82,62 @@ pub fn effective_currency(
 /// worth keeping there while its magnitude is not.
 ///
 /// So the order is preserved exactly and only the span is compressed, onto
-/// `[1/(1+gate), 1.0]` — the same range relevance itself spans among records
-/// that compete. Instructions still outranks Knowledge at equal relevance;
-/// it can no longer outrank a materially better match.
+/// `[non_relevance_floor(), 1.0]`. Instructions still outranks Knowledge at
+/// equal relevance; it can no longer outrank a materially better match.
 ///
-/// This is one rule applied uniformly: **no non-relevance factor may outweigh
-/// relevance's own range.** `value_score` obeys it via
-/// [`saturating_value`], `currency` is already `[0, 1]`, and this was the
-/// term still exempt.
+/// This is one rule applied uniformly: **the non-relevance factors, taken
+/// together, may not outweigh relevance's own range.** `value_score` obeys it
+/// via [`saturating_value`], `currency` via [`currency_weight`], and category
+/// here — each holding [`per_factor_range`], a geometric third of the budget,
+/// because [`combined_score`] multiplies them.
 pub fn category_weight(category: MemoryCategory) -> f32 {
     // `injection_priority` is documented as 10..=100 across the six
     // categories; normalize within that observed span rather than 0..=100, so
     // the lowest category maps to the floor rather than somewhere above it.
     const LOWEST_PRIORITY: f32 = 10.0;
     const HIGHEST_PRIORITY: f32 = 100.0;
-    let floor = 1.0 / (1.0 + RELEVANCE_GATE_DISTANCE as f32);
     let position = (f32::from(category.lifecycle().injection_priority) - LOWEST_PRIORITY)
         / (HIGHEST_PRIORITY - LOWEST_PRIORITY);
-    floor + position.clamp(0.0, 1.0) * (1.0 - floor)
+    compress_onto_relevance_range(position)
+}
+
+/// Map a `[0, 1]` signal onto `[non_relevance_floor(), 1.0]`, preserving its
+/// order exactly and compressing only its span.
+///
+/// This is the shape of the rule: a non-relevance factor keeps its *ranking*
+/// and gives up its *magnitude*, so it can break a tie between comparable
+/// matches but never overturn a materially better one.
+fn compress_onto_relevance_range(unit: f32) -> f32 {
+    let floor = non_relevance_floor();
+    floor + unit.clamp(0.0, 1.0) * (1.0 - floor)
+}
+
+/// Bound `currency`'s contribution to ranking the same way
+/// [`category_weight`] and [`saturating_value`] are bounded (ADV-CORE-008).
+///
+/// **Why this is needed even though currency is already `[0, 1]`.** That was
+/// the reasoning this module shipped with, and it is a mistake worth naming:
+/// bounding a factor's *magnitude* does not bound the *ratio* between two
+/// records. Currency decays exponentially with a 14-day half-life, so a
+/// memory nobody has read for three months sits near 0.01 while one read
+/// yesterday sits at 0.95 — a **95x** advantage on age alone, against
+/// relevance's 2x. An exact answer written last month loses to a
+/// tangentially-related note read this morning.
+///
+/// Found by the corpus economics fixtures, not by reasoning: every record in
+/// the golden corpus previously carried identical pristine economics, so the
+/// currency term cancelled everywhere and no test could see it. The first
+/// query that varied it failed immediately.
+///
+/// Decay still counts, and still counts in the same order — a fresher memory
+/// outranks a staler one at comparable relevance. It can no longer decide the
+/// answer by itself.
+///
+/// This is a **ranking** transform, not a change to currency itself:
+/// [`effective_currency`] remains the honest freshness figure a caller or the
+/// console can read.
+pub fn currency_weight(effective_currency: f32) -> f32 {
+    compress_onto_relevance_range(effective_currency)
 }
 
 /// Cosine distance beyond which a record does not compete at all, whatever
@@ -121,14 +159,11 @@ pub fn category_weight(category: MemoryCategory) -> f32 {
 /// overcome it.
 pub const RELEVANCE_GATE_DISTANCE: f64 = 1.0;
 
-/// The most a memory's accumulated history may multiply its score
+/// How much better an exact match is than a record that only just passes the
+/// gate — relevance's own range **among records that actually compete**
 /// (ADV-CORE-008).
 ///
-/// **Derived from the gate, not chosen.** The claim is
-/// *history may matter as much as relevance, and never more* — so the ceiling
-/// must equal relevance's range **among records that actually compete**.
-///
-/// The gate changes that range, which is easy to get wrong: relevance spans
+/// The gate changes this range, which is easy to get wrong: relevance spans
 /// `[0.33, 1.0]` (3x) over all distances, but a record past
 /// [`RELEVANCE_GATE_DISTANCE`] scores zero and is dropped, so among survivors
 /// it spans `[1/(1+gate), 1.0]`. That ratio is exactly `1 + gate`:
@@ -136,13 +171,61 @@ pub const RELEVANCE_GATE_DISTANCE: f64 = 1.0;
 /// ```text
 /// relevance(0) / relevance(gate) = 1 / (1/(1+gate)) = 1 + gate = 2.0
 /// ```
+pub fn relevance_range() -> f32 {
+    1.0 + RELEVANCE_GATE_DISTANCE as f32
+}
+
+/// How many factors other than relevance take part in [`combined_score`]:
+/// value, currency, and category weight.
 ///
-/// Writing it as a derivation rather than a literal means the two constants
-/// cannot drift apart: move the gate and the ceiling follows, still honouring
-/// the same claim. A hand-picked 3.0 would have quietly let history outweigh
-/// relevance by 1.5x — the very failure this advance exists to fix, smaller
-/// and harder to see.
-pub const VALUE_SATURATION_CEILING: f32 = 1.0 + RELEVANCE_GATE_DISTANCE as f32;
+/// **This number is the correction that the corpus forced.** The first
+/// version of this advance bounded each factor *individually* at
+/// [`relevance_range`], which sounds like the rule and is not: the factors
+/// **multiply**, so three terms each free to span 2x compose to **8x**, and
+/// history could still outweigh relevance by 4x. Dividing the budget between
+/// them is what actually enforces the claim.
+///
+/// If a fourth non-relevance factor is ever added to [`combined_score`], this
+/// must change with it, and `no_non_relevance_factor_outweighs_relevance_s_own_range`
+/// is the test that will notice if it does not.
+const NON_RELEVANCE_FACTORS: f32 = 3.0;
+
+/// The span any single non-relevance factor is allowed, so that all of them
+/// together span exactly [`relevance_range`] — the geometric share,
+/// `range^(1/n)`, because they compose by multiplication rather than
+/// addition.
+pub fn per_factor_range() -> f32 {
+    relevance_range().powf(1.0 / NON_RELEVANCE_FACTORS)
+}
+
+/// The lowest multiplier any non-relevance factor may contribute
+/// (ADV-CORE-008).
+///
+/// Nothing that is not relevance may zero a record out on its own. Zero is
+/// reserved for two deliberate acts: failing the gate (the caller asked about
+/// something else) and a `value_score` driven to zero (a record retired in
+/// all but name).
+pub fn non_relevance_floor() -> f32 {
+    1.0 / per_factor_range()
+}
+
+/// The most a memory's *automatically accrued* value may multiply its score
+/// (ADV-CORE-008) — one factor's share of the budget, [`per_factor_range`].
+///
+/// **Derived, not chosen.** Writing it as a derivation rather than a literal
+/// means the constants cannot drift apart: move the gate and this follows,
+/// still honouring the same claim. A hand-picked 3.0 would have quietly let
+/// history outweigh relevance — the very failure this advance exists to fix,
+/// smaller and harder to see.
+///
+/// **Only the upward direction is bounded.** `value_score` below its 1.0
+/// default is a *deliberate* demotion — negative feedback, or an outright
+/// retirement to zero — and keeps its full force. The budget governs
+/// advantage a record accumulates on its own (citations, recency, category),
+/// not a judgement someone made about it on purpose.
+pub fn value_saturation_ceiling() -> f32 {
+    per_factor_range()
+}
 
 /// Bound `value_score`'s contribution so it cannot grow without limit.
 ///
@@ -165,7 +248,7 @@ pub fn saturating_value(value_score: f32) -> f32 {
     if value == 0.0 {
         return 0.0;
     }
-    let k = VALUE_SATURATION_CEILING;
+    let k = value_saturation_ceiling();
     // `k / (1 + (k-1)/v)`, algebraically identical to `k·v / (k-1+v)` but
     // stable at the top of the range: the direct form multiplies before
     // dividing, so `k · f32::MAX` overflows to infinity and the bound this
@@ -301,20 +384,36 @@ mod tests {
         // ever added to `combined_score` without obeying it, this is the test
         // that should be extended — and the failure it prevents is the one
         // that shipped: something other than the question deciding the answer.
-        let relevance_range = relevance_from_distance(Some(0.0))
+        let measured_relevance_range = relevance_from_distance(Some(0.0))
             / relevance_from_distance(Some(RELEVANCE_GATE_DISTANCE));
+        assert!((measured_relevance_range - relevance_range()).abs() < 1e-5);
 
+        // The three factors, each at its most and least favourable.
         let category_range = category_weight(MemoryCategory::Instructions)
             / category_weight(MemoryCategory::Episodic);
-        assert!(
-            category_range <= relevance_range + f32::EPSILON,
-            "category spans {category_range}x against relevance's {relevance_range}x"
-        );
 
+        // Only the upward direction: `saturating_value` below 1.0 is a
+        // deliberate demotion, not accrued advantage, and keeps its force.
         let value_range = saturating_value(f32::MAX) / saturating_value(1.0);
-        assert!(value_range <= relevance_range + f32::EPSILON);
 
-        // currency is `[0, 1]` by construction, so its range is bounded by 1.
+        // Currency was previously waved through on the grounds that it is
+        // "already `[0, 1]`". That reasoning is wrong, and the corpus caught
+        // it: bounding a factor's *magnitude* says nothing about the *ratio*
+        // between two records. Raw currency runs from ~1.0 to arbitrarily
+        // near zero, so age alone could carry a 900x advantage.
+        let currency_range = currency_weight(1.0) / currency_weight(0.0);
+
+        // The bound that matters is on the PRODUCT. Asserting each factor
+        // separately against `relevance_range` is the mistake this advance
+        // shipped first: `combined_score` multiplies, so three factors each
+        // "safely" within 2x compose to 8x, and history still wins by 4x.
+        let composed = category_range * value_range * currency_range;
+        assert!(
+            composed <= relevance_range() + 1e-5,
+            "non-relevance factors compose to {composed}x (category {category_range}, \
+             value {value_range}, currency {currency_range}) against relevance's {}x",
+            relevance_range()
+        );
     }
 
     #[test]
@@ -527,8 +626,8 @@ mod tests {
         // clamped, so ordering survives far out. (In f32 the approach reaches
         // the ceiling exactly at large inputs; the property that matters is
         // that it never exceeds it.)
-        assert!(saturating_value(1.0e9) <= VALUE_SATURATION_CEILING);
-        assert!(saturating_value(1.0e9) > VALUE_SATURATION_CEILING - 0.01);
+        assert!(saturating_value(1.0e9) <= value_saturation_ceiling());
+        assert!(saturating_value(1.0e9) > value_saturation_ceiling() - 0.01);
         assert!(
             saturating_value(1.0e4) < saturating_value(1.0e5),
             "still ordered far out"

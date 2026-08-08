@@ -32,8 +32,8 @@ use chrono::{DateTime, Utc};
 use surrealdb::Connection;
 use surrealdb::engine::local::Db;
 use totem_core::{
-    ActorId, Author, Content, Harness, MemoryCategory, MemoryRecord, Provenance, RepoId, Scope,
-    ScopeChain, SessionId, TeamId,
+    ActorId, Author, Content, Economics, Harness, MemoryCategory, MemoryRecord, Provenance, RepoId,
+    Scope, ScopeChain, SessionId, TeamId,
 };
 
 use crate::embedding::{DeterministicEmbedder, embed};
@@ -74,6 +74,31 @@ pub const CONTESTED_A: &str = "Team decided to deprecate the rocket project's v1
 /// The other side of the contested Uncertainty pair.
 pub const CONTESTED_B: &str =
     "Team decided to keep the rocket project's v1 API supported indefinitely.";
+
+/// The well-used incumbent of the economics pair: a Knowledge record with a
+/// long, successful history behind it — cited ten times, recalled often, and
+/// recalled recently, so all three non-relevance terms sit at their maximum.
+///
+/// It is about deploys, like [`ECONOMICS_CHALLENGER`], so the pair is a
+/// genuine contest between a related-but-not-asked record and an exact
+/// answer, rather than the trivial case of an obviously unrelated one.
+pub const ECONOMICS_INCUMBENT: &str =
+    "The rocket project deploys from main every weekday afternoon.";
+
+/// The challenger of the economics pair: never recalled, never cited, and an
+/// exact match for the query that asks for it.
+///
+/// Nothing but relevance argues for it. If ranking returns the incumbent
+/// first, history has outweighed what was actually asked.
+///
+/// The query probes this text verbatim rather than paraphrasing it, because
+/// [`DeterministicEmbedder`] has no semantics — a reworded probe would be
+/// orthogonal to every record here, including this one, and the query would
+/// measure nothing. Paraphrase is exercised against the real embedder on the
+/// deployed instance, which is where ADV-CORE-008's golden-query evidence is
+/// taken.
+pub const ECONOMICS_CHALLENGER: &str =
+    "Rocket's canary deploy holds at ten percent of traffic for fifteen minutes.";
 
 const NEAR_DUP_A: &str =
     "The rocket project's staging database runs Postgres 16.3 with the pgvector extension enabled.";
@@ -142,6 +167,21 @@ struct Fixture {
     body: &'static str,
     tags: Vec<String>,
     provenance: Provenance,
+    economics: Economics,
+}
+
+impl Fixture {
+    /// Give this record a history: the non-relevance half of the ranking
+    /// formula, which every other fixture leaves at [`Economics::fresh`].
+    ///
+    /// A corpus where every record is pristine cannot distinguish a ranker
+    /// that weighs history correctly from one that ignores the query
+    /// entirely, because the three non-relevance terms are then constant
+    /// across the whole estate and cancel (ADV-CORE-008).
+    fn with_economics(mut self, economics: Economics) -> Self {
+        self.economics = economics;
+        self
+    }
 }
 
 fn actor(id: &str) -> ActorId {
@@ -183,6 +223,7 @@ fn fixture(
         body,
         tags: all_tags,
         provenance,
+        economics: Economics::fresh(),
     }
 }
 
@@ -229,6 +270,16 @@ pub fn golden_queries() -> Vec<GoldenQuery> {
             probe_text: Some(NEAR_DUP_A),
             expected_top: None,
             must_appear: &[NEAR_DUP_A, NEAR_DUP_B],
+        },
+        GoldenQuery {
+            name: "an_exact_match_outranks_a_well_used_incumbent",
+            reader_actor: NOVA,
+            reader_project: Some(ROCKET),
+            reader_teams: &[],
+            categories: &[MemoryCategory::Knowledge],
+            probe_text: Some(ECONOMICS_CHALLENGER),
+            expected_top: Some(ECONOMICS_CHALLENGER),
+            must_appear: &[],
         },
         GoldenQuery {
             name: "contested_pair_keeps_both_sides_visible",
@@ -684,6 +735,52 @@ fn fixtures() -> Vec<Fixture> {
                 "2026-07-03T09:05:00Z",
             ),
         ),
+        // --- Economics pair (history must not outweigh relevance) --------
+        //
+        // Both Knowledge, both at project scope, so `category_weight` is
+        // identical and cannot be what separates them. The only differences
+        // are the query's distance and the records' histories — which is
+        // exactly the contest ADV-CORE-008 is about.
+        fixture(
+            MemoryCategory::Knowledge,
+            Scope::Project(repo(ROCKET)),
+            &nova_project,
+            ECONOMICS_INCUMBENT,
+            &["economics", "economics:incumbent"],
+            provenance(
+                agent(NOVA),
+                Harness::ClaudeCode,
+                "corpus-session-economics-incumbent",
+                "2026-07-06T09:00:00Z",
+            ),
+        )
+        .with_economics(Economics {
+            // Ten citations at CITATION_BOOST (+0.2) each, on top of the
+            // neutral 1.0 — a plausible ceiling for a genuinely load-bearing
+            // memory in a year-old estate, not an extreme.
+            value_score: 3.0,
+            use_count: 47,
+            // Recalled yesterday, so currency has not decayed at all.
+            last_used_at: Some(
+                "2026-08-07T09:00:00Z"
+                    .parse()
+                    .expect("corpus timestamps are valid RFC 3339"),
+            ),
+            currency: 1.0,
+        }),
+        fixture(
+            MemoryCategory::Knowledge,
+            Scope::Project(repo(ROCKET)),
+            &nova_project,
+            ECONOMICS_CHALLENGER,
+            &["economics", "economics:challenger"],
+            provenance(
+                agent(NOVA),
+                Harness::ClaudeCode,
+                "corpus-session-economics-challenger",
+                "2026-07-06T09:05:00Z",
+            ),
+        ),
         // --- Precedence pair (actor scope must win project scope) ------
         fixture(
             MemoryCategory::Knowledge,
@@ -756,7 +853,9 @@ pub async fn seed<C: Connection>(store: &Store<C>) -> StoreResult<CorpusReport> 
 
     for record in fixtures() {
         let content = embed(&embedder, Content::new(record.body).with_tags(record.tags))?;
-        let memory = MemoryRecord::new(record.category, record.scope, content, record.provenance);
+        let mut memory =
+            MemoryRecord::new(record.category, record.scope, content, record.provenance);
+        memory.economics = record.economics;
         store.memories().save(&record.writer, &memory).await?;
         *by_category.entry(record.category).or_insert(0) += 1;
     }
