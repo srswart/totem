@@ -191,12 +191,29 @@ pub async fn run_workload(state: &AppState, profile: &WorkloadProfile) -> Worklo
             let injected = profile.injected_latency;
             let is_save = profile.mix_period > 0 && i % profile.mix_period == 0;
             set.spawn(async move {
+                // The timer opens BEFORE the injected delay, deliberately.
+                //
+                // It used to open after it, which meant the injected latency
+                // reached no reported figure at all: `degraded` and `baseline`
+                // measured the same quantity, and
+                // `injected_latency_visibly_worsens_every_latency_figure`
+                // passed or failed on scheduler noise. It failed in CI roughly
+                // one run in three and was read as a flaky test for two days.
+                //
+                // It was not flaky. It was asserting something false and
+                // passing by luck — which is worse, because a flaky test
+                // eventually gets fixed and a lucky one gets merged past.
+                //
+                // This field's own contract is that the delay proves the
+                // harness "sensitive to degradation without depending on the
+                // host's own performance characteristics". Timing around the
+                // sleep is what makes that true rather than aspirational.
+                let op_start = Instant::now();
                 if injected > Duration::ZERO {
                     tokio::time::sleep(injected).await;
                 }
                 let session = SessionId::new(format!("eval-workload-{i}"))
                     .expect("generated session id is valid");
-                let op_start = Instant::now();
                 let ok = if is_save {
                     let input = SaveInput {
                         project: Some(repo.clone()),
