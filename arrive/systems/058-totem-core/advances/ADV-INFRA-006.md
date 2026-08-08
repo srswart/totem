@@ -217,6 +217,56 @@ a gateway-only change skip `dx build` altogether, which is the common case
 for this project. Recorded here rather than done, because it is a Dockerfile
 change wanting its own before/after.
 
+## Deploy 2: the cache missed, and the reason is worth knowing
+
+Deploy 2 (2026-08-08, version 12, ADV-GATEWAY-016) took **34m 41s** —
+`cook` ran for **1986s** rather than reporting `CACHED`. The one-time layers
+*did* cache, so Fly's builder retains layers between deploys:
+
+```text
+CACHED [chef 2/4] apt-get install ...
+CACHED [chef 3/4] cargo install cargo-chef
+CACHED [console 2..5/7] dioxus-cli, rustup target, apt
+       [builder 2/5] cargo chef cook ...        1986.0s   <- NOT cached
+```
+
+**No dependency changed.** `git diff` across the two deployed commits shows
+zero modifications to any `Cargo.toml` or to `Cargo.lock`.
+
+Diffed the two `recipe.json` files directly, and the entire difference is:
+
+```text
++[[test]]
++path = "tests/rank_explanation.rs"
++name = "rank_explanation"
++required-features = []
+```
+
+**Cargo auto-discovers `tests/*.rs` as targets, and `cargo-chef` bakes the
+*resolved* manifest — auto-discovered targets included — into the recipe.**
+Adding one integration test file therefore changed the recipe, missed the
+cache, and cost a 33-minute dependency rebuild, without a single dependency
+changing.
+
+This generalises: **adding or removing any file cargo auto-discovers — a
+test, a bench, an example, a bin — busts the whole dependency cache.**
+Editing existing source does not, which is the common case and is why the
+local warm measurement (52s) was not wrong, only narrow.
+
+It is a property of the tool rather than a defect in this setup, and there is
+no clean mitigation: declaring targets explicitly with `autotests = false`
+moves the manifest change rather than removing it. So it is recorded to be
+*expected* rather than solved — a deploy that adds a test file is a
+12-minute deploy, and that is not a regression.
+
+**Revised expectation, replacing the one in the runbook table:**
+
+| what changed | expect |
+|---|---|
+| existing source only | the cook layer caches; ~3-5 min |
+| a new test/bench/example/bin **file** | full rebuild, ~35 min |
+| any `Cargo.toml` / `Cargo.lock` | full rebuild, ~35 min |
+
 ## Residual: the claim in the title is not yet proven on Fly
 
 The title says *deploys* are minutes. Everything measured here is a
