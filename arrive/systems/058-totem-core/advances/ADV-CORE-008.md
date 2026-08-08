@@ -105,18 +105,48 @@ index it has overshot, and the tests should say so in both directions.
       record (currently `#[ignore]`d in `recall_ranking.rs` — un-ignore it)
 - [ ] test: the converse — comparable relevance, and the well-used record
       still wins. The value loop must survive this advance.
+- [ ] **corpus economics** — `crates/totem-store/src/corpus.rs` never sets
+      `value_score` or `last_used_at`, so every golden record has identical
+      pristine economics and `eval_quality` scores a perfect 1.0 against the
+      broken system. Add a well-used incumbent, a fresh exact match, and the
+      ties between them. Without this the evaluation cannot fail, and a fix
+      cannot be shown to have fixed anything.
 - [ ] feat: the scoring change
 - [ ] golden queries on the deployed instance — the evidence ADV-STORE-008
       could not meet
 
+## Relationship to ADV-CORE-005
+
+**ADV-CORE-005 is the evaluation advance for this defect.** It is not new and
+it has never run: authored 2026-08-05, `planned`, `pr_links: []`. It is
+scoped to exactly this question — *"does retrieval actually favor relevant,
+valuable, current memory?"* — and its Quality Risks section named this hazard
+in advance, before anyone had seen it.
+
+The harness it needs also already exists: **ADV-GATEWAY-008** (done) built
+the recall-quality scorer with precision@1 and expected-item rank;
+**ADV-STORE-005** (done) built the golden corpus. No new tooling advance is
+warranted, and authoring one would duplicate work already shipped.
+
+What is missing is not tooling but a **fixture state**: the corpus never
+varies `value_score`, so the scorer measures a system in a condition it is
+never actually in and reports 1.0. Fixing that is a task in this advance,
+because a fix that cannot be shown to have changed a number is not evidence
+of anything.
+
+Sequencing: this advance adds the economics fixtures and the scoring change;
+CORE-005 then runs the full evaluation over the corrected corpus, measures
+before and after, and dispositions whether the fix overshot.
+
 ## Scope and Boundaries
 
-**In scope:** the scoring function, its tests, and the deployed golden-query
-evidence.
+**In scope:** the scoring function, its tests, the corpus economics fixtures,
+and the deployed golden-query evidence.
 
 **Out of scope:** the embedder (ADV-STORE-008, done); whether
 `totem_feedback` should feed reinforcement — worth doing, but it is a
-separate change with its own evidence; recall latency.
+separate change with its own evidence; recall latency; the full quality
+evaluation and its dispositions (ADV-CORE-005).
 
 ## Risk + Rollback
 
@@ -152,3 +182,9 @@ separate change with its own evidence; recall latency.
 5. This was found by asking a deployed system four questions, not by any
    test. What class of defect does that suggest the suite is structurally
    unable to reach here?
+6. `eval_quality` asserts `precision_at_1 == 1.0` and passes today, against a
+   system that ignores the query. What exactly is that assertion measuring,
+   and what one property of the corpus makes it vacuous?
+7. No new harness advance was authored for this. Which two completed advances
+   already provide the tooling, and what does that suggest about reaching for
+   a new advance when an evaluation comes back green?

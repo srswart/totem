@@ -516,8 +516,19 @@ passes:
             title: "Quality evaluation: recall relevance + ranking behavior"
             status: planned
             owner: "058-totem"
-            dependencies: ["ADV-CORE-002", "ADV-GATEWAY-008"]
-            notes: "Value loop on/off comparison against the golden corpus."
+            dependencies: ["ADV-CORE-002", "ADV-GATEWAY-008", "ADV-CORE-008"]
+            notes: >-
+              Never run — the 2026-08-05 started_at is when it was authored.
+              Enriched 2026-08-08 with a confirmed defect it must be able to
+              detect: recall ignores the query (ADV-CORE-008). Note that
+              eval_quality asserts precision_at_1 == 1.0 and PASSES today
+              against that broken system, because corpus.rs never varies
+              value_score — so the scorer measures a state the system is
+              never in. ADV-CORE-008 adds the economics fixtures; this
+              advance then measures before/after and dispositions whether
+              the fix overshot into a plain vector index. A green number
+              from this evaluation before those fixtures exist means
+              nothing.
           - id: "ADV-GATEWAY-007"
             advance_id: "ADV-GATEWAY-007"
             title: "Performance evaluation: time-to-context + recall latency under load"
