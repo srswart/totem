@@ -65,16 +65,23 @@ mkdir -p "$(dirname "$OUT")"
 
   for query in "${QUERIES[@]}"; do
     echo "## ${query}"
-    jq -n \
-      --arg actor "$ACTOR" --arg project "$PROJECT" --arg query "$query" \
-      --arg session "golden-${LABEL}" \
-      '{actor: $actor, project: $project, query: $query, limit: 7,
-        harness: "claude_code", session: $session}' \
-    | curl -sS -X POST "${HOST}/recall" \
-        -H "Authorization: Bearer ${TOKEN}" \
-        -H 'content-type: application/json' \
-        --data @- \
-    | jq -r '.records[] | "  [\(.category)] \(.content.body[0:110])"'
+    # `/recall` reinforces every record it returns, so this half of the run
+    # mutates the estate it measures. Set RECALL=0 to take a **purely
+    # non-mutating** reading from `/recall/explain` alone (ADV-GATEWAY-016):
+    # the explanation reports what recall *would* have returned via its
+    # `IN` markers, so nothing is lost but the write.
+    if [ "${RECALL:-1}" = "1" ]; then
+      jq -n \
+        --arg actor "$ACTOR" --arg project "$PROJECT" --arg query "$query" \
+        --arg session "golden-${LABEL}" \
+        '{actor: $actor, project: $project, query: $query, limit: 7,
+          harness: "claude_code", session: $session}' \
+      | curl -sS -X POST "${HOST}/recall" \
+          -H "Authorization: Bearer ${TOKEN}" \
+          -H 'content-type: application/json' \
+          --data @- \
+      | jq -r '.records[] | "  [\(.category)] \(.content.body[0:110])"'
+    fi
 
     # Why that order (ADV-GATEWAY-016). Non-mutating, and it includes the
     # records the gate excluded — which the results above cannot show,
