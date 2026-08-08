@@ -265,7 +265,7 @@ passes:
           - id: "ADV-CORE-008"
             advance_id: "ADV-CORE-008"
             title: "Recall ranks by what was asked: bound the value loop's grip on relevance"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-STORE-008"]
             notes: >-
@@ -492,9 +492,79 @@ passes:
               arrive/agent-rules + `arrive sync agent-rules` pipeline already
               reaches Claude Code, Cursor and skills from one source; this
               uses it. Must land before the cutover.
+      - id: "phase-014"
+        title: "Make ranking observable, then calibrate it against a corpus we control"
+        order: 5
+        items:
+          - id: "ADV-GATEWAY-016"
+            advance_id: "ADV-GATEWAY-016"
+            title: "Ranking is answerable: expose every score a recall computed"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-CORE-008"]
+            notes: >-
+              FIRST, and deliberately small. ADV-CORE-008 shipped a real fix
+              and could not finish its own diagnosis: recall returns no
+              score, so nobody could say why five of six golden queries still
+              returned the same unrelated instructions record first. Carries
+              the re-run that settles it. Do not build the rest of this phase
+              before this answers the question — it may point at the embedder
+              or the corpus, in which case the calibration rig below is aimed
+              somewhere else.
+          - id: "ADV-GATEWAY-017"
+            advance_id: "ADV-GATEWAY-017"
+            title: "Reads that do not reinforce: reinforcement measures agent use, not attention"
+            status: planned
+            owner: "058-totem"
+            dependencies: []
+            notes: >-
+              The console browses by calling /recall, so opening the Memories
+              tab reinforces every record it displays — the tool for looking
+              at the corpus is a writer to it. Same mechanism contaminated
+              ADV-CORE-008's own before/after: the currency bound was never
+              exercised against the deployment. A product decision, not a
+              test affordance.
+          - id: "ADV-STORE-009"
+            advance_id: "ADV-STORE-009"
+            title: "The calibration corpus becomes a versioned artifact, not compiled-in code"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-CORE-008"]
+            notes: >-
+              corpus.rs cannot be versioned independently of the code under
+              test, cannot grow, and cannot change without a rebuild. Records
+              must carry economics and the golden queries must live in the
+              same artifact — ADV-CORE-008 proved a corpus with uniform
+              economics cannot fail.
+          - id: "ADV-INFRA-007"
+            advance_id: "ADV-INFRA-007"
+            title: "A calibration estate: enrol, seed, measure, discard, repeat"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-STORE-009", "ADV-GATEWAY-017", "ADV-INFRA-006"]
+            notes: >-
+              Calibration has nowhere to happen: the only estate with the
+              real embedder is the one holding real memories. Episodic rows
+              are append-only, so reset means a fresh container, not a
+              delete — the advance chooses namespace vs deployment vs local
+              and records why. Depends on INFRA-006 because each iteration
+              otherwise costs a full rebuild.
+          - id: "ADV-CONSOLE-005"
+            advance_id: "ADV-CONSOLE-005"
+            title: "An inventory, not a recall: see what is actually stored and why it ranked"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-GATEWAY-016", "ADV-GATEWAY-017"]
+            notes: >-
+              Shawn 2026-08-08: cannot tell what the dogfood corpus actually
+              holds. The Memories tab is a ranked, truncated, scope-merged
+              recall presented as contents, with the four numbers that drive
+              ranking invisible. Success here is a person's judgement and is
+              recorded as such.
+
       - id: "phase-013"
         title: "Dogfood cutover: switch every session onto the hosted instance"
-        order: 5
+        order: 6
         items:
           - id: "ADV-INFRA-003"
             advance_id: "ADV-INFRA-003"
@@ -520,7 +590,7 @@ passes:
 
       - id: "phase-009"
         title: "Evaluations (quality, security, performance)"
-        order: 6
+        order: 7
         items:
           - id: "ADV-GATEWAY-006"
             advance_id: "ADV-GATEWAY-006"
@@ -534,8 +604,14 @@ passes:
             title: "Quality evaluation: recall relevance + ranking behavior"
             status: planned
             owner: "058-totem"
-            dependencies: ["ADV-CORE-002", "ADV-GATEWAY-008", "ADV-CORE-008"]
+            dependencies: ["ADV-CORE-002", "ADV-GATEWAY-008", "ADV-CORE-008", "ADV-STORE-009", "ADV-INFRA-007", "ADV-GATEWAY-016"]
             notes: >-
+              Gained three dependencies 2026-08-08 (phase-014): it needs a
+              corpus that can fail (STORE-009), somewhere to run that is not
+              the estate we depend on (INFRA-007), and score visibility
+              without which a bad result cannot be diagnosed (GATEWAY-016).
+              ADV-CORE-008 closed with half its behavioural claim met and
+              handed the residue to GATEWAY-016.
               Never run — the 2026-08-05 started_at is when it was authored.
               Enriched 2026-08-08 with a confirmed defect it must be able to
               detect: recall ignores the query (ADV-CORE-008). Note that
