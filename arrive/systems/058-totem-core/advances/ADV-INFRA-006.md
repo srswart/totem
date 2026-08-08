@@ -83,15 +83,60 @@ cannot invalidate them.
 
 - [x] branch / claim
 - [x] restructure the Dockerfile for dependency caching
-- [ ] measure cold and warm builds, before and after
-- [ ] prove a dependency change busts the cache
+- [x] measure cold and warm builds, before and after — see "Measured" below
+- [x] prove a dependency change busts the cache — see "Measured", third column
 - [ ] consider the console stage — `dx build` recompiles the console's wasm
       dependencies on every deploy for the same reason. Deliberately not
       folded in: `dx` drives its own cargo invocation with its own profile
       and flags, so whether a cooked cache is even reused there is a question
       to measure rather than assume. Measure its share of the build first;
       if it is small, say so and leave it.
-- [ ] update `infra/RUNBOOK.md`, removing the known-cost note
+- [x] update `infra/RUNBOOK.md` — replaced the known-cost note with what to expect per change type, and how to spot the cache silently failing
+
+## Measured
+
+Docker on the workstation (arm64), `--target builder`, faithful to the
+deployed Dockerfile including `CARGO_BUILD_JOBS=2`. Absolute times differ
+from Fly's amd64 remote builder; the **ratio and the layer split** are what
+transfer.
+
+| | cold | warm (source-only change) | dependency added |
+|---|---|---|---|
+| `cargo chef cook` — every dependency | **646.5s** | **CACHED** | **693.3s** |
+| `cargo build` — this workspace only | 28.3s | 26.5s | 27.9s |
+| embedder warm-up | 18.2s | 23.6s | 18.9s |
+| **wall clock** | **11m 42s** | **52s** | **12m 21s** |
+
+**13.5x, and the number that matters is the split.** 646s of 702s — **92% of
+a cold build** — is dependency compilation, and it is now on a layer keyed to
+`recipe.json` rather than to our source. `cargo build` at 28.3s cold against
+26.5s warm confirms the cooked artifacts are genuinely being *reused* rather
+than silently recompiled: if the `cook` and `build` flags had drifted, this
+row would have jumped to several hundred seconds while `#12` still reported
+`CACHED`. That is exactly the failure this measurement exists to catch, and
+it did not happen.
+
+**The cache busts, which is the more important of the two tests.** A cache
+that serves stale dependencies is worse than no cache, so the third column
+adds one real dependency (`hex = "0.4"`) to `totem-gateway`'s manifest. The
+recipe changes, `#12` re-executes rather than reporting `CACHED`, and the log
+shows it compiling `hex v0.4.3` — the new dependency is genuinely built, not
+skipped. Cost: back to a full 12m 21s, exactly as it should be.
+
+**Method notes.**
+
+- The warm run changed file *contents*. `touch` alone would have proved
+  nothing — Docker's `COPY` cache key is a checksum, not an mtime, so a
+  touched file produces a cache hit that looks like success and measures
+  nothing.
+- `cook` compiles `totem-core` and the other workspace members even though
+  that stage holds none of our source. This is `cargo-chef` writing dummy
+  stub crates so dependency *feature resolution* matches the real build. It
+  is compiling empty shells, and it is why `cook` is not purely third-party
+  time.
+- Measured with `--target builder`, so the console stage is excluded from
+  every column. Its share of a real deploy is still unmeasured — see the
+  open task.
 
 ## Scope and Boundaries
 
@@ -113,12 +158,30 @@ artifact registries.
 
 ## Evidence
 
-- [ ] timing: cold and warm, before and after, measured
-- [ ] cache-bust: a dependency change demonstrably rebuilds
+- [x] timing: cold and warm, before and after, measured
+- [x] cache-bust: a dependency change demonstrably rebuilds
 
 ## Changes Made
 
-- None yet
+- `Dockerfile`: a shared `chef` base holding the toolchain and the apt
+  packages (previously installed twice, once below `COPY . .` where a source
+  change invalidated them), a `planner` stage producing `recipe.json`, and a
+  `builder` stage that cooks dependencies from the recipe before copying any
+  source.
+- `infra/RUNBOOK.md`: the known-cost note replaced with expected build times
+  per change type, and the symptom of the cache silently failing.
+
+## Residual: the claim in the title is not yet proven on Fly
+
+The title says *deploys* are minutes. Everything measured here is a
+**workstation** build. Fly's remote builder is a different architecture, a
+different machine, and — most importantly — a different cache lifetime: a
+recycled builder starts cold no matter what this Dockerfile does.
+
+The mechanism is proven and the ratio should carry, but "a source-only deploy
+takes about a minute" is a claim about Fly's builder and remains unmade until
+a deploy makes it. Record the first two real deploy times in this section
+rather than assuming the local numbers transfer.
 
 ## Check for Understanding
 
