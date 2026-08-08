@@ -514,7 +514,7 @@ passes:
           - id: "ADV-GATEWAY-017"
             advance_id: "ADV-GATEWAY-017"
             title: "Reads that do not reinforce: reinforcement measures agent use, not attention"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: []
             notes: >-
