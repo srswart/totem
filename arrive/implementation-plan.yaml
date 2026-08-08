@@ -241,27 +241,6 @@ passes:
         title: "Fix recall ranking, and the deferred residuals: restore drill, MSRV, build caching"
         order: 4
         items:
-          - id: "ADV-INFRA-005"
-            advance_id: "ADV-INFRA-005"
-            title: "Verify the backup: restore a snapshot into a working gateway"
-            status: planned
-            owner: "058-totem"
-            dependencies: ["ADV-INFRA-002"]
-            notes: >-
-              WORKSTATION — INFRA-002's one unmet requirement. A backup never
-              restored is a hope, and the estate now holds real memories.
-              Verify by recall, not by exit code; record the timing an
-              operator would need mid-incident.
-          - id: "ADV-CORE-007"
-            advance_id: "ADV-CORE-007"
-            title: "Correct the workspace MSRV"
-            status: planned
-            owner: "058-totem"
-            dependencies: []
-            notes: >-
-              Cloud-eligible. Cargo.toml declares 1.85; the dependency graph
-              needs 1.94. A false statement in the manifest, exposed only
-              when a container was pinned to the declared value.
           - id: "ADV-CORE-008"
             advance_id: "ADV-CORE-008"
             title: "Recall ranks by what was asked: bound the value loop's grip on relevance"
@@ -493,7 +472,7 @@ passes:
               reaches Claude Code, Cursor and skills from one source; this
               uses it. Must land before the cutover.
       - id: "phase-014"
-        title: "Make ranking observable, then calibrate it against a corpus we control"
+        title: "Make ranking observable, calibrate it, and clear the deferred residuals: MSRV, restore drill"
         order: 5
         items:
           - id: "ADV-GATEWAY-016"
@@ -527,7 +506,7 @@ passes:
           - id: "ADV-STORE-009"
             advance_id: "ADV-STORE-009"
             title: "The calibration corpus becomes a versioned artifact, not compiled-in code"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-CORE-008"]
             notes: >-
@@ -578,6 +557,28 @@ passes:
               recall presented as contents, with the four numbers that drive
               ranking invisible. Success here is a person's judgement and is
               recorded as such.
+
+          - id: "ADV-INFRA-005"
+            advance_id: "ADV-INFRA-005"
+            title: "Verify the backup: restore a snapshot into a working gateway"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-INFRA-002"]
+            notes: >-
+              WORKSTATION — INFRA-002's one unmet requirement. A backup never
+              restored is a hope, and the estate now holds real memories.
+              Verify by recall, not by exit code; record the timing an
+              operator would need mid-incident.
+          - id: "ADV-CORE-007"
+            advance_id: "ADV-CORE-007"
+            title: "Correct the workspace MSRV"
+            status: planned
+            owner: "058-totem"
+            dependencies: []
+            notes: >-
+              Cloud-eligible. Cargo.toml declares 1.85; the dependency graph
+              needs 1.94. A false statement in the manifest, exposed only
+              when a container was pinned to the declared value.
 
       - id: "phase-013"
         title: "Dogfood cutover: switch every session onto the hosted instance"
