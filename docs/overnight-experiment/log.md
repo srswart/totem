@@ -228,3 +228,66 @@ wrong. A green suite plus a confident comment is not evidence about an edge.
 4. **The console's edge stays uncovered.** There is no browser in CI and this
    trial is not buying one. That is an accepted gap, not an oversight —
    worth restating whenever console work is scheduled for a cloud run.
+
+## 2026-08-08 — `failure-mode` — An evaluation predicted the defect, sat unrun for three days, and would have passed anyway
+
+ADV-CORE-005 ("Quality evaluation: recall relevance + ranking behavior") was
+authored on 2026-08-05. Its Quality Risks section named the hazard before
+anyone had seen it: *"ranking regressions from the value/currency
+multipliers."*
+
+On 2026-08-08 that risk was confirmed on the deployed instance — four
+queries, two of them verbatim copies of a stored record's own body, all
+returning the same seven records in the same order. Recall was ignoring the
+query entirely. In between, six advances shipped past a planned evaluation
+that had already written down what would go wrong.
+
+**The obvious lesson is wrong, and the correction is the actual finding.**
+
+"Run the evaluation earlier" would not have caught this. `eval_quality`
+asserts `precision_at_1 == 1.0` and **passes today**, against the broken
+system, because `crates/totem-store/src/corpus.rs` never sets `value_score`
+or `last_used_at` — the words do not appear in the file. Every golden record
+carries identical pristine economics, so relevance is the only term that
+varies and ranking looks perfect. The defect needs *accumulated usage* to
+appear, which is the state every real estate is permanently in and no fixture
+had ever been in.
+
+Run on 2026-08-05, ADV-CORE-005 would have reported a confident 1.0 and been
+recorded as evidence that recall quality was good. **Early would have been
+worse than late** — a green number is harder to revisit than an open box.
+
+**So the finding is two-layered:**
+
+1. **Evaluations placed at the end can only ratify; placed early they can
+   steer.** By the time an evaluation runs after six advances, its findings
+   are rework. That is a real argument for moving some of them earlier —
+   Shawn's point, and worth a standing practice rather than a one-off.
+2. **An evaluation is only as good as the state its fixtures model.** Moving
+   a vacuous evaluation earlier manufactures false confidence sooner. The
+   sequencing question and the fixture-realism question have to be asked
+   together, and the second one is the one nobody asks.
+
+**Proposed practice (not yet adopted):** a periodic forward review of planned
+advances — not "what is next" but "what have we written down that we are
+walking past, and would it actually detect what it claims to?" Two questions
+per evaluation advance:
+
+- *What state does its fixture model, and is the system ever in that state?*
+- *Can it fail?* An evaluation that has never produced a failing number is
+  unproven as an instrument.
+
+**For the overnight cycle specifically:** evaluation advances are unusually
+good night work — read-only, bounded, no deployment, no judgement calls about
+what to build. But this entry is the caveat. A night agent running a vacuous
+evaluation produces a green number and a confident record, and green numbers
+are exactly what nobody re-examines in the morning. Before an evaluation is
+routed to a cloud run, somebody has to have seen it fail at least once.
+
+**Related:** the fixture gap is now a task in ADV-CORE-008; ADV-CORE-005
+carries the confirmed defect as a pre-registered finding and a warning that
+any number it produces before those fixtures exist is unmeasured rather than
+passing. No new harness or evaluation advance was authored — ADV-GATEWAY-008
+(scorer) and ADV-STORE-005 (corpus) already existed and were done, which is
+itself a small lesson about reaching for a new advance when an evaluation
+comes back green.

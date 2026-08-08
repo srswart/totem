@@ -322,6 +322,14 @@ pub(crate) fn to_row(record: &MemoryRecord) -> Object {
                     .into_value()
             }),
     );
+    row.insert(
+        "embedding_model",
+        record
+            .content
+            .embedding_model
+            .clone()
+            .map_or(Value::None, |model| model.into_value()),
+    );
     row.insert("tags", record.content.tags.clone());
     row.insert("provenance", provenance);
     row.insert("economics", economics);
@@ -355,6 +363,10 @@ pub(crate) fn from_row(row: &Object) -> Result<MemoryRecord, RowError> {
     };
 
     let mut content = Content::new(string(row, "body")?);
+    content.embedding_model = match row.get("embedding_model") {
+        None | Some(Value::None) | Some(Value::Null) => None,
+        Some(_) => Some(string(row, "embedding_model")?),
+    };
     content.embedding = match row.get("embedding") {
         None | Some(Value::None) | Some(Value::Null) => None,
         Some(Value::Array(values)) => Some(

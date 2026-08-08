@@ -98,6 +98,10 @@ fn routes(state: AppState) -> Router {
             post(handlers::resolve_uncertainty),
         )
         .route("/audit/{id}", post(handlers::audit_trail))
+        // Authenticated, like every route in this group: re-embedding rewrites
+        // every vector in the store and must not be reachable anonymously.
+        .route("/admin/embedding", get(handlers::embedding_status))
+        .route("/admin/reembed", post(handlers::reembed))
         .with_state(state)
 }
 

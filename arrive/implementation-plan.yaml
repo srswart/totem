@@ -238,7 +238,7 @@ passes:
               Correction).
 
       - id: "phase-012"
-        title: "Deferred residuals: restore drill, MSRV, build caching"
+        title: "Fix recall ranking, and the deferred residuals: restore drill, MSRV, build caching"
         order: 4
         items:
           - id: "ADV-INFRA-005"
@@ -262,6 +262,25 @@ passes:
               Cloud-eligible. Cargo.toml declares 1.85; the dependency graph
               needs 1.94. A false statement in the manifest, exposed only
               when a container was pinned to the declared value.
+          - id: "ADV-CORE-008"
+            advance_id: "ADV-CORE-008"
+            title: "Recall ranks by what was asked: bound the value loop's grip on relevance"
+            status: planned
+            owner: "058-totem"
+            dependencies: ["ADV-STORE-008"]
+            notes: >-
+              Found taking ADV-STORE-008's golden-query evidence: four
+              queries, two of them exact body matches, returned the same
+              seven records in the same order. relevance spans 3x;
+              value_score is unbounded and is raised by being recalled.
+              Reproduction is committed and #[ignore]d in
+              crates/totem-store/tests/recall_ranking.rs. Shape decided by
+              Shawn 2026-08-08: a relevance GATE (below a distance threshold
+              a record does not compete at all, whatever its history)
+              combined with a SATURATING value_score, so a well-used memory
+              keeps a strong but finite advantage and the value loop
+              survives. Blocks ADV-INFRA-003 (phase-013). Carries the
+              golden-query evidence STORE-008 could not meet.
           - id: "ADV-INFRA-006"
             advance_id: "ADV-INFRA-006"
             title: "Cache dependency builds so deploys are minutes, not quarter-hours"
@@ -395,7 +414,7 @@ passes:
               /health route. Public resource URI `https://totem-dev.fly.dev` is the WorkOS
               Resource Indicator.
       - id: "phase-011"
-        title: "Dogfood trial: clients, quality, cutover"
+        title: "Dogfood trial: clients, quality"
         order: 3
         items:
           - id: "ADV-GATEWAY-014"
@@ -451,14 +470,15 @@ passes:
           - id: "ADV-STORE-008"
             advance_id: "ADV-STORE-008"
             title: "Real embedder in the deployed build (BGE-small-en-v1.5)"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: ["ADV-STORE-002", "ADV-INFRA-002"]
             notes: >-
-              WORKSTATION — the model download is what the sandbox egress
-              blocks. Re-embed existing rows; golden-query smoke on the
-              deployed instance; the stub must announce itself wherever it
-              still runs.
+              Done 2026-08-08. WORKSTATION: the model download is what the
+              sandbox blocks. The real embedder is deployed and all rows are
+              in one vector space, but the golden queries FAILED and the
+              advance closes without them — recall ignores the query, for a
+              pre-existing reason in the scoring function. See ADV-CORE-008.
           - id: "ADV-INFRA-004"
             advance_id: "ADV-INFRA-004"
             title: "Memory discipline: standalone rules and a Totem skill (trial v1)"
@@ -472,20 +492,35 @@ passes:
               arrive/agent-rules + `arrive sync agent-rules` pipeline already
               reaches Claude Code, Cursor and skills from one source; this
               uses it. Must land before the cutover.
+      - id: "phase-013"
+        title: "Dogfood cutover: switch every session onto the hosted instance"
+        order: 5
+        items:
           - id: "ADV-INFRA-003"
             advance_id: "ADV-INFRA-003"
             title: "Dogfood cutover: enroll, credentials, harness wiring, memory discipline, measurement"
             status: planned
             owner: "058-totem"
-            dependencies: ["ADV-GATEWAY-012", "ADV-GATEWAY-013", "ADV-INFRA-002", "ADV-STORE-008", "ADV-GATEWAY-009", "ADV-CLI-002"]
+            dependencies: ["ADV-GATEWAY-012", "ADV-GATEWAY-013", "ADV-INFRA-002", "ADV-STORE-008", "ADV-GATEWAY-009", "ADV-CLI-002", "ADV-CORE-008"]
             notes: >-
               WORKSTATION — the switch-flip: per-identity credentials
               (cloud-opus, cloud-sonnet, shawn), MCP connectors on both
               routines, memory discipline into cloud-agent-notes.md and
               CLAUDE.local.md, measurement collection starts.
+
+              Moved out of phase-011 on 2026-08-08 and given a hard
+              dependency on ADV-CORE-008. Recall currently ignores the query
+              (same four records whatever is asked), and cutting over before
+              that is fixed would teach every session that "recall before
+              reading" is not worth calling — a habit that is hard to undo —
+              and would start the reuse-rate baseline against a broken
+              ranker, making every number before the fix worthless. It is
+              also a phase of its own rather than a residual: the cutover is
+              the milestone the trial exists for, not leftover work.
+
       - id: "phase-009"
         title: "Evaluations (quality, security, performance)"
-        order: 5
+        order: 6
         items:
           - id: "ADV-GATEWAY-006"
             advance_id: "ADV-GATEWAY-006"
@@ -499,8 +534,19 @@ passes:
             title: "Quality evaluation: recall relevance + ranking behavior"
             status: planned
             owner: "058-totem"
-            dependencies: ["ADV-CORE-002", "ADV-GATEWAY-008"]
-            notes: "Value loop on/off comparison against the golden corpus."
+            dependencies: ["ADV-CORE-002", "ADV-GATEWAY-008", "ADV-CORE-008"]
+            notes: >-
+              Never run — the 2026-08-05 started_at is when it was authored.
+              Enriched 2026-08-08 with a confirmed defect it must be able to
+              detect: recall ignores the query (ADV-CORE-008). Note that
+              eval_quality asserts precision_at_1 == 1.0 and PASSES today
+              against that broken system, because corpus.rs never varies
+              value_score — so the scorer measures a state the system is
+              never in. ADV-CORE-008 adds the economics fixtures; this
+              advance then measures before/after and dispositions whether
+              the fix overshot into a plain vector index. A green number
+              from this evaluation before those fixtures exist means
+              nothing.
           - id: "ADV-GATEWAY-007"
             advance_id: "ADV-GATEWAY-007"
             title: "Performance evaluation: time-to-context + recall latency under load"

@@ -16,6 +16,7 @@ use totem_core::{
     ScopeChain, SubjectKind,
 };
 
+use crate::embedding::Embedder;
 use crate::error::{StoreError, StoreResult};
 use crate::row::{self, MEMORY_TABLE, objects, readable_scopes};
 use crate::schema::EMBEDDING_DIMENSIONS;
@@ -157,6 +158,29 @@ impl RecallQuery {
         sql
     }
 }
+/// What a re-embed pass did, for the operator and the advance record.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ReembedSummary {
+    /// Rows with an embedding, considered by the pass.
+    pub examined: usize,
+    /// Rows rewritten into the target model's space.
+    pub reembedded: usize,
+    /// Rows already in that space, left untouched.
+    pub skipped: usize,
+}
+
+#[derive(Debug, surrealdb::types::SurrealValue)]
+struct ReembedRow {
+    id: surrealdb::types::RecordId,
+    body: String,
+    embedding_model: Option<String>,
+}
+
+#[derive(Debug, surrealdb::types::SurrealValue)]
+struct EmbeddingModelCount {
+    embedding_model: Option<String>,
+    rows: usize,
+}
 
 pub(crate) fn check_dimensions(embedding: &[f32]) -> StoreResult<()> {
     if embedding.len() == EMBEDDING_DIMENSIONS {
@@ -239,6 +263,83 @@ impl<'a, C: Connection> MemoryRepository<'a, C> {
             .await?
             .check()?;
         Ok(())
+    }
+
+    /// How many rows each embedding model wrote, most rows first.
+    ///
+    /// The operator's answer to "is this index in one space?". A single entry
+    /// means yes; more than one means recall is ranking across geometries and
+    /// its ordering is not meaningful. An entry keyed on the empty string is
+    /// the pre-ADV-STORE-008 rows that carry no label at all.
+    pub async fn embedding_models(&self) -> StoreResult<Vec<(String, usize)>> {
+        let mut response = self
+            .db
+            .query(format!(
+                "SELECT embedding_model, count() AS rows FROM {MEMORY_TABLE} \
+                 WHERE embedding != NONE GROUP BY embedding_model"
+            ))
+            .await?
+            .check()?;
+        let rows: Vec<EmbeddingModelCount> = response.take(0)?;
+        let mut counts: Vec<(String, usize)> = rows
+            .into_iter()
+            .map(|row| (row.embedding_model.unwrap_or_default(), row.rows))
+            .collect();
+        counts.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        Ok(counts)
+    }
+
+    /// Re-embed every row not already in `embedder`'s space.
+    ///
+    /// **Why this is not a start-up migration.** DEP-001 makes the gateway the
+    /// store's sole owner, so this must run inside that process — but running
+    /// it at boot would hold the health check open for the whole pass on a
+    /// deployment whose machine count is one, and would re-run on every
+    /// restart with no operator deciding it should. It is an explicit call
+    /// instead, so it can follow the backup step the advance's risk section
+    /// requires.
+    ///
+    /// **Why it is all-or-nothing on error.** A pass that skipped rows it
+    /// could not embed would return success over an index that is still
+    /// mixed, which is the precise condition this exists to eliminate. A
+    /// failure leaves already-rewritten rows in place — those are correct, and
+    /// re-running resumes from where it stopped, which is what the label
+    /// buys.
+    pub async fn reembed_all(&self, embedder: &dyn Embedder) -> StoreResult<ReembedSummary> {
+        let target = embedder.model_name();
+        let mut response = self
+            .db
+            .query(format!(
+                "SELECT id, body, embedding_model FROM {MEMORY_TABLE} WHERE embedding != NONE"
+            ))
+            .await?
+            .check()?;
+        let rows: Vec<ReembedRow> = response.take(0)?;
+
+        let mut summary = ReembedSummary {
+            examined: rows.len(),
+            ..ReembedSummary::default()
+        };
+        for row in rows {
+            if row.embedding_model.as_deref() == Some(target) {
+                summary.skipped += 1;
+                continue;
+            }
+            let vector = embedder.embed(&row.body)?;
+            check_dimensions(&vector)?;
+            self.db
+                .query("UPDATE $id SET embedding = $embedding, embedding_model = $model")
+                .bind(("id", row.id.clone()))
+                .bind((
+                    "embedding",
+                    vector.into_iter().map(f64::from).collect::<Vec<f64>>(),
+                ))
+                .bind(("model", target.to_string()))
+                .await?
+                .check()?;
+            summary.reembedded += 1;
+        }
+        Ok(summary)
     }
 
     /// Read one record, if the reader's chain permits it.

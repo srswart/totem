@@ -52,6 +52,12 @@ pub fn embed(embedder: &dyn Embedder, mut content: Content) -> StoreResult<Conte
         });
     }
     content.embedding = Some(vector);
+    // Stamped here rather than by each caller: a vector whose model is
+    // unrecorded is indistinguishable from one written by a different model,
+    // and the re-embed pass (ADV-STORE-008) has nothing to target. Doing it in
+    // the one place that produces embeddings makes the label impossible to
+    // forget.
+    content.embedding_model = Some(embedder.model_name().to_string());
     Ok(content)
 }
 
