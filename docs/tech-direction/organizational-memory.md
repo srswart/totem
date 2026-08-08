@@ -71,7 +71,10 @@ people leave. Two binding conditions:
 
 - **Lifecycle, not archive.** Every ingested doc carries status
   (draft / active / superseded) and participates in currency/decay. A stale
-  intent presented as current truth is worse than no memory. When a doc
+  intent presented as current truth is worse than no memory. **Refined by
+  CTX-004** ([context-delivery.md](context-delivery.md)): where a document has
+  a live external source of truth, source-change invalidation replaces decay —
+  decay is a proxy for staleness and source-change is a direct signal. When a doc
   contradicts what was actually built, that is an **Uncertainty** record, not
   a silent preference for either side.
 - **Linked to advances.** Docs are connected to the advances that implement
