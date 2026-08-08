@@ -11,7 +11,7 @@ advance:
   review_time_actual_minutes: ~
   pr_links: []
   external_refs: []
-  reviewability_score: 0
+  reviewability_score: 50
   risk_flags: []
   evidence: ["tests:unit", "deployment:executed"]
   model_usage: []
