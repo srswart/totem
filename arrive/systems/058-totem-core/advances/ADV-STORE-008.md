@@ -11,8 +11,8 @@ advance:
   review_time_actual_minutes: ~
   pr_links: []
   external_refs: []
-  reviewability_score: 0
-  risk_flags: ["migration", "deployment"]
+  reviewability_score: 88
+  risk_flags: ["migration", "deployment", "large_diff"]
   evidence: ["tdd:red-green", "tests:unit", "deployment:executed"]
   model_usage: []
   schema_version: 2
@@ -106,6 +106,26 @@ explicit call it can follow the backup this advance's risk section requires.
   size, not a reason to ship the stub silently.
 - Rollback: rebuild without the feature; vectors remain valid for the
   deterministic embedder only if re-embedded back — hence the backup.
+
+## Reviewability: 88 (Red)
+
+`arrive score --base 9b219ee` reports **88 [RED]**. Where it came from, since
+the shape matters more than the number:
+
+The core change is small — a nullable column, a migration, two repository
+methods, two endpoints. What inflates it is the deployment: five Dockerfile
+revisions, each a separate failure diagnosed and recorded (linker, OOM,
+builder crash, cache-dir name, manifest key), plus the record and runbook
+prose those failures earned.
+
+It could not usefully have been split. Every one of those revisions was
+discovered *by deploying*, and there is no smaller unit than "an image that
+builds and runs" — a split would have produced one advance that could not be
+verified and another that was only a Dockerfile.
+
+Read it as: `crates/totem-*` first (the label, the pass, the endpoints — this
+is the reviewable core), then `Dockerfile` as a changelog of four
+deployment failures, then `recall_ranking.rs`, which is the finding.
 
 ## Evidence
 
