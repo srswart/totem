@@ -418,7 +418,16 @@ mod seeding {
                 .in_categories(query.categories.iter().copied())
                 .limit(query.limit);
             if let Some(probe) = &query.probe {
-                recall = recall.near(embedder.embed(probe)?)?.top_k(10);
+                // Over-fetch from the index, then let ranking and the limit
+                // decide. `top_k` caps what the HNSW returns *before* the
+                // relevance gate drops anything and before `merge_chain`
+                // collapses a fact held at two scopes — so a `top_k` equal to
+                // the limit can starve the result set and make an
+                // `expect_present` fail for want of candidates rather than
+                // for want of ranking. This was hard-coded at 10, which was
+                // silently a ceiling on `limit` once queries could choose one.
+                let candidates = query.limit.saturating_mul(3).max(10);
+                recall = recall.near(embedder.embed(probe)?)?.top_k(candidates);
             }
             store
                 .memories()

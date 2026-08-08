@@ -156,7 +156,7 @@ pub fn currency_weight(effective_currency: f32) -> f32 {
 /// under the deterministic embedder and 0.824 on the deployment. The gate was
 /// originally expected to do the work of excluding irrelevant records, and
 /// ADV-GATEWAY-016 measured that it never fired at all. That job now belongs
-/// to [`relevance_sharpness`], which suppresses a distant record smoothly
+/// to [`RELEVANCE_SHARPNESS`], which suppresses a distant record smoothly
 /// rather than waiting for a threshold nothing crosses. The gate remains for
 /// the genuinely anti-correlated case, where "does not compete" should mean
 /// absent rather than merely unlikely.
@@ -210,9 +210,17 @@ pub const MATERIAL_DISTANCE_GAP: f64 = 0.10;
 /// property that makes "a fixed distance gap is worth a fixed multiple"
 /// expressible at all — and it holds whatever absolute band an embedder
 /// happens to use, which is what stops this from being tuned to one model.
-pub fn relevance_sharpness() -> f64 {
-    f64::from(NON_RELEVANCE_BUDGET).ln() / MATERIAL_DISTANCE_GAP
-}
+/// A literal rather than the expression, because `f64::ln` is not `const` and
+/// this sits on the scoring hot path — it would otherwise run a logarithm and
+/// a division for every candidate of every recall. `the_sharpness_constant_is_
+/// its_own_derivation` asserts the literal against the formula, so the value
+/// cannot drift from the two constants it is supposed to follow: change either
+/// of them without restating this and the test fails.
+///
+/// Preferred over caching the computation (`OnceLock`) because it costs
+/// nothing at all rather than an atomic load, and because the test makes the
+/// derivation *checked* rather than merely *described*.
+pub const RELEVANCE_SHARPNESS: f64 = 6.931_471_805_599_453;
 
 /// The multiple a materially better match is worth — equal to
 /// [`NON_RELEVANCE_BUDGET`] by construction, which is the claim this
@@ -323,7 +331,7 @@ pub fn relevance_from_distance(distance: Option<f64>) -> f32 {
         // exact match scores exactly 1.0, and every additional
         // MATERIAL_DISTANCE_GAP of distance divides the score by
         // NON_RELEVANCE_BUDGET.
-        Some(distance) => (-relevance_sharpness() * distance.max(0.0)).exp() as f32,
+        Some(distance) => (-RELEVANCE_SHARPNESS * distance.max(0.0)).exp() as f32,
         None => 1.0,
     }
 }
@@ -464,6 +472,22 @@ mod tests {
         assert!(
             instructions > knowledge,
             "category priority must survive: {instructions} vs {knowledge}"
+        );
+    }
+
+    #[test]
+    fn the_sharpness_constant_is_its_own_derivation() {
+        // RELEVANCE_SHARPNESS is written as a literal so the hot path pays
+        // nothing for it. This is what stops that being a licence to drift:
+        // it must remain exactly ln(budget)/gap, so changing either constant
+        // without restating it fails here rather than silently rescaling
+        // every recall in the system.
+        let derived = f64::from(NON_RELEVANCE_BUDGET).ln() / MATERIAL_DISTANCE_GAP;
+        assert!(
+            (RELEVANCE_SHARPNESS - derived).abs() < 1e-12,
+            "RELEVANCE_SHARPNESS is {RELEVANCE_SHARPNESS}, but ln({NON_RELEVANCE_BUDGET})/\
+             {MATERIAL_DISTANCE_GAP} is {derived} — the literal has drifted from the \
+             derivation it stands for"
         );
     }
 
