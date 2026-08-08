@@ -126,19 +126,31 @@ intended shape and the thing ADV-CORE-008's converse tests exist to protect.
   (`a_well_used_memory_still_beats_an_unused_one_at_comparable_relevance`,
   `a_fresher_memory_...`) and end-to-end by the repaired corpus query. Both
   pass.
-- **Unverified:** this is measured against the deterministic embedder and
-  against distances *recorded* from the deployment, not against a fresh
-  deployed run. `MATERIAL_DISTANCE_GAP` is calibrated to BGE-small-en-v1.5's
-  observed band; a different embedder would want it re-derived, and nothing
-  currently checks that. See ADV-CORE-005.
+- **Now verified on the deployment** (see Evidence). What remains unverified:
+  `MATERIAL_DISTANCE_GAP` is calibrated to BGE-small-en-v1.5's observed band,
+  a different embedder would want it re-derived, and **nothing currently
+  checks that**. A model swap would silently rescale every ordering. Worth an
+  assertion against the live distance distribution — ADV-CORE-005's territory,
+  and a good candidate for the calibration estate (ADV-INFRA-007).
 
 ## Evidence
 
 - [x] tests:unit — the constant-ratio invariant holds at every distance, not
       just at the endpoints. Stronger than the property it replaces.
 - [x] tests:integration — `calibration-v1` 7/9 -> 9/9.
-- [ ] deployment:executed — deferred to the next deploy, which also carries
-      ADV-INFRA-008's unverified build-cache claim.
+- [x] deployment:executed — version 13, 2026-08-08, non-mutating
+      (`/recall/explain`). **The flagship failure is closed.** ADV-GATEWAY-016
+      recorded "which process is allowed to open the SurrealDB engine?" as
+      *completely unchanged*; DEP-001 now ranks first at d=0.374, and the
+      `instructions` record that won all six queries has fallen to fifth
+      (d=0.420). Ordering tracks distance across all three queries re-run.
+
+      One instructive exception, and it is the design working rather than a
+      residue: a `context` record at d=0.389 outranks a `knowledge` one at
+      d=0.383. The gap is 0.006 — a sixteenth of a material gap — so relevance
+      offers 1.042x and category offers 1.067x. Near-ties are exactly where
+      history is *supposed* to decide, which is what distinguishes this from
+      having turned Totem into a plain vector index.
 
 ## Check for Understanding
 
