@@ -36,9 +36,9 @@ use crate::dto::{
     FeedbackResponse, LandscapeEventsQuery, LandscapeView, PromotionDecisionRequest,
     PromotionDecisionResponse, PromotionQueueRequest, PromotionQueueResponse,
     ProposePromotionRequest, ProposePromotionResponse, ProposedRecordRequest,
-    ProposedRecordResponse, RecallRequest, RecallResponse, ResolveUncertaintyRequest,
-    ResolveUncertaintyResponse, SaveRequest, SaveResponse, UncertaintyQueueRequest,
-    UncertaintyQueueResponse,
+    ProposedRecordResponse, RankExplanationEntry, RankExplanationResponse, RecallRequest,
+    RecallResponse, ResolveUncertaintyRequest, ResolveUncertaintyResponse, SaveRequest,
+    SaveResponse, UncertaintyQueueRequest, UncertaintyQueueResponse,
 };
 use crate::error::GatewayError;
 use crate::ops::{
@@ -278,6 +278,44 @@ pub(crate) async fn recall(
     let records = ops::recall(&state, input, &caller, "/recall").await?;
 
     Ok(Json(RecallResponse { records }))
+}
+
+pub(crate) async fn explain_ranking(
+    State(state): State<AppState>,
+    Extension(caller): Extension<Caller>,
+    Json(request): Json<RecallRequest>,
+) -> Result<Json<RankExplanationResponse>, GatewayError> {
+    let input = RecallInput {
+        actor: request.actor,
+        project: request.project,
+        teams: request.teams,
+        query: request.query,
+        categories: request.categories,
+        since: request.since,
+        limit: request.limit,
+        harness: request.harness,
+        session: request.session,
+        turn: request.turn,
+    };
+
+    let explained = ops::explain_ranking(&state, input, &caller, "/recall/explain").await?;
+
+    let candidates = explained
+        .into_iter()
+        .map(|entry| RankExplanationEntry {
+            distance: entry.score.distance,
+            relevance: entry.score.relevance,
+            value: entry.score.value,
+            currency: entry.score.currency,
+            category_weight: entry.score.category_weight,
+            combined: entry.score.combined,
+            gated_out: entry.score.gated_out(),
+            included: entry.included,
+            record: entry.record,
+        })
+        .collect();
+
+    Ok(Json(RankExplanationResponse { candidates }))
 }
 
 pub(crate) async fn feedback(

@@ -13,7 +13,7 @@ use surrealdb::types::{SurrealValue, Value};
 use surrealdb::{Connection, Surreal};
 use totem_core::{
     Content, FeedbackSignal, LifecycleError, MemoryCategory, MemoryId, MemoryRecord, ReviewState,
-    ScopeChain, SubjectKind,
+    ScopeChain, ScoreBreakdown, SubjectKind,
 };
 
 use crate::embedding::Embedder;
@@ -29,6 +29,39 @@ const DEFAULT_LIMIT: usize = 20;
 /// it as a tuning parameter with an unmeasured minimum until ADV-STORE-005
 /// measures recall against a realistic corpus.
 const DEFAULT_SEARCH_EFFORT: usize = 40;
+
+/// Whether a read counts as a use of what it returns (ADV-GATEWAY-017).
+///
+/// An enum rather than a `bool` because the call sites read as claims about
+/// the caller — `Reinforcement::Skip` says *this reader's attention is not
+/// evidence* — where `false` would say nothing at all.
+///
+/// Crate-private: callers pick a *method* (`recall` or `recall_observing`),
+/// not a flag, so this never appears in a public signature and exporting it
+/// would widen the API for nobody.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Reinforcement {
+    /// Meter the read: this caller using a memory is evidence it earned its
+    /// keep.
+    Count,
+    /// Do not meter it. A human browsing, an evaluation, a calibration run.
+    Skip,
+}
+
+/// One record, why it ranked where it did, and whether
+/// [`MemoryRepository::recall`] would have returned it (ADV-GATEWAY-016).
+#[derive(Debug, Clone, PartialEq)]
+pub struct RankExplanation {
+    /// The record itself.
+    pub record: MemoryRecord,
+    /// Every factor behind its position, as ranking computed them.
+    pub score: ScoreBreakdown,
+    /// Whether `recall` would have returned this record: it survived the
+    /// relevance gate and fell inside the query's limit. `false` with a
+    /// [`ScoreBreakdown::gated_out`] score is the case worth reading — the
+    /// record was excluded for being about something else.
+    pub included: bool,
+}
 
 /// What to recall, and how to rank it.
 ///
@@ -543,6 +576,39 @@ impl<'a, C: Connection> MemoryRepository<'a, C> {
         reader: &ScopeChain,
         query: &RecallQuery,
     ) -> StoreResult<Vec<MemoryRecord>> {
+        self.recall_inner(reader, query, Reinforcement::Count).await
+    }
+
+    /// The same read, metering nothing (ADV-GATEWAY-017).
+    ///
+    /// For a caller whose reading is not evidence that a memory earned its
+    /// keep: a human browsing an inventory, an evaluation measuring the
+    /// ranker, a calibration run. Reinforcement is meant to record *agent
+    /// use*, and counting anything else feeds the value loop
+    /// (ADV-CORE-002) noise it cannot tell from signal.
+    ///
+    /// **Chosen by which method you call**, and nothing enforces that choice.
+    /// `docs/tech-direction/retrieval-and-inspection.md` argues reinforcement
+    /// should bind to the *caller's credential* so it cannot be forgotten;
+    /// that is not built (ADV-GATEWAY-017 records why). Today the guarantee
+    /// comes from the route: the console and the evaluation harness read
+    /// through `/recall/explain`, which has no reinforcing path at all. A new
+    /// caller reaching for `recall` when it meant this is a mistake the type
+    /// system will not catch.
+    pub async fn recall_observing(
+        &self,
+        reader: &ScopeChain,
+        query: &RecallQuery,
+    ) -> StoreResult<Vec<MemoryRecord>> {
+        self.recall_inner(reader, query, Reinforcement::Skip).await
+    }
+
+    async fn recall_inner(
+        &self,
+        reader: &ScopeChain,
+        query: &RecallQuery,
+        reinforcement: Reinforcement,
+    ) -> StoreResult<Vec<MemoryRecord>> {
         let rows = objects(self.run_recall(reader, query, false).await?)?;
         let mut scored = Vec::with_capacity(rows.len());
         for row in &rows {
@@ -563,6 +629,15 @@ impl<'a, C: Connection> MemoryRepository<'a, C> {
                 (record, score)
             })
             .collect();
+        // A vector query drops records the relevance gate rejected, rather
+        // than returning them ranked last (ADV-CORE-008). "Does not compete"
+        // has to mean absent: a caller reading the top of a list has no way
+        // to know the tail is padding, and an agent handed an unrelated
+        // memory will use it. Without a probe nothing is gated, so a
+        // no-query recall still returns the chain's records as before.
+        if query.probe.is_some() {
+            ranked.retain(|(_, score)| *score > 0.0);
+        }
         // Stable: records tied on score keep the order the statement (and
         // merge_chain's precedence rule) already gave them.
         ranked.sort_by(|a, b| b.1.total_cmp(&a.1));
@@ -570,8 +645,75 @@ impl<'a, C: Connection> MemoryRepository<'a, C> {
 
         let records: Vec<MemoryRecord> =
             ranked.into_iter().map(|(record, _score)| record).collect();
-        self.reinforce_usage(reader, &records, now).await?;
+        if reinforcement == Reinforcement::Count {
+            self.reinforce_usage(reader, &records, now).await?;
+        }
         Ok(records)
+    }
+
+    /// Why [`recall`](Self::recall) would order these records this way, with
+    /// every factor itemised — **and without reinforcing anything**
+    /// (ADV-GATEWAY-016).
+    ///
+    /// Two properties make this worth having rather than a debugging
+    /// convenience:
+    ///
+    /// - **Records the gate excluded are included here, flagged.** They are
+    ///   by definition absent from `recall`'s results, so the most useful
+    ///   question — *"why is the record I expected missing?"* — is
+    ///   unanswerable without them.
+    /// - **Asking does not change the answer.** `recall` reinforces what it
+    ///   returns, so explaining through it would move the very economics
+    ///   being explained. That contaminated ADV-CORE-008's own measurement;
+    ///   see `docs/tech-direction/retrieval-and-inspection.md`.
+    ///
+    /// `included` reproduces `recall`'s decision exactly — survived the gate,
+    /// and inside `limit` — so an explanation can be checked against the
+    /// thing it explains.
+    ///
+    /// Not to be confused with [`explain_recall`](Self::explain_recall),
+    /// which returns the database's *query plan*. This explains the ranking;
+    /// that explains the scan.
+    pub async fn explain_ranking(
+        &self,
+        reader: &ScopeChain,
+        query: &RecallQuery,
+    ) -> StoreResult<Vec<RankExplanation>> {
+        let rows = objects(self.run_recall(reader, query, false).await?)?;
+        let mut scored = Vec::with_capacity(rows.len());
+        for row in &rows {
+            let distance = row.get("knn_distance").and_then(row::number);
+            scored.push((row::from_row(row)?, distance));
+        }
+        let merged = merge_chain(reader, scored);
+
+        let now = Utc::now();
+        let mut explained: Vec<RankExplanation> = merged
+            .into_iter()
+            .map(|(record, distance)| {
+                let score = rank_breakdown(&record, distance, now);
+                RankExplanation {
+                    record,
+                    score,
+                    included: false,
+                }
+            })
+            .collect();
+        explained.sort_by(|a, b| b.score.combined.total_cmp(&a.score.combined));
+
+        // Mark exactly what `recall` would have returned, by the same two
+        // rules in the same order: the gate first, then the limit.
+        let gating = query.probe.is_some();
+        let mut kept = 0;
+        for entry in explained.iter_mut() {
+            let survives = !gating || entry.score.combined > 0.0;
+            if survives && kept < query.limit {
+                entry.included = true;
+                kept += 1;
+            }
+        }
+
+        Ok(explained)
     }
 
     /// The `EXPLAIN FULL` plan for the statement [`recall`](Self::recall) would
@@ -681,23 +823,57 @@ impl<'a, C: Connection> MemoryRepository<'a, C> {
 /// weights (§5) govern `category_weight` in ranking, not this boost.
 const CITATION_BOOST: f64 = 0.2;
 
-/// Combined ranking score for one candidate: relevance × value × currency,
+/// Every factor behind one candidate's rank: relevance × value × currency,
 /// weighted by category (docs/solution-intent.md §4). `currency` is computed
 /// live from the record's own stored value and how long it has sat since it
 /// was last used (or, if never used, since it was written) — nothing here
 /// persists a decayed value; only [`MemoryRepository::reinforce_usage`]
 /// writes to `currency`, and only ever resets it to full trust.
-fn rank_score(record: &MemoryRecord, distance: Option<f64>, now: DateTime<Utc>) -> f32 {
+///
+/// Returns the factors rather than just their product (ADV-GATEWAY-016), so
+/// the explanation of an ordering is a by-product of making it.
+fn rank_breakdown(
+    record: &MemoryRecord,
+    distance: Option<f64>,
+    now: DateTime<Utc>,
+) -> ScoreBreakdown {
     let reference = record
         .economics
         .last_used_at
         .unwrap_or(record.provenance.created_at);
     let elapsed = now - reference;
-    let currency =
-        totem_core::effective_currency(record.category, record.economics.currency, elapsed);
+    // Compressed onto relevance's own range (ADV-CORE-008): raw currency is
+    // `[0, 1]`, but its *ratio* between a memory read yesterday and one nobody
+    // has opened for three months is ~95x, which is enough for age alone to
+    // overturn an exact match.
+    let currency = totem_core::currency_weight(totem_core::effective_currency(
+        record.category,
+        record.economics.currency,
+        elapsed,
+    ));
     let relevance = totem_core::relevance_from_distance(distance);
-    let weight = totem_core::category_weight(record.category);
-    totem_core::combined_score(relevance, record.economics.value_score, currency, weight)
+    let category_weight = totem_core::category_weight(record.category);
+    // Saturated, not raw (ADV-CORE-008): `CITATION_BOOST` is unbounded, so a
+    // raw `value_score` would eventually dominate every other term.
+    let value = totem_core::saturating_value(record.economics.value_score);
+    ScoreBreakdown {
+        distance,
+        relevance,
+        value,
+        currency,
+        category_weight,
+        combined: totem_core::combined_score(relevance, value, currency, category_weight),
+    }
+}
+
+/// The combined ranking score alone — [`rank_breakdown`]'s product.
+///
+/// Deliberately a thin accessor rather than its own arithmetic: the ordering
+/// and the explanation of that ordering (ADV-GATEWAY-016) must come from one
+/// computation, or they will agree until the moment somebody needs them to
+/// (see `ScoreBreakdown`'s own doc comment).
+fn rank_score(record: &MemoryRecord, distance: Option<f64>, now: DateTime<Utc>) -> f32 {
+    rank_breakdown(record, distance, now).combined
 }
 
 /// The key two records must share to be the same fact held at two scopes.

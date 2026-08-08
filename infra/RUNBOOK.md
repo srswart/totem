@@ -27,14 +27,55 @@ fly machines list -a totem-dev          # exactly one, state=started, checks 1/1
 fly deploy -a totem-dev --ha=false
 ```
 
-Builds take ~10–15 minutes: nothing caches between deploys yet (`COPY . .`
-invalidates on any source change, so SurrealDB and RocksDB recompile every
-time). A cargo-chef layered Dockerfile would fix this — recorded as a known
-cost, not a mystery.
+**Build times, and what to expect (ADV-INFRA-006).** Dependency compilation
+is a cached layer, so what a deploy costs depends on *what changed*:
+
+| what changed | expect |
+|---|---|
+| existing source only | ~3–5 min — the dependency layer is reused |
+| a **new** test/bench/example/bin *file* | ~35 min — full rebuild |
+| any `Cargo.toml` or `Cargo.lock` | ~35 min — full rebuild |
+
+The middle row is the surprising one and it is not a bug. Cargo
+auto-discovers `tests/*.rs` as targets, and `cargo-chef` bakes the resolved
+manifest — auto-discovered targets included — into `recipe.json`. So adding
+one test file changes the recipe and rebuilds every dependency, with no
+dependency having changed. Measured on deploy 2 (ADV-GATEWAY-016): 1986s of
+`cook` for a single new test file.
+
+Expect it rather than debug it. A deploy that adds a test file is a long
+deploy.
+
+**If a source-only deploy still takes ten minutes, the cache has silently
+stopped working.** The usual cause is the Dockerfile's `cargo chef cook` and
+`cargo build` lines drifting apart — different features, package, or profile.
+Docker still reuses the cooked layer, then cargo rebuilds every dependency
+anyway because the fingerprints differ, so it costs full price while
+reporting `CACHED`. The two lines are deliberately adjacent in the
+Dockerfile; keep them that way.
+
+A deploy after a dependency change is *supposed* to be slow. That is the
+cache busting correctly, not a regression.
 
 `.dockerignore` is load-bearing: without it the build context includes
 `target/` (~49 GB) and the 128 MB model cache, and the deploy appears to
 hang for hours while uploading.
+
+## Currency figures will fall after ADV-GATEWAY-017
+
+The console used to browse by calling `/recall`, which reinforces everything
+it returns — so every record you looked at had its `currency` reset to 1.0 and
+its `use_count` incremented. It now browses through `/recall/explain`, which
+does not write.
+
+**Expect currency on the dogfood estate to decay from here.** That is the
+correct behaviour finally showing, not a regression: those figures were being
+propped up by us looking at them.
+
+The inflation already recorded cannot be undone — nothing distinguishes a
+reinforcement that came from browsing from one that came from an agent using
+a memory. It is an argument for calibrating against a purpose-built corpus
+(ADV-STORE-009) rather than trying to rehabilitate this estate.
 
 ## Secrets and configuration
 

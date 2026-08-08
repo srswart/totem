@@ -1,0 +1,55 @@
+# Golden queries — after
+# host:    https://totem-dev.fly.dev
+# taken:   2026-08-08T06:52:19Z
+# commit:  1608783
+# embedder:
+#   {"running":"fastembed-bge-small-en-v1.5","uniform":true,"rows_by_model":[{"model":"fastembed-bge-small-en-v1.5","rows":7}]}
+
+## The gateway owns the embedded store exclusively; a second process cannot open it.
+  [knowledge] DEP-001: the gateway owns an embedded RocksDB store at ~/.totem/data; every other surface is a gateway client.
+  [instructions] Always run arrive plan check before pushing plan edits.
+  [context] Overnight experiment day 2: phase-007 in flight, Opus building GATEWAY-003 auth while this durable demo runs.
+  [knowledge] MCP write path verified after the typed-schema fix (ADV-GATEWAY-013).
+  [knowledge] The Totem MCP connector authenticated through WorkOS AuthKit and wrote this from claude.ai.
+  [knowledge] ack-probe: measuring whether the MCP response stream terminates.
+
+## Cursor's remote-MCP reach is untested.
+  [instructions] Always run arrive plan check before pushing plan edits.
+  [knowledge] MCP write path verified after the typed-schema fix (ADV-GATEWAY-013).
+  [knowledge] ack-probe: measuring whether the MCP response stream terminates.
+  [context] Overnight experiment day 2: phase-007 in flight, Opus building GATEWAY-003 auth while this durable demo runs.
+  [knowledge] The Totem MCP connector authenticated through WorkOS AuthKit and wrote this from claude.ai.
+  [knowledge] DEP-001: the gateway owns an embedded RocksDB store at ~/.totem/data; every other surface is a gateway client.
+
+## Which process is allowed to open the SurrealDB engine?
+  [instructions] Always run arrive plan check before pushing plan edits.
+  [context] Overnight experiment day 2: phase-007 in flight, Opus building GATEWAY-003 auth while this durable demo runs.
+  [knowledge] DEP-001: the gateway owns an embedded RocksDB store at ~/.totem/data; every other surface is a gateway client.
+  [knowledge] MCP write path verified after the typed-schema fix (ADV-GATEWAY-013).
+  [knowledge] The Totem MCP connector authenticated through WorkOS AuthKit and wrote this from claude.ai.
+  [knowledge] ack-probe: measuring whether the MCP response stream terminates.
+
+## What do we still not know about running Totem from Cursor?
+  [instructions] Always run arrive plan check before pushing plan edits.
+  [context] Overnight experiment day 2: phase-007 in flight, Opus building GATEWAY-003 auth while this durable demo runs.
+  [knowledge] The Totem MCP connector authenticated through WorkOS AuthKit and wrote this from claude.ai.
+  [knowledge] DEP-001: the gateway owns an embedded RocksDB store at ~/.totem/data; every other surface is a gateway client.
+  [knowledge] MCP write path verified after the typed-schema fix (ADV-GATEWAY-013).
+  [knowledge] ack-probe: measuring whether the MCP response stream terminates.
+
+## How should an agent decide what is worth saving to memory?
+  [instructions] Always run arrive plan check before pushing plan edits.
+  [knowledge] ack-probe: measuring whether the MCP response stream terminates.
+  [context] Overnight experiment day 2: phase-007 in flight, Opus building GATEWAY-003 auth while this durable demo runs.
+  [knowledge] MCP write path verified after the typed-schema fix (ADV-GATEWAY-013).
+  [knowledge] DEP-001: the gateway owns an embedded RocksDB store at ~/.totem/data; every other surface is a gateway client.
+  [knowledge] The Totem MCP connector authenticated through WorkOS AuthKit and wrote this from claude.ai.
+
+## What went wrong with the Docker build for the real embedder?
+  [instructions] Always run arrive plan check before pushing plan edits.
+  [context] Overnight experiment day 2: phase-007 in flight, Opus building GATEWAY-003 auth while this durable demo runs.
+  [knowledge] MCP write path verified after the typed-schema fix (ADV-GATEWAY-013).
+  [knowledge] DEP-001: the gateway owns an embedded RocksDB store at ~/.totem/data; every other surface is a gateway client.
+  [knowledge] ack-probe: measuring whether the MCP response stream terminates.
+  [knowledge] The Totem MCP connector authenticated through WorkOS AuthKit and wrote this from claude.ai.
+

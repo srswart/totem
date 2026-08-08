@@ -160,3 +160,62 @@ async fn re_embedding_makes_a_mixed_index_uniform() {
     .await;
     assert_eq!(after["uniform"], true, "{after}");
 }
+
+/// The access log distinguishes a reinforcing read from an observing one
+/// (ADV-GATEWAY-017).
+///
+/// No separate boolean: `endpoint` already carries it, because `/recall` and
+/// `/recall/explain` *are* the metered and unmetered reads. This test is what
+/// makes that claim evidence rather than an assertion — without it the advance
+/// was citing an integration test that did not exist.
+#[tokio::test]
+async fn the_access_log_says_which_reads_could_have_reinforced() {
+    let state = AppState::in_memory().await.expect("state");
+    let store = state.store.clone();
+    let app = totem_gateway::router(state);
+
+    let body = |endpoint: &str| {
+        serde_json::json!({
+            "actor": "ada",
+            "query": "anything",
+            "harness": "claude_code",
+            "session": format!("session-for-{endpoint}"),
+        })
+        .to_string()
+    };
+
+    for endpoint in ["/recall", "/recall/explain"] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(endpoint)
+                    .header("content-type", "application/json")
+                    .body(Body::from(body(endpoint)))
+                    .expect("request builds"),
+            )
+            .await
+            .expect("the router answers");
+        assert_eq!(response.status(), StatusCode::OK, "{endpoint} answers");
+    }
+
+    let endpoints: Vec<String> = store
+        .access_log()
+        .list()
+        .await
+        .expect("list succeeds")
+        .into_iter()
+        .map(|entry| entry.endpoint)
+        .collect();
+
+    assert!(
+        endpoints.iter().any(|e| e == "/recall"),
+        "the reinforcing read must be identifiable in the log: {endpoints:?}"
+    );
+    assert!(
+        endpoints.iter().any(|e| e == "/recall/explain"),
+        "so must the observing one — an operator reconstructing why an \
+         economics figure moved has only this to go on: {endpoints:?}"
+    );
+}
