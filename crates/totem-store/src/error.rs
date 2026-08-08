@@ -26,6 +26,11 @@ pub enum StoreError {
     /// A category rule refused the operation.
     #[error(transparent)]
     Lifecycle(#[from] LifecycleError),
+    /// A calibration corpus artifact could not be read, parsed, or verified
+    /// (ADV-STORE-009). Carries its own message because every case names a
+    /// different authoring or integrity problem, and the reader needs which.
+    #[error("calibration corpus: {0}")]
+    Corpus(String),
     /// The record does not exist, or is not visible to this caller.
     #[error("memory {0} is not present in the caller's scope chain")]
     NotFound(MemoryId),

@@ -43,6 +43,14 @@ futures.workspace = true
 # `totem-cli` sends a `LandscapeSnapshot` as JSON to the gateway's `POST
 # /enroll` rather than opening its own store connection.
 serde.workspace = true
+# The calibration corpus is a JSON artifact rather than compiled-in code
+# (ADV-STORE-009), and its manifest carries a SHA-256 over the contents so a
+# result quoting a corpus version names a specific artifact. Both crates are
+# already in the tree via surrealdb, so this adds no compilation — though the
+# manifest change itself busts the Docker dependency-cache layer once
+# (ADV-INFRA-008).
+serde_json.workspace = true
+sha2 = "0.10"
 # Pinned exactly, matching totem-embedding-spike's ADV-STORE-007 pin: EMB-004
 # measured this exact version, and an upstream release changing inference
 # behavior mid-project must not silently re-open that finding.

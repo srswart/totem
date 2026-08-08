@@ -46,6 +46,7 @@
 #![warn(missing_docs)]
 
 mod access_log;
+pub mod calibration;
 pub mod corpus;
 mod credential;
 mod curation;
