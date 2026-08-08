@@ -572,7 +572,7 @@ passes:
           - id: "ADV-CORE-007"
             advance_id: "ADV-CORE-007"
             title: "Correct the workspace MSRV"
-            status: planned
+            status: done
             owner: "058-totem"
             dependencies: []
             notes: >-

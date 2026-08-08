@@ -19,7 +19,11 @@ members = [
 
 [workspace.package]
 edition = "2024"
-rust-version = "1.85"
+# The highest `rust_version` across the resolved dependency graph
+# (`cargo metadata --format-version 1`, ADV-CORE-007): fastnum 0.7.5 requires
+# 1.94, the highest of any dependency. Verified by building the workspace
+# with exactly rustc 1.94.0.
+rust-version = "1.94"
 license = "UNLICENSED"
 publish = false
 

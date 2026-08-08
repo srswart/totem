@@ -3,12 +3,10 @@
 # Built with the `rocksdb` feature: this image is the DEP-001 durable single
 # instance, and the gateway refuses to start with TOTEM_DATA_DIR set unless
 # the feature is compiled in.
-# Pinned to 1.96 (not the workspace's declared MSRV of 1.85): dependencies
-# have moved past it — fastnum 0.7.5 requires 1.94 and darling 0.23 requires
-# 1.88 — so the declared MSRV is already unachievable and only holds locally
-# because workstations run a newer toolchain. Pinned rather than `latest` so a
-# Rust release cannot break a deploy mid-trial, the same reasoning as the
-# surrealdb pin.
+# Pinned to 1.96, ahead of the workspace's declared MSRV of 1.94 (ADV-CORE-007
+# — set by fastnum 0.7.5's requirement, see Cargo.toml). Pinned rather than
+# `latest` so a Rust release cannot break a deploy mid-trial, the same
+# reasoning as the surrealdb pin.
 # A shared base for the dependency-caching stages below (ADV-INFRA-006).
 #
 # Everything the compile needs is installed *here*, above any `COPY` of our
