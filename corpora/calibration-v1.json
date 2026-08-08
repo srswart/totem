@@ -1,0 +1,717 @@
+{
+  "manifest": {
+    "id": "calibration",
+    "version": "v1",
+    "description": "Ranking-calibration estate for ADV-CORE-005 and the ranking fix ADV-GATEWAY-016 showed is still needed. Built around topic clusters with genuine near-misses, because a corpus of unrelated records only tests that the embedder can tell one subject from another — which it always can. Every record carries explicit economics: ADV-CORE-008 proved a corpus with uniform economics cannot fail.",
+    "checksum": "e9d96f8b551698837c7cff4a81292963d55a470bd9b130dbfde9c146b1c65e08"
+  },
+  "records": [
+    {
+      "key": "deploy-canary-hold",
+      "category": "knowledge",
+      "scope": "project:corpus/rocket",
+      "writer_actor": "corpus-nova",
+      "writer_project": "corpus/rocket",
+      "writer_teams": [],
+      "body": "Rocket holds a canary deploy at ten percent of traffic for fifteen minutes before promoting.",
+      "tags": [],
+      "cluster": "deploy",
+      "created_at": "2026-07-01T09:00:00Z",
+      "economics": {
+        "use_count": 0,
+        "last_used_at": null,
+        "value_score": 1.0,
+        "currency": 1.0
+      }
+    },
+    {
+      "key": "deploy-window",
+      "category": "knowledge",
+      "scope": "project:corpus/rocket",
+      "writer_actor": "corpus-nova",
+      "writer_project": "corpus/rocket",
+      "writer_teams": [],
+      "body": "Rocket deploys from main every weekday afternoon, never on Fridays.",
+      "tags": [],
+      "cluster": "deploy",
+      "created_at": "2026-07-01T09:00:00Z",
+      "economics": {
+        "use_count": 64,
+        "last_used_at": "2026-08-07T09:00:00Z",
+        "value_score": 3.0,
+        "currency": 1.0
+      }
+    },
+    {
+      "key": "deploy-rollback",
+      "category": "knowledge",
+      "scope": "project:corpus/rocket",
+      "writer_actor": "corpus-nova",
+      "writer_project": "corpus/rocket",
+      "writer_teams": [],
+      "body": "A rocket rollback is a redeploy of the previous tag; there is no automated revert.",
+      "tags": [],
+      "cluster": "deploy",
+      "created_at": "2026-07-01T09:00:00Z",
+      "economics": {
+        "use_count": 0,
+        "last_used_at": null,
+        "value_score": 1.0,
+        "currency": 1.0
+      }
+    },
+    {
+      "key": "deploy-approval",
+      "category": "instructions",
+      "scope": "project:corpus/rocket",
+      "writer_actor": "corpus-nova",
+      "writer_project": "corpus/rocket",
+      "writer_teams": [],
+      "body": "Rocket rule: a production deploy needs a second approver in the channel.",
+      "tags": [],
+      "cluster": "deploy",
+      "created_at": "2026-07-01T09:00:00Z",
+      "economics": {
+        "use_count": 40,
+        "last_used_at": "2026-08-07T09:00:00Z",
+        "value_score": 2.0,
+        "currency": 1.0
+      }
+    },
+    {
+      "key": "storage-engine-owner",
+      "category": "knowledge",
+      "scope": "project:corpus/rocket",
+      "writer_actor": "corpus-nova",
+      "writer_project": "corpus/rocket",
+      "writer_teams": [],
+      "body": "Only the rocket gateway process opens the embedded database; every other surface is a client of it.",
+      "tags": [],
+      "cluster": "storage",
+      "created_at": "2026-07-01T09:00:00Z",
+      "economics": {
+        "use_count": 0,
+        "last_used_at": null,
+        "value_score": 1.0,
+        "currency": 1.0
+      }
+    },
+    {
+      "key": "storage-postgres-version",
+      "category": "knowledge",
+      "scope": "project:corpus/rocket",
+      "writer_actor": "corpus-nova",
+      "writer_project": "corpus/rocket",
+      "writer_teams": [],
+      "body": "Rocket's staging database runs Postgres 16.3 with the pgvector extension enabled.",
+      "tags": [],
+      "cluster": "storage",
+      "created_at": "2026-07-01T09:00:00Z",
+      "economics": {
+        "use_count": 0,
+        "last_used_at": null,
+        "value_score": 1.0,
+        "currency": 1.0
+      }
+    },
+    {
+      "key": "storage-postgres-restated",
+      "category": "knowledge",
+      "scope": "project:corpus/rocket",
+      "writer_actor": "corpus-nova",
+      "writer_project": "corpus/rocket",
+      "writer_teams": [],
+      "body": "Rocket staging DB: Postgres 16.3, pgvector turned on.",
+      "tags": [],
+      "cluster": "storage",
+      "created_at": "2026-07-01T09:00:00Z",
+      "economics": {
+        "use_count": 0,
+        "last_used_at": null,
+        "value_score": 1.0,
+        "currency": 1.0
+      }
+    },
+    {
+      "key": "storage-backup",
+      "category": "knowledge",
+      "scope": "project:corpus/rocket",
+      "writer_actor": "corpus-nova",
+      "writer_project": "corpus/rocket",
+      "writer_teams": [],
+      "body": "Rocket backups run nightly and have never been restored into a working instance.",
+      "tags": [],
+      "cluster": "storage",
+      "created_at": "2026-07-01T09:00:00Z",
+      "economics": {
+        "use_count": 0,
+        "last_used_at": null,
+        "value_score": 1.0,
+        "currency": 1.0
+      }
+    },
+    {
+      "key": "loop-proven",
+      "category": "knowledge",
+      "scope": "project:corpus/beacon",
+      "writer_actor": "corpus-nova",
+      "writer_project": "corpus/beacon",
+      "writer_teams": [],
+      "body": "Beacon's incident channel is the first place to look when the pager fires.",
+      "tags": [],
+      "cluster": "loop",
+      "created_at": "2026-07-01T09:00:00Z",
+      "economics": {
+        "use_count": 50,
+        "last_used_at": "2026-08-07T09:00:00Z",
+        "value_score": 2.5,
+        "currency": 1.0
+      }
+    },
+    {
+      "key": "loop-unproven",
+      "category": "knowledge",
+      "scope": "project:corpus/beacon",
+      "writer_actor": "corpus-nova",
+      "writer_project": "corpus/beacon",
+      "writer_teams": [],
+      "body": "Beacon's incident channel is where responders coordinate when the pager goes off.",
+      "tags": [],
+      "cluster": "loop",
+      "created_at": "2026-07-01T09:00:00Z",
+      "economics": {
+        "use_count": 0,
+        "last_used_at": null,
+        "value_score": 1.0,
+        "currency": 1.0
+      }
+    },
+    {
+      "key": "currency-fresh",
+      "category": "knowledge",
+      "scope": "project:corpus/beacon",
+      "writer_actor": "corpus-nova",
+      "writer_project": "corpus/beacon",
+      "writer_teams": [],
+      "body": "Beacon's rate limit is one thousand requests per minute per tenant.",
+      "tags": [],
+      "cluster": "currency",
+      "created_at": "2026-08-01T09:00:00Z",
+      "economics": {
+        "use_count": 3,
+        "last_used_at": "2026-08-07T09:00:00Z",
+        "value_score": 1.0,
+        "currency": 1.0
+      }
+    },
+    {
+      "key": "currency-decayed",
+      "category": "knowledge",
+      "scope": "project:corpus/beacon",
+      "writer_actor": "corpus-nova",
+      "writer_project": "corpus/beacon",
+      "writer_teams": [],
+      "body": "Beacon's rate limit is one thousand requests each minute for every tenant.",
+      "tags": [],
+      "cluster": "currency",
+      "created_at": "2026-02-01T09:00:00Z",
+      "economics": {
+        "use_count": 3,
+        "last_used_at": "2026-02-15T09:00:00Z",
+        "value_score": 1.0,
+        "currency": 1.0
+      }
+    },
+    {
+      "key": "precedence-actor",
+      "category": "knowledge",
+      "scope": "actor:corpus-nova",
+      "writer_actor": "corpus-nova",
+      "writer_project": null,
+      "writer_teams": [],
+      "body": "The rocket project's default review SLA is two business days.",
+      "tags": [
+        "precedence"
+      ],
+      "cluster": null,
+      "created_at": "2026-07-04T09:00:00Z",
+      "economics": {
+        "use_count": 0,
+        "last_used_at": null,
+        "value_score": 1.0,
+        "currency": 1.0
+      }
+    },
+    {
+      "key": "precedence-project",
+      "category": "knowledge",
+      "scope": "project:corpus/rocket",
+      "writer_actor": "corpus-nova",
+      "writer_project": "corpus/rocket",
+      "writer_teams": [],
+      "body": "The rocket project's default review SLA is two business days.",
+      "tags": [
+        "precedence"
+      ],
+      "cluster": null,
+      "created_at": "2026-07-04T08:00:00Z",
+      "economics": {
+        "use_count": 0,
+        "last_used_at": null,
+        "value_score": 1.0,
+        "currency": 1.0
+      }
+    },
+    {
+      "key": "leak-bait-nova",
+      "category": "knowledge",
+      "scope": "actor:corpus-nova",
+      "writer_actor": "corpus-nova",
+      "writer_project": null,
+      "writer_teams": [],
+      "body": "The unreleased Q3 pricing change moves the enterprise tier to $4,200/mo.",
+      "tags": [
+        "leak-bait"
+      ],
+      "cluster": null,
+      "created_at": "2026-07-05T09:00:00Z",
+      "economics": {
+        "use_count": 0,
+        "last_used_at": null,
+        "value_score": 1.0,
+        "currency": 1.0
+      }
+    },
+    {
+      "key": "leak-bait-juniper",
+      "category": "knowledge",
+      "scope": "actor:corpus-juniper",
+      "writer_actor": "corpus-juniper",
+      "writer_project": null,
+      "writer_teams": [],
+      "body": "The unreleased Q3 pricing change moves the enterprise tier to $4,200/mo.",
+      "tags": [
+        "leak-bait"
+      ],
+      "cluster": null,
+      "created_at": "2026-07-05T09:05:00Z",
+      "economics": {
+        "use_count": 0,
+        "last_used_at": null,
+        "value_score": 1.0,
+        "currency": 1.0
+      }
+    },
+    {
+      "key": "contested-deprecate",
+      "category": "uncertainty",
+      "scope": "project:corpus/rocket",
+      "writer_actor": "corpus-nova",
+      "writer_project": "corpus/rocket",
+      "writer_teams": [],
+      "body": "Team decided to deprecate the rocket project's v1 API by Q4.",
+      "tags": [
+        "contested-pair"
+      ],
+      "cluster": "contested",
+      "created_at": "2026-07-03T09:00:00Z",
+      "economics": {
+        "use_count": 0,
+        "last_used_at": null,
+        "value_score": 1.0,
+        "currency": 1.0
+      }
+    },
+    {
+      "key": "contested-keep",
+      "category": "uncertainty",
+      "scope": "project:corpus/rocket",
+      "writer_actor": "corpus-juniper",
+      "writer_project": "corpus/rocket",
+      "writer_teams": [],
+      "body": "Team decided to keep the rocket project's v1 API supported indefinitely.",
+      "tags": [
+        "contested-pair"
+      ],
+      "cluster": "contested",
+      "created_at": "2026-07-03T09:05:00Z",
+      "economics": {
+        "use_count": 0,
+        "last_used_at": null,
+        "value_score": 1.0,
+        "currency": 1.0
+      }
+    },
+    {
+      "key": "grid-episodic-actor",
+      "category": "episodic",
+      "scope": "actor:corpus-nova",
+      "writer_actor": "corpus-nova",
+      "writer_project": null,
+      "writer_teams": [],
+      "body": "Nova asked the agent to summarize yesterday's rocket deploy.",
+      "tags": [
+        "grid"
+      ],
+      "cluster": null,
+      "created_at": "2026-07-01T10:00:00Z",
+      "economics": {
+        "use_count": 0,
+        "last_used_at": null,
+        "value_score": 1.0,
+        "currency": 1.0
+      }
+    },
+    {
+      "key": "grid-episodic-project",
+      "category": "episodic",
+      "scope": "project:corpus/rocket",
+      "writer_actor": "corpus-nova",
+      "writer_project": "corpus/rocket",
+      "writer_teams": [],
+      "body": "Turn log: the rocket agent proposed a rollback plan after a staging alert.",
+      "tags": [
+        "grid"
+      ],
+      "cluster": null,
+      "created_at": "2026-07-01T10:00:00Z",
+      "economics": {
+        "use_count": 0,
+        "last_used_at": null,
+        "value_score": 1.0,
+        "currency": 1.0
+      }
+    },
+    {
+      "key": "grid-identity-actor",
+      "category": "identity",
+      "scope": "actor:corpus-nova",
+      "writer_actor": "corpus-nova",
+      "writer_project": null,
+      "writer_teams": [],
+      "body": "Nova is a backend engineer on the rocket project, timezone UTC-5.",
+      "tags": [
+        "grid"
+      ],
+      "cluster": null,
+      "created_at": "2026-07-01T10:00:00Z",
+      "economics": {
+        "use_count": 0,
+        "last_used_at": null,
+        "value_score": 1.0,
+        "currency": 1.0
+      }
+    },
+    {
+      "key": "grid-identity-project",
+      "category": "identity",
+      "scope": "project:corpus/rocket",
+      "writer_actor": "corpus-nova",
+      "writer_project": "corpus/rocket",
+      "writer_teams": [],
+      "body": "The rocket on-call rotation is Nova primary, Juniper secondary.",
+      "tags": [
+        "grid"
+      ],
+      "cluster": null,
+      "created_at": "2026-07-01T10:00:00Z",
+      "economics": {
+        "use_count": 0,
+        "last_used_at": null,
+        "value_score": 1.0,
+        "currency": 1.0
+      }
+    },
+    {
+      "key": "grid-context-actor",
+      "category": "context",
+      "scope": "actor:corpus-nova",
+      "writer_actor": "corpus-nova",
+      "writer_project": null,
+      "writer_teams": [],
+      "body": "Nova is investigating a flaky test in the rocket auth module this week.",
+      "tags": [
+        "grid"
+      ],
+      "cluster": null,
+      "created_at": "2026-07-01T10:00:00Z",
+      "economics": {
+        "use_count": 0,
+        "last_used_at": null,
+        "value_score": 1.0,
+        "currency": 1.0
+      }
+    },
+    {
+      "key": "grid-context-project",
+      "category": "context",
+      "scope": "project:corpus/rocket",
+      "writer_actor": "corpus-nova",
+      "writer_project": "corpus/rocket",
+      "writer_teams": [],
+      "body": "The rocket project is mid-migration from REST to streaming transport.",
+      "tags": [
+        "grid"
+      ],
+      "cluster": null,
+      "created_at": "2026-07-01T10:00:00Z",
+      "economics": {
+        "use_count": 0,
+        "last_used_at": null,
+        "value_score": 1.0,
+        "currency": 1.0
+      }
+    },
+    {
+      "key": "grid-instructions-actor",
+      "category": "instructions",
+      "scope": "actor:corpus-nova",
+      "writer_actor": "corpus-nova",
+      "writer_project": null,
+      "writer_teams": [],
+      "body": "Nova's standing instruction: never merge without a green CI run.",
+      "tags": [
+        "grid"
+      ],
+      "cluster": null,
+      "created_at": "2026-07-01T10:00:00Z",
+      "economics": {
+        "use_count": 0,
+        "last_used_at": null,
+        "value_score": 1.0,
+        "currency": 1.0
+      }
+    },
+    {
+      "key": "grid-uncertainty-actor",
+      "category": "uncertainty",
+      "scope": "actor:corpus-nova",
+      "writer_actor": "corpus-nova",
+      "writer_project": null,
+      "writer_teams": [],
+      "body": "Unresolved: whether Nova's local lint override should become team-wide.",
+      "tags": [
+        "grid"
+      ],
+      "cluster": null,
+      "created_at": "2026-07-01T10:00:00Z",
+      "economics": {
+        "use_count": 0,
+        "last_used_at": null,
+        "value_score": 1.0,
+        "currency": 1.0
+      }
+    },
+    {
+      "key": "grid-knowledge-team",
+      "category": "knowledge",
+      "scope": "team:corpus-platform-team",
+      "writer_actor": "corpus-atlas",
+      "writer_project": "corpus/beacon",
+      "writer_teams": [
+        "corpus-platform-team"
+      ],
+      "body": "The platform team standard is trunk-based development with short-lived branches.",
+      "tags": [
+        "grid"
+      ],
+      "cluster": null,
+      "created_at": "2026-07-01T10:30:00Z",
+      "economics": {
+        "use_count": 0,
+        "last_used_at": null,
+        "value_score": 1.0,
+        "currency": 1.0
+      }
+    },
+    {
+      "key": "grid-instructions-team",
+      "category": "instructions",
+      "scope": "team:corpus-platform-team",
+      "writer_actor": "corpus-atlas",
+      "writer_project": "corpus/beacon",
+      "writer_teams": [
+        "corpus-platform-team"
+      ],
+      "body": "Platform team rule: curator actions must always be reversible and logged.",
+      "tags": [
+        "grid"
+      ],
+      "cluster": null,
+      "created_at": "2026-07-01T10:30:00Z",
+      "economics": {
+        "use_count": 0,
+        "last_used_at": null,
+        "value_score": 1.0,
+        "currency": 1.0
+      }
+    },
+    {
+      "key": "grid-knowledge-platform",
+      "category": "knowledge",
+      "scope": "platform",
+      "writer_actor": "corpus-atlas",
+      "writer_project": "corpus/beacon",
+      "writer_teams": [
+        "corpus-platform-team"
+      ],
+      "body": "Platform-wide: every enrolled repo exposes its landscape within five minutes of a merge.",
+      "tags": [
+        "grid"
+      ],
+      "cluster": null,
+      "created_at": "2026-07-01T10:30:00Z",
+      "economics": {
+        "use_count": 0,
+        "last_used_at": null,
+        "value_score": 1.0,
+        "currency": 1.0
+      }
+    },
+    {
+      "key": "grid-instructions-platform",
+      "category": "instructions",
+      "scope": "platform",
+      "writer_actor": "corpus-atlas",
+      "writer_project": "corpus/beacon",
+      "writer_teams": [
+        "corpus-platform-team"
+      ],
+      "body": "Platform-wide rule: scope isolation is enforced at the store layer, never above it.",
+      "tags": [
+        "grid"
+      ],
+      "cluster": null,
+      "created_at": "2026-07-01T10:30:00Z",
+      "economics": {
+        "use_count": 0,
+        "last_used_at": null,
+        "value_score": 1.0,
+        "currency": 1.0
+      }
+    }
+  ],
+  "queries": [
+    {
+      "name": "the_specific_answer_beats_the_well_used_general_one",
+      "rationale": "The canary record answers the question; the deploy-window record is the same topic with a long history behind it. ADV-CORE-008's exact failure, as a golden query.",
+      "reader_actor": "corpus-nova",
+      "reader_project": "corpus/rocket",
+      "reader_teams": [],
+      "categories": [],
+      "probe": "Rocket holds a canary deploy at ten percent of traffic for fifteen minutes before promoting.",
+      "expect_top": "deploy-canary-hold",
+      "expect_present": [],
+      "expect_absent": []
+    },
+    {
+      "name": "relevance_outranks_category_within_a_topic",
+      "rationale": "deploy-approval is Instructions (category_weight 1.0) and deploy-rollback is Knowledge (0.885). ADV-GATEWAY-016 measured the nearest record losing on category alone in 4 of 6 deployed queries — this is that defect as an assertion.",
+      "reader_actor": "corpus-nova",
+      "reader_project": "corpus/rocket",
+      "reader_teams": [],
+      "categories": [],
+      "probe": "A rocket rollback is a redeploy of the previous tag; there is no automated revert.",
+      "expect_top": "deploy-rollback",
+      "expect_present": [],
+      "expect_absent": []
+    },
+    {
+      "name": "near_duplicates_both_surface",
+      "rationale": "Two phrasings of one fact must both appear, so a dedupe evaluation has real input.",
+      "reader_actor": "corpus-nova",
+      "reader_project": "corpus/rocket",
+      "reader_teams": [],
+      "categories": [],
+      "probe": "Rocket's staging database runs Postgres 16.3 with the pgvector extension enabled.",
+      "expect_top": null,
+      "expect_present": [
+        "storage-postgres-version",
+        "storage-postgres-restated"
+      ],
+      "expect_absent": []
+    },
+    {
+      "name": "an_unrelated_topic_does_not_intrude",
+      "rationale": "Asked about database versions, the corpus must not answer with deploy cadence. The assertion a top-1 check cannot make, and why records carry expect_absent.",
+      "reader_actor": "corpus-nova",
+      "reader_project": "corpus/rocket",
+      "reader_teams": [],
+      "categories": [],
+      "probe": "Rocket's staging database runs Postgres 16.3 with the pgvector extension enabled.",
+      "expect_top": "storage-postgres-version",
+      "expect_present": [],
+      "expect_absent": [
+        "deploy-window",
+        "deploy-approval"
+      ]
+    },
+    {
+      "name": "a_well_used_memory_still_wins_at_comparable_relevance",
+      "rationale": "The guard against overcorrection. Two near-identical bodies, so relevance cannot separate them; only history can. If this fails, ranking has become a plain vector index and the value loop — much of Totem's thesis — has been discarded.",
+      "reader_actor": "corpus-juniper",
+      "reader_project": "corpus/beacon",
+      "reader_teams": [],
+      "categories": [],
+      "probe": "Beacon incident channel pager responders coordinate",
+      "expect_top": "loop-proven",
+      "expect_present": [],
+      "expect_absent": []
+    },
+    {
+      "name": "a_fresher_memory_wins_at_comparable_relevance",
+      "rationale": "The other direction of the same guard. Same fact, one read yesterday and one not since February, so currency is the only difference. ADV-CORE-008 bounded currency's ratio after finding it could reach ~95x; this asserts the bound did not zero it out.",
+      "reader_actor": "corpus-juniper",
+      "reader_project": "corpus/beacon",
+      "reader_teams": [],
+      "categories": [],
+      "probe": "Beacon rate limit requests per minute per tenant",
+      "expect_top": "currency-fresh",
+      "expect_present": [],
+      "expect_absent": []
+    },
+    {
+      "name": "the_narrower_scope_wins_a_duplicate",
+      "rationale": "One fact held at actor and project scope must merge to the actor copy. Carried from ADV-STORE-005; the scope rules are load-bearing and must not regress silently.",
+      "reader_actor": "corpus-nova",
+      "reader_project": "corpus/rocket",
+      "reader_teams": [],
+      "categories": [],
+      "probe": "The rocket project's default review SLA is two business days.",
+      "expect_top": "precedence-actor",
+      "expect_present": [],
+      "expect_absent": []
+    },
+    {
+      "name": "a_reader_never_sees_another_actors_private_copy",
+      "rationale": "Byte-identical bodies at two private actor scopes: the body cannot distinguish them, so this asserts on provenance and count. Scope isolation is enforced at the store layer and this is the fixture that proves it stayed there.",
+      "reader_actor": "corpus-nova",
+      "reader_project": "corpus/rocket",
+      "reader_teams": [],
+      "categories": [],
+      "probe": "The unreleased Q3 pricing change moves the enterprise tier to $4,200/mo.",
+      "expect_top": "leak-bait-nova",
+      "expect_present": [],
+      "expect_absent": [
+        "leak-bait-juniper"
+      ]
+    },
+    {
+      "name": "both_sides_of_a_contradiction_stay_visible",
+      "rationale": "A contradiction the reader should see is not the same as a fact withdrawn. Both must surface, so a human can resolve it rather than the ranker silently picking a side.",
+      "reader_actor": "corpus-nova",
+      "reader_project": "corpus/rocket",
+      "reader_teams": [],
+      "categories": [
+        "uncertainty"
+      ],
+      "probe": null,
+      "expect_top": null,
+      "expect_present": [
+        "contested-deprecate",
+        "contested-keep"
+      ],
+      "expect_absent": []
+    }
+  ]
+}

@@ -503,7 +503,7 @@ passes:
             owner: "058-totem"
             dependencies: ["ADV-CORE-008"]
             notes: >-
-              FIRST, and deliberately small. ADV-CORE-008 shipped a real fix
+              WORKSTATION. FIRST, and deliberately small. ADV-CORE-008 shipped a real fix
               and could not finish its own diagnosis: recall returns no
               score, so nobody could say why five of six golden queries still
               returned the same unrelated instructions record first. Carries
@@ -531,7 +531,8 @@ passes:
             owner: "058-totem"
             dependencies: ["ADV-CORE-008"]
             notes: >-
-              corpus.rs cannot be versioned independently of the code under
+              WORKSTATION — in progress 2026-08-08. corpus.rs cannot be
+              versioned independently of the code under
               test, cannot grow, and cannot change without a rebuild. Records
               must carry economics and the golden queries must live in the
               same artifact — ADV-CORE-008 proved a corpus with uniform
@@ -543,7 +544,8 @@ passes:
             owner: "058-totem"
             dependencies: ["ADV-STORE-009", "ADV-GATEWAY-017", "ADV-INFRA-006"]
             notes: >-
-              Calibration has nowhere to happen: the only estate with the
+              WORKSTATION — needs Fly access to create and tear down a
+              deployed estate. Calibration has nowhere to happen: the only estate with the
               real embedder is the one holding real memories. Episodic rows
               are append-only, so reset means a fresh container, not a
               delete — the advance chooses namespace vs deployment vs local
@@ -570,7 +572,8 @@ passes:
             owner: "058-totem"
             dependencies: ["ADV-GATEWAY-016", "ADV-GATEWAY-017"]
             notes: >-
-              Shawn 2026-08-08: cannot tell what the dogfood corpus actually
+              WORKSTATION — console work is verified by a human in a browser,
+              the same reason ADV-CONSOLE-001 was. Shawn 2026-08-08: cannot tell what the dogfood corpus actually
               holds. The Memories tab is a ranked, truncated, scope-merged
               recall presented as contents, with the four numbers that drive
               ranking invisible. Success here is a person's judgement and is
