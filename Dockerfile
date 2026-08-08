@@ -47,11 +47,15 @@ RUN cargo build --release -p totem-gateway --features rocksdb,fastembed
 # COPY that finds nothing. Hence the check below: it fails at the step that
 # caused it, saying which directory is empty.
 ENV FASTEMBED_CACHE_DIR=/models
+# Grouped, not `A && B || C`: with the flat form, a warm step that fails for
+# any other reason still falls into the `||` branch and is misreported as an
+# empty cache directory. Here a warming failure fails on its own message.
 RUN /build/target/release/totem-gateway --warm-embedder \
-    && test -n "$(ls -A /models 2>/dev/null)" \
-    || (echo "FATAL: /models is empty after warming — the weights went somewhere else." \
-        && echo "Found instead:" && find / -name '*.onnx' -not -path '*/target/*' 2>/dev/null | head \
-        && exit 1)
+    && { test -n "$(ls -A /models 2>/dev/null)" \
+         || { echo "FATAL: /models is empty after warming — the weights went elsewhere."; \
+              echo "Found instead:"; \
+              find / -name '*.onnx' -not -path '*/target/*' 2>/dev/null | head; \
+              exit 1; }; }
 
 # The console bundle (ADV-GATEWAY-010), built in its own stage so a console
 # change does not invalidate the gateway's (much longer) compile.

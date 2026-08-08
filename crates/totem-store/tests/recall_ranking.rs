@@ -78,7 +78,7 @@ async fn ranking_survives_a_reembed() {
 
 /// **Known bug, deliberately failing when run.** `#[ignore]`d so the suite
 /// stays green while the defect stays executable: `cargo test -p totem-store
-/// --test rank_check -- --ignored` reproduces it in about a second.
+/// --test recall_ranking -- --ignored` reproduces it in about a second.
 ///
 /// `combined_score = relevance * value_score * currency * category_weight`.
 /// `relevance_from_distance` is `1/(1+d)`, so across the whole cosine range

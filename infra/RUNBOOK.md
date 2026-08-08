@@ -122,7 +122,7 @@ it should.
 **If the gateway will not start**, a build with `--features fastembed` that
 cannot load its model panics on purpose rather than falling back to the
 non-semantic stub. Check that `/models` is present in the image and
-`FASTEMBED_CACHE_PATH` points at it. A deployment that silently downgraded
+`FASTEMBED_CACHE_DIR` points at it. A deployment that silently downgraded
 would report healthy while serving meaningless rankings.
 
 ## Health and logs
