@@ -613,10 +613,10 @@ impl TokenRegistry {
             .cloned()
             .ok_or(AuthError::UnknownCredential)?;
 
-        if let Some(expires_at) = grant.expires_at {
-            if expires_at <= now {
-                return Err(AuthError::Expired(expires_at));
-            }
+        if let Some(expires_at) = grant.expires_at
+            && expires_at <= now
+        {
+            return Err(AuthError::Expired(expires_at));
         }
 
         Ok(grant)
