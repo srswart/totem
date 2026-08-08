@@ -4,6 +4,37 @@ ARRIVE never writes this file (see `CLAUDE.md`), which makes it the right
 home for rules that are ours rather than the kit's — and it is committed, so
 it travels with a clone rather than living on one machine.
 
+## After opening a PR, check it (2026-08-08)
+
+Opening a PR is not the end of the task. Before reporting it as done, and
+again before it merges:
+
+```sh
+gh pr view <N> --comments
+gh api repos/srswart/totem/pulls/<N>/comments --jq '.[] | "\(.path):\(.line) \(.body)"'
+gh run list --workflow=ci.yml --limit 1   # CI, not just the local check
+```
+
+**Why this is written down.** The cloud routine does this as a protocol step;
+the workstation session did not, and review feedback was only ever acted on
+when Shawn pointed at it. Copilot's comments on #77 were all five valid, and
+one of them — a test that could not observe the property it claimed to assert
+— was the same class of defect the session had spent an advance learning to
+find.
+
+Related: **CI green and local green are different claims.** CI was failing for
+two days across several merges while the workstation reported "clippy clean",
+because `cargo clippy --workspace --all-targets` piped to grep re-lints
+nothing for unchanged crates. Run the canonical
+`cargo clippy --workspace --all-targets -- -D warnings` and check the exit
+code, and look at the CI run before calling a branch green.
+
+This lives here rather than in Totem deliberately. It is a rule that must
+apply every time, so it cannot depend on a retrieval succeeding — the
+always-on floor argued for in
+`docs/tech-direction/context-delivery.md` (CTX-003). When retrieval is
+trustworthy enough to move it, that will be a real test of the direction.
+
 ## Totem memory (trial, v1)
 
 This project uses its own product: a shared, durable memory at
