@@ -49,12 +49,48 @@ After this advance:
   that it does. A cache that serves stale dependencies is worse than no
   cache.
 
+## Approach: cargo-chef, and the one way it fails quietly
+
+Chosen: **`cargo-chef`**, the shape the advance already named. The workspace
+is reduced to a `recipe.json` — a manifest-only description of the dependency
+graph, containing none of our source — which a `cook` step compiles on its
+own layer. Docker then caches that layer against the recipe, so it is reused
+until a *dependency* changes and a source-only change skips SurrealDB,
+RocksDB and ONNX Runtime entirely.
+
+Rejected: a mounted cargo registry/target cache (`--mount=type=cache`). It is
+fewer lines and it does not survive Fly's remote builder being recycled,
+which is precisely the situation that made the 2026-08-07 rebuilds expensive.
+A cache that disappears when the machine does is not the cache this advance
+is asking for.
+
+**The failure mode worth naming.** `cargo chef cook` compiles with whatever
+flags it is given. If they do not match the real `cargo build` — a different
+feature set, a different package, a different profile — Docker still reuses
+the cooked layer, and then `cargo build` rebuilds every dependency anyway
+because the fingerprints differ. **The build costs full price while looking
+like a cache hit**, and nothing in the output says so. The two invocations
+are therefore kept adjacent in the Dockerfile with a comment, and the warm
+measurement below is what would actually catch it: a warm build that is not
+dramatically faster means the flags have drifted.
+
+Also folded in: the builder previously ran `apt-get install` twice, once
+before `COPY . .` and once after, the second adding `build-essential`. Both
+now sit in a shared base stage above any source copy, where a source change
+cannot invalidate them.
+
 ## Planned Implementation Tasks
 
-- [ ] branch / claim
-- [ ] restructure the Dockerfile for dependency caching
+- [x] branch / claim
+- [x] restructure the Dockerfile for dependency caching
 - [ ] measure cold and warm builds, before and after
 - [ ] prove a dependency change busts the cache
+- [ ] consider the console stage — `dx build` recompiles the console's wasm
+      dependencies on every deploy for the same reason. Deliberately not
+      folded in: `dx` drives its own cargo invocation with its own profile
+      and flags, so whether a cooked cache is even reused there is a question
+      to measure rather than assume. Measure its share of the build first;
+      if it is small, say so and leave it.
 - [ ] update `infra/RUNBOOK.md`, removing the known-cost note
 
 ## Scope and Boundaries
@@ -86,4 +122,17 @@ artifact registries.
 
 ## Check for Understanding
 
-(placeholder — written during implementation)
+1. `cargo chef prepare` still runs after `COPY . .`, so that stage rebuilds on
+   every source change. Why does that not defeat the caching, and what
+   property of its *output* is doing the work?
+2. `cook` and `cargo build` must be given identical flags. Describe what
+   happens if they are not — and say why it is worse than having no cache at
+   all rather than merely no better.
+3. Which measurement would reveal that mismatch, and which would not?
+4. A mounted cargo cache is fewer lines than a chef stage. Name the specific
+   situation from 2026-08-07 that argues against it.
+5. The apt-get installs moved above `COPY . .`. What was being invalidated
+   before, and roughly what did it cost per deploy?
+6. The advance requires proving a dependency change *busts* the cache, not
+   just that a source change hits it. Why is that the more important of the
+   two tests?
