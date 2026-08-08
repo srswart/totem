@@ -291,6 +291,45 @@ pub fn combined_score(
     relevance * value_score * currency * category_weight
 }
 
+/// Every factor that produced one record's rank, kept instead of discarded
+/// (ADV-GATEWAY-016).
+///
+/// Ranking used to compute these four numbers, multiply them, and throw them
+/// away — so when the deployed system ordered something surprisingly, there
+/// was no way to ask why. ADV-CORE-008 closed with its diagnosis unfinished
+/// for exactly that reason.
+///
+/// **This is carried out of the same computation the ranking used**, never
+/// recomputed for display. A second code path that re-derives these numbers
+/// would agree right up until the moment it mattered.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ScoreBreakdown {
+    /// Raw vector distance, or `None` when the recall carried no probe and
+    /// ranking did not depend on proximity at all.
+    pub distance: Option<f64>,
+    /// Closeness after [`relevance_from_distance`] — exactly `0.0` for a
+    /// record past [`RELEVANCE_GATE_DISTANCE`].
+    pub relevance: f32,
+    /// `value_score` after [`saturating_value`], not the raw stored figure.
+    pub value: f32,
+    /// Currency after decay *and* [`currency_weight`] — what ranking used,
+    /// not the freshness figure a caller would read.
+    pub currency: f32,
+    /// The category's ranking weight after compression.
+    pub category_weight: f32,
+    /// The product, and the number the ordering was actually made on.
+    pub combined: f32,
+}
+
+impl ScoreBreakdown {
+    /// Whether the relevance gate excluded this record — the one exclusion a
+    /// caller cannot otherwise detect, because a gated record simply does not
+    /// appear in the results.
+    pub fn gated_out(&self) -> bool {
+        self.distance.is_some() && self.relevance == 0.0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

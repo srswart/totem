@@ -107,6 +107,44 @@ pub struct RecallResponse {
     pub records: Vec<MemoryRecord>,
 }
 
+/// `POST /recall/explain` — one candidate, why it ranked where it did, and
+/// whether `recall` would have returned it (ADV-GATEWAY-016).
+#[derive(Debug, Clone, Serialize)]
+pub struct RankExplanationEntry {
+    /// The record itself, embeddings suppressed as everywhere else.
+    pub record: MemoryRecord,
+    /// Raw vector distance, or `null` when the request carried no query text
+    /// and ranking did not depend on proximity.
+    pub distance: Option<f64>,
+    /// Closeness after the gate; exactly `0.0` for an excluded record.
+    pub relevance: f32,
+    /// `value_score` as ranking used it — saturated, not the raw figure.
+    pub value: f32,
+    /// Currency as ranking used it — decayed *and* compressed.
+    pub currency: f32,
+    /// The category's ranking weight, after compression.
+    pub category_weight: f32,
+    /// The product, and the number the ordering was made on.
+    pub combined: f32,
+    /// Whether the relevance gate excluded this record. The one exclusion a
+    /// caller cannot otherwise detect: a gated record simply is not there.
+    pub gated_out: bool,
+    /// Whether `recall` would have returned it — survived the gate, and
+    /// inside the limit.
+    pub included: bool,
+}
+
+/// `POST /recall/explain` (ADV-GATEWAY-016). Same request shape as `/recall`.
+///
+/// Includes records `/recall` would have dropped, which is the point: the
+/// question worth asking is usually *"why is the record I expected
+/// missing?"*.
+#[derive(Debug, Clone, Serialize)]
+pub struct RankExplanationResponse {
+    /// Every candidate considered, best score first.
+    pub candidates: Vec<RankExplanationEntry>,
+}
+
 /// `POST /feedback` — an explicit value signal about an existing memory
 /// (ADV-GATEWAY-004 gap-fill): the input side of the value loop the
 /// automatic citation boost and usage reinforcement (ADV-CORE-002) feed

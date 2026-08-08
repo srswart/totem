@@ -75,6 +75,30 @@ mkdir -p "$(dirname "$OUT")"
         -H 'content-type: application/json' \
         --data @- \
     | jq -r '.records[] | "  [\(.category)] \(.content.body[0:110])"'
+
+    # Why that order (ADV-GATEWAY-016). Non-mutating, and it includes the
+    # records the gate excluded — which the results above cannot show,
+    # because a gated record simply is not there.
+    if [ "${EXPLAIN:-1}" = "1" ]; then
+      jq -n \
+        --arg actor "$ACTOR" --arg project "$PROJECT" --arg query "$query" \
+        --arg session "golden-${LABEL}" \
+        '{actor: $actor, project: $project, query: $query, limit: 7,
+          harness: "claude_code", session: $session}' \
+      | curl -sS -X POST "${HOST}/recall/explain" \
+          -H "Authorization: Bearer ${TOKEN}" \
+          -H 'content-type: application/json' \
+          --data @- \
+      | jq -r '.candidates[] |
+          "    \(if .included then "IN " elif .gated_out then "GATE" else "cut " end) " +
+          "combined=\(.combined | .*1000 | round / 1000) " +
+          "dist=\(if .distance == null then "-" else (.distance | .*1000 | round / 1000) end) " +
+          "rel=\(.relevance | .*1000 | round / 1000) " +
+          "val=\(.value | .*1000 | round / 1000) " +
+          "cur=\(.currency | .*1000 | round / 1000) " +
+          "cat=\(.category_weight | .*1000 | round / 1000)  " +
+          "\(.record.content.body[0:60])"'
+    fi
     echo
   done
 } | tee "$OUT"

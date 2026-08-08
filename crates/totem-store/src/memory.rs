@@ -13,7 +13,7 @@ use surrealdb::types::{SurrealValue, Value};
 use surrealdb::{Connection, Surreal};
 use totem_core::{
     Content, FeedbackSignal, LifecycleError, MemoryCategory, MemoryId, MemoryRecord, ReviewState,
-    ScopeChain, SubjectKind,
+    ScopeChain, ScoreBreakdown, SubjectKind,
 };
 
 use crate::embedding::Embedder;
@@ -29,6 +29,21 @@ const DEFAULT_LIMIT: usize = 20;
 /// it as a tuning parameter with an unmeasured minimum until ADV-STORE-005
 /// measures recall against a realistic corpus.
 const DEFAULT_SEARCH_EFFORT: usize = 40;
+
+/// One record, why it ranked where it did, and whether
+/// [`MemoryRepository::recall`] would have returned it (ADV-GATEWAY-016).
+#[derive(Debug, Clone, PartialEq)]
+pub struct RankExplanation {
+    /// The record itself.
+    pub record: MemoryRecord,
+    /// Every factor behind its position, as ranking computed them.
+    pub score: ScoreBreakdown,
+    /// Whether `recall` would have returned this record: it survived the
+    /// relevance gate and fell inside the query's limit. `false` with a
+    /// [`ScoreBreakdown::gated_out`] score is the case worth reading — the
+    /// record was excluded for being about something else.
+    pub included: bool,
+}
 
 /// What to recall, and how to rank it.
 ///
@@ -583,6 +598,71 @@ impl<'a, C: Connection> MemoryRepository<'a, C> {
         Ok(records)
     }
 
+    /// Why [`recall`](Self::recall) would order these records this way, with
+    /// every factor itemised — **and without reinforcing anything**
+    /// (ADV-GATEWAY-016).
+    ///
+    /// Two properties make this worth having rather than a debugging
+    /// convenience:
+    ///
+    /// - **Records the gate excluded are included here, flagged.** They are
+    ///   by definition absent from `recall`'s results, so the most useful
+    ///   question — *"why is the record I expected missing?"* — is
+    ///   unanswerable without them.
+    /// - **Asking does not change the answer.** `recall` reinforces what it
+    ///   returns, so explaining through it would move the very economics
+    ///   being explained. That contaminated ADV-CORE-008's own measurement;
+    ///   see `docs/tech-direction/retrieval-and-inspection.md`.
+    ///
+    /// `included` reproduces `recall`'s decision exactly — survived the gate,
+    /// and inside `limit` — so an explanation can be checked against the
+    /// thing it explains.
+    ///
+    /// Not to be confused with [`explain_recall`](Self::explain_recall),
+    /// which returns the database's *query plan*. This explains the ranking;
+    /// that explains the scan.
+    pub async fn explain_ranking(
+        &self,
+        reader: &ScopeChain,
+        query: &RecallQuery,
+    ) -> StoreResult<Vec<RankExplanation>> {
+        let rows = objects(self.run_recall(reader, query, false).await?)?;
+        let mut scored = Vec::with_capacity(rows.len());
+        for row in &rows {
+            let distance = row.get("knn_distance").and_then(row::number);
+            scored.push((row::from_row(row)?, distance));
+        }
+        let merged = merge_chain(reader, scored);
+
+        let now = Utc::now();
+        let mut explained: Vec<RankExplanation> = merged
+            .into_iter()
+            .map(|(record, distance)| {
+                let score = rank_breakdown(&record, distance, now);
+                RankExplanation {
+                    record,
+                    score,
+                    included: false,
+                }
+            })
+            .collect();
+        explained.sort_by(|a, b| b.score.combined.total_cmp(&a.score.combined));
+
+        // Mark exactly what `recall` would have returned, by the same two
+        // rules in the same order: the gate first, then the limit.
+        let gating = query.probe.is_some();
+        let mut kept = 0;
+        for entry in explained.iter_mut() {
+            let survives = !gating || entry.score.combined > 0.0;
+            if survives && kept < query.limit {
+                entry.included = true;
+                kept += 1;
+            }
+        }
+
+        Ok(explained)
+    }
+
     /// The `EXPLAIN FULL` plan for the statement [`recall`](Self::recall) would
     /// run.
     ///
@@ -690,13 +770,20 @@ impl<'a, C: Connection> MemoryRepository<'a, C> {
 /// weights (§5) govern `category_weight` in ranking, not this boost.
 const CITATION_BOOST: f64 = 0.2;
 
-/// Combined ranking score for one candidate: relevance × value × currency,
+/// Every factor behind one candidate's rank: relevance × value × currency,
 /// weighted by category (docs/solution-intent.md §4). `currency` is computed
 /// live from the record's own stored value and how long it has sat since it
 /// was last used (or, if never used, since it was written) — nothing here
 /// persists a decayed value; only [`MemoryRepository::reinforce_usage`]
 /// writes to `currency`, and only ever resets it to full trust.
-fn rank_score(record: &MemoryRecord, distance: Option<f64>, now: DateTime<Utc>) -> f32 {
+///
+/// Returns the factors rather than just their product (ADV-GATEWAY-016), so
+/// the explanation of an ordering is a by-product of making it.
+fn rank_breakdown(
+    record: &MemoryRecord,
+    distance: Option<f64>,
+    now: DateTime<Utc>,
+) -> ScoreBreakdown {
     let reference = record
         .economics
         .last_used_at
@@ -712,11 +799,28 @@ fn rank_score(record: &MemoryRecord, distance: Option<f64>, now: DateTime<Utc>) 
         elapsed,
     ));
     let relevance = totem_core::relevance_from_distance(distance);
-    let weight = totem_core::category_weight(record.category);
+    let category_weight = totem_core::category_weight(record.category);
     // Saturated, not raw (ADV-CORE-008): `CITATION_BOOST` is unbounded, so a
     // raw `value_score` would eventually dominate every other term.
     let value = totem_core::saturating_value(record.economics.value_score);
-    totem_core::combined_score(relevance, value, currency, weight)
+    ScoreBreakdown {
+        distance,
+        relevance,
+        value,
+        currency,
+        category_weight,
+        combined: totem_core::combined_score(relevance, value, currency, category_weight),
+    }
+}
+
+/// The combined ranking score alone — [`rank_breakdown`]'s product.
+///
+/// Deliberately a thin accessor rather than its own arithmetic: the ordering
+/// and the explanation of that ordering (ADV-GATEWAY-016) must come from one
+/// computation, or they will agree until the moment somebody needs them to
+/// (see `ScoreBreakdown`'s own doc comment).
+fn rank_score(record: &MemoryRecord, distance: Option<f64>, now: DateTime<Utc>) -> f32 {
+    rank_breakdown(record, distance, now).combined
 }
 
 /// The key two records must share to be the same fact held at two scopes.

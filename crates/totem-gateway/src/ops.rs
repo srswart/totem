@@ -208,6 +208,89 @@ fn without_embeddings(mut records: Vec<MemoryRecord>) -> Vec<MemoryRecord> {
     records
 }
 
+/// The store query one [`RecallInput`] describes.
+///
+/// Shared by `recall` and `explain_ranking` so an explanation cannot be of a
+/// *different query* than the one it claims to explain (ADV-GATEWAY-016) —
+/// the same reason the scores themselves come from one computation.
+fn recall_query(state: &AppState, input: &RecallInput) -> Result<RecallQuery, GatewayError> {
+    let mut query = RecallQuery::new();
+    if let Some(text) = &input.query {
+        let probe = state.embedder.embed(text)?;
+        query = query.near(probe)?;
+    }
+    if !input.categories.is_empty() {
+        query = query.in_categories(input.categories.clone());
+    }
+    if let Some(since) = input.since {
+        query = query.since(since);
+    }
+    if let Some(limit) = input.limit {
+        query = query.limit(limit);
+    }
+    Ok(query)
+}
+
+/// Why a recall would rank as it does, without performing it
+/// (ADV-GATEWAY-016).
+///
+/// Authorized identically to `recall` — an explanation reveals scores for
+/// records in the reader's chain, so it must not reach further than the read
+/// it explains.
+///
+/// **Does not reinforce.** `MemoryRepository::explain_ranking` performs no
+/// write, which is the point: asking why must not move the economics being
+/// asked about. Logged as a read all the same, so the access trail shows
+/// somebody looked.
+pub async fn explain_ranking(
+    state: &AppState,
+    input: RecallInput,
+    caller: &Caller,
+    endpoint: &str,
+) -> Result<Vec<totem_store::RankExplanation>, GatewayError> {
+    authorize_identity(
+        state,
+        caller,
+        &input.actor,
+        input.project.as_ref(),
+        &input.teams,
+        endpoint,
+    )
+    .await?;
+
+    let reader = ScopeChain::resolve(&input.actor, input.project.as_ref(), &input.teams);
+    let query = recall_query(state, &input)?;
+    let mut explained = state
+        .store
+        .memories()
+        .explain_ranking(&reader, &query)
+        .await?;
+
+    // Same suppression as `recall` (ADV-GATEWAY-014): an explanation is a
+    // wider disclosure than a result set, so it must not become the one path
+    // that leaks vectors.
+    for entry in explained.iter_mut() {
+        entry.record.content.embedding = None;
+    }
+
+    let now = Utc::now();
+    let mut entry = AccessLogEntry::new(
+        input.actor,
+        input.harness,
+        input.session,
+        AccessOperation::Recall,
+        endpoint,
+        now,
+    )
+    .with_result_count(explained.len() as u64);
+    if let Some(turn) = input.turn {
+        entry = entry.at_turn(turn);
+    }
+    state.store.access_log().record(&entry).await?;
+
+    Ok(explained)
+}
+
 pub async fn recall(
     state: &AppState,
     input: RecallInput,
@@ -226,20 +309,7 @@ pub async fn recall(
 
     let reader = ScopeChain::resolve(&input.actor, input.project.as_ref(), &input.teams);
 
-    let mut query = RecallQuery::new();
-    if let Some(text) = &input.query {
-        let probe = state.embedder.embed(text)?;
-        query = query.near(probe)?;
-    }
-    if !input.categories.is_empty() {
-        query = query.in_categories(input.categories.clone());
-    }
-    if let Some(since) = input.since {
-        query = query.since(since);
-    }
-    if let Some(limit) = input.limit {
-        query = query.limit(limit);
-    }
+    let query = recall_query(state, &input)?;
 
     let records = state.store.memories().recall(&reader, &query).await?;
 
