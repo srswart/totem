@@ -63,24 +63,133 @@ pub fn effective_currency(
     decay_currency(stored_currency, elapsed, DEFAULT_CURRENCY_HALF_LIFE)
 }
 
-/// A category's relative weight in retrieval ranking, normalized from its
-/// `injection_priority` (already the per-category weight the lifecycle
-/// carries — Instructions highest, Episodic lowest;
-/// `docs/solution-intent.md` §2.1/§4).
+/// A category's relative weight in retrieval ranking, compressed from its
+/// `injection_priority` into the same bounded range every other
+/// non-relevance factor obeys (ADV-CORE-008).
+///
+/// **What changed and why.** This used to be `injection_priority / 100`,
+/// giving Episodic 0.1 and Instructions 1.0 — a **10x range**, against
+/// relevance's 2x among records that pass the gate. Category was therefore
+/// five times more influential than what the caller actually asked, and an
+/// unrelated `Instructions` memory beat an exact match on a `Knowledge` one.
+/// Measured on the deployment: relevance 0.548 x weight 1.0 = 0.548 for the
+/// unrelated record, against 1.0 x 0.863 x 0.5 = 0.432 for the exact match.
+///
+/// **The deeper mistake was reusing the wrong number.** `injection_priority`
+/// answers *"if I am assembling a context window, what goes in first?"* —
+/// a question about a budget, where a 10x spread is reasonable. Retrieval
+/// ranking asks *"which of these did they mean?"*, and the priority order is
+/// worth keeping there while its magnitude is not.
+///
+/// So the order is preserved exactly and only the span is compressed, onto
+/// `[1/(1+gate), 1.0]` — the same range relevance itself spans among records
+/// that compete. Instructions still outranks Knowledge at equal relevance;
+/// it can no longer outrank a materially better match.
+///
+/// This is one rule applied uniformly: **no non-relevance factor may outweigh
+/// relevance's own range.** `value_score` obeys it via
+/// [`saturating_value`], `currency` is already `[0, 1]`, and this was the
+/// term still exempt.
 pub fn category_weight(category: MemoryCategory) -> f32 {
-    f32::from(category.lifecycle().injection_priority) / 100.0
+    // `injection_priority` is documented as 10..=100 across the six
+    // categories; normalize within that observed span rather than 0..=100, so
+    // the lowest category maps to the floor rather than somewhere above it.
+    const LOWEST_PRIORITY: f32 = 10.0;
+    const HIGHEST_PRIORITY: f32 = 100.0;
+    let floor = 1.0 / (1.0 + RELEVANCE_GATE_DISTANCE as f32);
+    let position = (f32::from(category.lifecycle().injection_priority) - LOWEST_PRIORITY)
+        / (HIGHEST_PRIORITY - LOWEST_PRIORITY);
+    floor + position.clamp(0.0, 1.0) * (1.0 - floor)
 }
 
-/// Convert a vector-search distance into a `(0, 1]` closeness term, or a
+/// Cosine distance beyond which a record does not compete at all, whatever
+/// its history (ADV-CORE-008).
+///
+/// **Why 1.0, and not a number tuned until the tests passed.** The store's
+/// index is `DIST COSINE`, so distance is `1 - cos θ` over `[0, 2]`, and
+/// **1.0 is exactly orthogonality**: a record at this distance shares no
+/// direction with the query at all. Above it the two are *negatively*
+/// correlated. So the gate is not a tuning parameter but a statement with a
+/// meaning — a record must be positively similar to what was asked, not
+/// merely less dissimilar than its neighbours.
+///
+/// That distinction is the whole defect. Before this gate, a record could
+/// place first while being unrelated to the query, purely on
+/// `category_weight` and `currency`: an `Instructions` memory carries a 2.3x
+/// structural advantage over a `Knowledge` one before any query is asked,
+/// and relevance's entire range is only 3x, so relevance could not always
+/// overcome it.
+pub const RELEVANCE_GATE_DISTANCE: f64 = 1.0;
+
+/// The most a memory's accumulated history may multiply its score
+/// (ADV-CORE-008).
+///
+/// **Derived from the gate, not chosen.** The claim is
+/// *history may matter as much as relevance, and never more* — so the ceiling
+/// must equal relevance's range **among records that actually compete**.
+///
+/// The gate changes that range, which is easy to get wrong: relevance spans
+/// `[0.33, 1.0]` (3x) over all distances, but a record past
+/// [`RELEVANCE_GATE_DISTANCE`] scores zero and is dropped, so among survivors
+/// it spans `[1/(1+gate), 1.0]`. That ratio is exactly `1 + gate`:
+///
+/// ```text
+/// relevance(0) / relevance(gate) = 1 / (1/(1+gate)) = 1 + gate = 2.0
+/// ```
+///
+/// Writing it as a derivation rather than a literal means the two constants
+/// cannot drift apart: move the gate and the ceiling follows, still honouring
+/// the same claim. A hand-picked 3.0 would have quietly let history outweigh
+/// relevance by 1.5x — the very failure this advance exists to fix, smaller
+/// and harder to see.
+pub const VALUE_SATURATION_CEILING: f32 = 1.0 + RELEVANCE_GATE_DISTANCE as f32;
+
+/// Bound `value_score`'s contribution so it cannot grow without limit.
+///
+/// `CITATION_BOOST` adds 0.2 per citation with no ceiling, so a raw
+/// `value_score` is unbounded and would eventually dominate every other term
+/// — the same class of failure as the one this advance fixes, arriving later
+/// through a different door. **This is prophylactic, not curative:**
+/// `value_score` is 1.0 on every record in the estate today, so this changes
+/// no present ranking. It is here so it does not have to be added in a panic.
+///
+/// The curve is `k·v / (k − 1 + v)`, chosen so that `v = 1` maps to exactly
+/// `1.0` — the default every record starts at is untouched, and this advance
+/// therefore cannot silently rescale the whole corpus — while `v → ∞`
+/// approaches [`VALUE_SATURATION_CEILING`].
+///
+/// Negative input (not reachable through the store, which floors at zero, but
+/// not a type-level impossibility) is treated as zero.
+pub fn saturating_value(value_score: f32) -> f32 {
+    let value = value_score.max(0.0);
+    if value == 0.0 {
+        return 0.0;
+    }
+    let k = VALUE_SATURATION_CEILING;
+    // `k / (1 + (k-1)/v)`, algebraically identical to `k·v / (k-1+v)` but
+    // stable at the top of the range: the direct form multiplies before
+    // dividing, so `k · f32::MAX` overflows to infinity and the bound this
+    // function exists to enforce silently disappears. Found by the test that
+    // asserts the bound holds at `f32::MAX`.
+    k / (1.0 + (k - 1.0) / value)
+}
+
+/// Convert a vector-search distance into a `[0, 1]` closeness term, or a
 /// neutral `1.0` when the recall carried no probe at all — ranking then
 /// depends only on value and currency, not vector proximity
 /// (docs/solution-intent.md §4).
+///
+/// Returns **exactly zero** past [`RELEVANCE_GATE_DISTANCE`], which
+/// [`combined_score`] already turns into a zero score: the gate needs no
+/// special case downstream, because "zero in any one factor zeroes the whole
+/// score" was already this module's rule (ADV-CORE-008).
 ///
 /// A negative distance (never expected from SurrealDB's `knn_distance`, but
 /// not a type-level impossibility) is treated as zero rather than amplifying
 /// relevance past 1.0.
 pub fn relevance_from_distance(distance: Option<f64>) -> f32 {
     match distance {
+        Some(distance) if distance > RELEVANCE_GATE_DISTANCE => 0.0,
         Some(distance) => (1.0 / (1.0 + distance.max(0.0))) as f32,
         None => 1.0,
     }
@@ -102,6 +211,122 @@ pub fn combined_score(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── ADV-CORE-008 ──────────────────────────────────────────────────────
+    //
+    // The converse test is written FIRST and deliberately, because the risk
+    // in this advance is not failing to fix the bug — it is over-correcting
+    // Totem into a plain vector index. A memory that has proven useful must
+    // still win against one that has not, when relevance is comparable. That
+    // is much of what Totem is for (docs/solution-intent.md §4), and it is
+    // the property most easily destroyed by a gate.
+
+    #[test]
+    fn a_well_used_memory_still_beats_an_unused_one_at_comparable_relevance() {
+        // Same category, same closeness; only history differs.
+        let close = Some(0.20);
+        let well_used = combined_score(
+            relevance_from_distance(close),
+            saturating_value(3.0),
+            1.0,
+            category_weight(MemoryCategory::Knowledge),
+        );
+        let unused = combined_score(
+            relevance_from_distance(close),
+            saturating_value(1.0),
+            1.0,
+            category_weight(MemoryCategory::Knowledge),
+        );
+        assert!(
+            well_used > unused,
+            "the value loop must survive this advance: {well_used} vs {unused}"
+        );
+    }
+
+    #[test]
+    fn category_priority_order_survives_the_compression() {
+        // The span is compressed; the ORDER is not touched. If this advance
+        // reordered the categories it would have changed what Totem
+        // prioritises, which is a §2.1 decision and not its to make.
+        use MemoryCategory::*;
+        let ordered = [
+            Episodic,
+            Knowledge,
+            Identity,
+            Uncertainty,
+            Context,
+            Instructions,
+        ];
+        for pair in ordered.windows(2) {
+            assert!(
+                category_weight(pair[0]) < category_weight(pair[1]),
+                "{:?} must still rank below {:?}",
+                pair[0],
+                pair[1]
+            );
+        }
+        assert_eq!(
+            category_weight(Instructions),
+            1.0,
+            "the top is still the top"
+        );
+    }
+
+    #[test]
+    fn an_instructions_memory_still_wins_at_equal_relevance() {
+        // The value loop's sibling: category priority must still count for
+        // something. Same distance, same history — only the category differs.
+        let close = Some(0.2);
+        let instructions = combined_score(
+            relevance_from_distance(close),
+            1.0,
+            1.0,
+            category_weight(MemoryCategory::Instructions),
+        );
+        let knowledge = combined_score(
+            relevance_from_distance(close),
+            1.0,
+            1.0,
+            category_weight(MemoryCategory::Knowledge),
+        );
+        assert!(
+            instructions > knowledge,
+            "category priority must survive: {instructions} vs {knowledge}"
+        );
+    }
+
+    #[test]
+    fn no_non_relevance_factor_outweighs_relevance_s_own_range() {
+        // The single rule this advance applies uniformly. If a new factor is
+        // ever added to `combined_score` without obeying it, this is the test
+        // that should be extended — and the failure it prevents is the one
+        // that shipped: something other than the question deciding the answer.
+        let relevance_range = relevance_from_distance(Some(0.0))
+            / relevance_from_distance(Some(RELEVANCE_GATE_DISTANCE));
+
+        let category_range = category_weight(MemoryCategory::Instructions)
+            / category_weight(MemoryCategory::Episodic);
+        assert!(
+            category_range <= relevance_range + f32::EPSILON,
+            "category spans {category_range}x against relevance's {relevance_range}x"
+        );
+
+        let value_range = saturating_value(f32::MAX) / saturating_value(1.0);
+        assert!(value_range <= relevance_range + f32::EPSILON);
+
+        // currency is `[0, 1]` by construction, so its range is bounded by 1.
+    }
+
+    #[test]
+    fn a_fresher_memory_still_beats_a_decayed_one_at_comparable_relevance() {
+        let close = Some(0.20);
+        let fresh = combined_score(relevance_from_distance(close), 1.0, 1.0, 0.5);
+        let stale = combined_score(relevance_from_distance(close), 1.0, 0.4, 0.5);
+        assert!(
+            fresh > stale,
+            "currency must still count: {fresh} vs {stale}"
+        );
+    }
 
     #[test]
     fn decay_at_zero_elapsed_leaves_currency_unchanged() {
@@ -239,6 +464,11 @@ mod tests {
 
     #[test]
     fn relevance_decreases_monotonically_as_distance_grows() {
+        // The range is `[0, 1]`, not `(0, 1]`: ADV-CORE-008 made relevance
+        // exactly zero past `RELEVANCE_GATE_DISTANCE`. This assertion
+        // previously read `relevance > 0.0`, which was the correct contract
+        // before the gate existed and is deliberately changed here — a
+        // record beyond orthogonality is meant to score zero and be dropped.
         let samples = [0.0, 0.1, 0.5, 1.0, 2.0, 10.0];
         let mut previous = f32::MAX;
         for distance in samples {
@@ -248,11 +478,82 @@ mod tests {
                 "relevance rose from {previous} to {relevance} at distance {distance}",
             );
             assert!(
-                relevance > 0.0 && relevance <= 1.0,
-                "{relevance} left (0, 1] at distance {distance}",
+                (0.0..=1.0).contains(&relevance),
+                "{relevance} left [0, 1] at distance {distance}",
             );
             previous = relevance;
         }
+    }
+
+    #[test]
+    fn the_gate_is_orthogonality_and_zeroes_the_whole_score() {
+        // At the gate exactly, a record still competes; past it, not at all.
+        assert!(relevance_from_distance(Some(RELEVANCE_GATE_DISTANCE)) > 0.0);
+        assert_eq!(
+            relevance_from_distance(Some(RELEVANCE_GATE_DISTANCE + 0.01)),
+            0.0
+        );
+
+        // And the zero propagates: no accumulated history rescues it. This is
+        // the defect ADV-CORE-008 exists to fix, stated at the unit level.
+        let unrelated_but_privileged = combined_score(
+            relevance_from_distance(Some(1.5)),
+            saturating_value(1000.0),
+            1.0,
+            category_weight(MemoryCategory::Instructions),
+        );
+        assert_eq!(
+            unrelated_but_privileged, 0.0,
+            "a record past orthogonality must not compete, whatever its history"
+        );
+    }
+
+    #[test]
+    fn saturating_value_leaves_the_default_untouched_and_bounds_the_rest() {
+        // v = 1 is what every record starts at; mapping it anywhere but 1.0
+        // would silently rescale the entire corpus.
+        assert_eq!(saturating_value(1.0), 1.0);
+
+        assert!(
+            saturating_value(2.0) > saturating_value(1.0),
+            "still ordered"
+        );
+        assert!(
+            saturating_value(100.0) > saturating_value(10.0),
+            "still ordered"
+        );
+
+        // Bounded by the ceiling, approached asymptotically rather than
+        // clamped, so ordering survives far out. (In f32 the approach reaches
+        // the ceiling exactly at large inputs; the property that matters is
+        // that it never exceeds it.)
+        assert!(saturating_value(1.0e9) <= VALUE_SATURATION_CEILING);
+        assert!(saturating_value(1.0e9) > VALUE_SATURATION_CEILING - 0.01);
+        assert!(
+            saturating_value(1.0e4) < saturating_value(1.0e5),
+            "still ordered far out"
+        );
+    }
+
+    #[test]
+    fn history_can_never_outweigh_relevance_by_more_than_relevance_s_own_range() {
+        // The falsifiable claim behind VALUE_SATURATION_CEILING = 3.0:
+        // history may matter as much as relevance, and never more.
+        // Relevance's range among records that COMPETE — records past the
+        // gate score zero and are dropped, so the full [0.33, 1.0] span is
+        // not what history has to be measured against.
+        let relevance_range = relevance_from_distance(Some(0.0))
+            / relevance_from_distance(Some(RELEVANCE_GATE_DISTANCE));
+        let value_range = saturating_value(f32::MAX) / saturating_value(1.0);
+        assert!(
+            value_range <= relevance_range + f32::EPSILON,
+            "history spans {value_range}x but relevance only {relevance_range}x —              the larger term wins in the limit, which is this advance's defect"
+        );
+    }
+
+    #[test]
+    fn saturating_value_treats_a_negative_score_as_zero() {
+        assert_eq!(saturating_value(-5.0), 0.0);
     }
 
     #[test]

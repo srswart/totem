@@ -73,6 +73,6 @@ pub use record::{
 };
 pub use scope::{Scope, ScopeChain, ScopeParseError};
 pub use scoring::{
-    DEFAULT_CURRENCY_HALF_LIFE, category_weight, combined_score, decay_currency,
-    effective_currency, relevance_from_distance,
+    DEFAULT_CURRENCY_HALF_LIFE, RELEVANCE_GATE_DISTANCE, VALUE_SATURATION_CEILING, category_weight,
+    combined_score, decay_currency, effective_currency, relevance_from_distance, saturating_value,
 };

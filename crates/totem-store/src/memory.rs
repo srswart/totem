@@ -563,6 +563,15 @@ impl<'a, C: Connection> MemoryRepository<'a, C> {
                 (record, score)
             })
             .collect();
+        // A vector query drops records the relevance gate rejected, rather
+        // than returning them ranked last (ADV-CORE-008). "Does not compete"
+        // has to mean absent: a caller reading the top of a list has no way
+        // to know the tail is padding, and an agent handed an unrelated
+        // memory will use it. Without a probe nothing is gated, so a
+        // no-query recall still returns the chain's records as before.
+        if query.probe.is_some() {
+            ranked.retain(|(_, score)| *score > 0.0);
+        }
         // Stable: records tied on score keep the order the statement (and
         // merge_chain's precedence rule) already gave them.
         ranked.sort_by(|a, b| b.1.total_cmp(&a.1));
@@ -697,7 +706,10 @@ fn rank_score(record: &MemoryRecord, distance: Option<f64>, now: DateTime<Utc>) 
         totem_core::effective_currency(record.category, record.economics.currency, elapsed);
     let relevance = totem_core::relevance_from_distance(distance);
     let weight = totem_core::category_weight(record.category);
-    totem_core::combined_score(relevance, record.economics.value_score, currency, weight)
+    // Saturated, not raw (ADV-CORE-008): `CITATION_BOOST` is unbounded, so a
+    // raw `value_score` would eventually dominate every other term.
+    let value = totem_core::saturating_value(record.economics.value_score);
+    totem_core::combined_score(relevance, value, currency, weight)
 }
 
 /// The key two records must share to be the same fact held at two scopes.

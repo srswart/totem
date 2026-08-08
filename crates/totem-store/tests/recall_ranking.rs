@@ -76,9 +76,8 @@ async fn ranking_survives_a_reembed() {
     );
 }
 
-/// **Known bug, deliberately failing when run.** `#[ignore]`d so the suite
-/// stays green while the defect stays executable: `cargo test -p totem-store
-/// --test recall_ranking -- --ignored` reproduces it in about a second.
+/// **Was the ADV-CORE-008 defect; now the regression test for its fix.**
+/// Un-ignored when the relevance gate landed.
 ///
 /// `combined_score = relevance * value_score * currency * category_weight`.
 /// `relevance_from_distance` is `1/(1+d)`, so across the whole cosine range
@@ -90,7 +89,6 @@ async fn ranking_survives_a_reembed() {
 /// Owner: ADV-CORE-002's value loop, not ADV-STORE-008. Recorded rather than
 /// fixed here because changing the ranking formula is a product decision with
 /// its own evidence, not a detail of switching embedders.
-#[ignore = "known bug: accumulated value_score outranks exact relevance (see ADV-CORE-008)"]
 #[tokio::test]
 async fn does_an_instructions_record_win_regardless_of_the_query() {
     // The deployment's shape: one `instructions` memory that has been recalled
