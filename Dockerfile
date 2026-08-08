@@ -9,16 +9,12 @@
 # because workstations run a newer toolchain. Pinned rather than `latest` so a
 # Rust release cannot break a deploy mid-trial, the same reasoning as the
 # surrealdb pin.
-FROM rust:1.96-slim-trixie AS builder
-
-# RocksDB's build needs a C++ toolchain; SurrealDB's TLS needs pkg-config.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        clang libclang-dev pkg-config libssl-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /build
-COPY . .
-# `fastembed` brings ONNX Runtime, which needs a C++ toolchain to link.
+# A shared base for the dependency-caching stages below (ADV-INFRA-006).
+#
+# Everything the compile needs is installed *here*, above any `COPY` of our
+# own sources, so a source change cannot invalidate it: RocksDB's build needs
+# a C++ toolchain, SurrealDB's TLS needs pkg-config, and `fastembed` brings
+# ONNX Runtime, which needs a C++ toolchain to link.
 #
 # Trixie rather than bookworm for every stage (ADV-STORE-008): the prebuilt
 # ONNX Runtime `ort` links against libstdc++ 13+ symbols (`_M_replace_cold`),
@@ -26,15 +22,48 @@ COPY . .
 # error deep in `ort-sys` that names a C++ mangled symbol and nothing about
 # Debian releases. The runtime stage must match, since the binary needs that
 # libstdc++ at run time too.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends pkg-config libssl-dev build-essential \
+FROM rust:1.96-slim-trixie AS chef
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        clang libclang-dev pkg-config libssl-dev build-essential \
     && rm -rf /var/lib/apt/lists/*
+# Pinned, for the same reason the toolchain and surrealdb are pinned: a
+# release of a build tool must not be able to break a deploy mid-trial.
+RUN cargo install cargo-chef --version 0.1.77 --locked
+WORKDIR /build
+
+# Reduce the whole workspace to a dependency recipe: a small JSON file
+# describing what to build, with none of our source in it. This stage still
+# rebuilds on every source change — it is seconds — but its *output* only
+# changes when a manifest does, which is what makes the expensive layer below
+# cacheable.
+FROM chef AS planner
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef AS builder
 # Two jobs, not one per core. Adding `fastembed` put ONNX Runtime alongside
 # `surrealdb-core` — already the largest crate here — and the remote builder
 # OOM-killed rustc (SIGKILL) partway through. The failure reads as
 # "could not compile surrealdb-core", naming the victim rather than the cause,
 # and it appeared only once this feature was added (ADV-STORE-008).
 ENV CARGO_BUILD_JOBS=2
+
+# The expensive layer, and the whole point of this advance: compile every
+# dependency — SurrealDB, RocksDB, ONNX Runtime — from the recipe alone.
+# Docker caches it against `recipe.json`, so it is reused until a dependency
+# actually changes, and a source-only change skips it entirely.
+#
+# The flags MUST match the real build below. `cook` compiles with whatever it
+# is given, so a mismatched feature set produces a cache that is silently
+# useless: the layer is reused, then `cargo build` rebuilds everything anyway
+# because the fingerprints differ. That failure costs the full build time
+# while looking like a cache hit, which is why the two lines are kept
+# adjacent.
+COPY --from=planner /build/recipe.json recipe.json
+RUN cargo chef cook --release --recipe-path recipe.json \
+        -p totem-gateway --features rocksdb,fastembed
+
+COPY . .
 RUN cargo build --release -p totem-gateway --features rocksdb,fastembed
 
 # Bake the model weights into the image (ADV-STORE-008). Cold construction is

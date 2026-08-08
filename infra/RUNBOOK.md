@@ -27,10 +27,29 @@ fly machines list -a totem-dev          # exactly one, state=started, checks 1/1
 fly deploy -a totem-dev --ha=false
 ```
 
-Builds take ~10–15 minutes: nothing caches between deploys yet (`COPY . .`
-invalidates on any source change, so SurrealDB and RocksDB recompile every
-time). A cargo-chef layered Dockerfile would fix this — recorded as a known
-cost, not a mystery.
+**Build times, and what to expect (ADV-INFRA-006).** Dependency compilation
+is a cached layer, so what a deploy costs depends on *what changed*:
+
+| what changed | expect |
+|---|---|
+| source only | ~1 minute — the dependency layer is reused |
+| any `Cargo.toml` or `Cargo.lock` | ~12 minutes — the full dependency rebuild |
+| nothing | seconds |
+
+Measured on a workstation (arm64); Fly's remote builder differs in absolute
+time but not in shape. 92% of a cold build is dependencies, which is what the
+cache removes.
+
+**If a source-only deploy still takes ten minutes, the cache has silently
+stopped working.** The usual cause is the Dockerfile's `cargo chef cook` and
+`cargo build` lines drifting apart — different features, package, or profile.
+Docker still reuses the cooked layer, then cargo rebuilds every dependency
+anyway because the fingerprints differ, so it costs full price while
+reporting `CACHED`. The two lines are deliberately adjacent in the
+Dockerfile; keep them that way.
+
+A deploy after a dependency change is *supposed* to be slow. That is the
+cache busting correctly, not a regression.
 
 `.dockerignore` is load-bearing: without it the build context includes
 `target/` (~49 GB) and the 128 MB model cache, and the deploy appears to

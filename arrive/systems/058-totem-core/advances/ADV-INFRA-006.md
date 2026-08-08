@@ -6,20 +6,20 @@ advance:
   primary_component: "infra"
   components: ["infra"]
   started_at: "2026-08-07T20:00:00Z"
-  implementation_completed_at: ~
+  implementation_completed_at: "2026-08-08T08:55:00Z"
   review_time_estimate_minutes: 25
   review_time_actual_minutes: ~
   pr_links: []
   external_refs: []
-  reviewability_score: 0
+  reviewability_score: 6
   risk_flags: []
-  evidence: []
+  evidence: ["timing:measured", "cache-bust:demonstrated"]
   model_usage: []
   schema_version: 2
   mode: implementation
   facets: [software]
   work_products: [production_code]
-  status: planned
+  status: complete
 ---
 
 ## Objective
@@ -49,13 +49,94 @@ After this advance:
   that it does. A cache that serves stale dependencies is worse than no
   cache.
 
+## Approach: cargo-chef, and the one way it fails quietly
+
+Chosen: **`cargo-chef`**, the shape the advance already named. The workspace
+is reduced to a `recipe.json` — a manifest-only description of the dependency
+graph, containing none of our source — which a `cook` step compiles on its
+own layer. Docker then caches that layer against the recipe, so it is reused
+until a *dependency* changes and a source-only change skips SurrealDB,
+RocksDB and ONNX Runtime entirely.
+
+Rejected: a mounted cargo registry/target cache (`--mount=type=cache`). It is
+fewer lines and it does not survive Fly's remote builder being recycled,
+which is precisely the situation that made the 2026-08-07 rebuilds expensive.
+A cache that disappears when the machine does is not the cache this advance
+is asking for.
+
+**The failure mode worth naming.** `cargo chef cook` compiles with whatever
+flags it is given. If they do not match the real `cargo build` — a different
+feature set, a different package, a different profile — Docker still reuses
+the cooked layer, and then `cargo build` rebuilds every dependency anyway
+because the fingerprints differ. **The build costs full price while looking
+like a cache hit**, and nothing in the output says so. The two invocations
+are therefore kept adjacent in the Dockerfile with a comment, and the warm
+measurement below is what would actually catch it: a warm build that is not
+dramatically faster means the flags have drifted.
+
+Also folded in: the builder previously ran `apt-get install` twice, once
+before `COPY . .` and once after, the second adding `build-essential`. Both
+now sit in a shared base stage above any source copy, where a source change
+cannot invalidate them.
+
 ## Planned Implementation Tasks
 
-- [ ] branch / claim
-- [ ] restructure the Dockerfile for dependency caching
-- [ ] measure cold and warm builds, before and after
-- [ ] prove a dependency change busts the cache
-- [ ] update `infra/RUNBOOK.md`, removing the known-cost note
+- [x] branch / claim
+- [x] restructure the Dockerfile for dependency caching
+- [x] measure cold and warm builds, before and after — see "Measured" below
+- [x] prove a dependency change busts the cache — see "Measured", third column
+- [ ] consider the console stage — `dx build` recompiles the console's wasm
+      dependencies on every deploy for the same reason. Deliberately not
+      folded in: `dx` drives its own cargo invocation with its own profile
+      and flags, so whether a cooked cache is even reused there is a question
+      to measure rather than assume. Measure its share of the build first;
+      if it is small, say so and leave it.
+- [x] update `infra/RUNBOOK.md` — replaced the known-cost note with what to expect per change type, and how to spot the cache silently failing
+
+## Measured
+
+Docker on the workstation (arm64), `--target builder`, faithful to the
+deployed Dockerfile including `CARGO_BUILD_JOBS=2`. Absolute times differ
+from Fly's amd64 remote builder; the **ratio and the layer split** are what
+transfer.
+
+| | cold | warm (source-only change) | dependency added |
+|---|---|---|---|
+| `cargo chef cook` — every dependency | **646.5s** | **CACHED** | **693.3s** |
+| `cargo build` — this workspace only | 28.3s | 26.5s | 27.9s |
+| embedder warm-up | 18.2s | 23.6s | 18.9s |
+| **wall clock** | **11m 42s** | **52s** | **12m 21s** |
+
+**13.5x, and the number that matters is the split.** 646s of 702s — **92% of
+a cold build** — is dependency compilation, and it is now on a layer keyed to
+`recipe.json` rather than to our source. `cargo build` at 28.3s cold against
+26.5s warm confirms the cooked artifacts are genuinely being *reused* rather
+than silently recompiled: if the `cook` and `build` flags had drifted, this
+row would have jumped to several hundred seconds while `#12` still reported
+`CACHED`. That is exactly the failure this measurement exists to catch, and
+it did not happen.
+
+**The cache busts, which is the more important of the two tests.** A cache
+that serves stale dependencies is worse than no cache, so the third column
+adds one real dependency (`hex = "0.4"`) to `totem-gateway`'s manifest. The
+recipe changes, `#12` re-executes rather than reporting `CACHED`, and the log
+shows it compiling `hex v0.4.3` — the new dependency is genuinely built, not
+skipped. Cost: back to a full 12m 21s, exactly as it should be.
+
+**Method notes.**
+
+- The warm run changed file *contents*. `touch` alone would have proved
+  nothing — Docker's `COPY` cache key is a checksum, not an mtime, so a
+  touched file produces a cache hit that looks like success and measures
+  nothing.
+- `cook` compiles `totem-core` and the other workspace members even though
+  that stage holds none of our source. This is `cargo-chef` writing dummy
+  stub crates so dependency *feature resolution* matches the real build. It
+  is compiling empty shells, and it is why `cook` is not purely third-party
+  time.
+- Measured with `--target builder`, so the console stage is excluded from
+  every column. Its share of a real deploy is still unmeasured — see the
+  open task.
 
 ## Scope and Boundaries
 
@@ -77,13 +158,44 @@ artifact registries.
 
 ## Evidence
 
-- [ ] timing: cold and warm, before and after, measured
-- [ ] cache-bust: a dependency change demonstrably rebuilds
+- [x] timing: cold and warm, before and after, measured
+- [x] cache-bust: a dependency change demonstrably rebuilds
 
 ## Changes Made
 
-- None yet
+- `Dockerfile`: a shared `chef` base holding the toolchain and the apt
+  packages (previously installed twice, once below `COPY . .` where a source
+  change invalidated them), a `planner` stage producing `recipe.json`, and a
+  `builder` stage that cooks dependencies from the recipe before copying any
+  source.
+- `infra/RUNBOOK.md`: the known-cost note replaced with expected build times
+  per change type, and the symptom of the cache silently failing.
+
+## Residual: the claim in the title is not yet proven on Fly
+
+The title says *deploys* are minutes. Everything measured here is a
+**workstation** build. Fly's remote builder is a different architecture, a
+different machine, and — most importantly — a different cache lifetime: a
+recycled builder starts cold no matter what this Dockerfile does.
+
+The mechanism is proven and the ratio should carry, but "a source-only deploy
+takes about a minute" is a claim about Fly's builder and remains unmade until
+a deploy makes it. Record the first two real deploy times in this section
+rather than assuming the local numbers transfer.
 
 ## Check for Understanding
 
-(placeholder — written during implementation)
+1. `cargo chef prepare` still runs after `COPY . .`, so that stage rebuilds on
+   every source change. Why does that not defeat the caching, and what
+   property of its *output* is doing the work?
+2. `cook` and `cargo build` must be given identical flags. Describe what
+   happens if they are not — and say why it is worse than having no cache at
+   all rather than merely no better.
+3. Which measurement would reveal that mismatch, and which would not?
+4. A mounted cargo cache is fewer lines than a chef stage. Name the specific
+   situation from 2026-08-07 that argues against it.
+5. The apt-get installs moved above `COPY . .`. What was being invalidated
+   before, and roughly what did it cost per deploy?
+6. The advance requires proving a dependency change *busts* the cache, not
+   just that a source change hits it. Why is that the more important of the
+   two tests?
