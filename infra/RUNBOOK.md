@@ -32,13 +32,19 @@ is a cached layer, so what a deploy costs depends on *what changed*:
 
 | what changed | expect |
 |---|---|
-| source only | ~1 minute — the dependency layer is reused |
-| any `Cargo.toml` or `Cargo.lock` | ~12 minutes — the full dependency rebuild |
-| nothing | seconds |
+| existing source only | ~3–5 min — the dependency layer is reused |
+| a **new** test/bench/example/bin *file* | ~35 min — full rebuild |
+| any `Cargo.toml` or `Cargo.lock` | ~35 min — full rebuild |
 
-Measured on a workstation (arm64); Fly's remote builder differs in absolute
-time but not in shape. 92% of a cold build is dependencies, which is what the
-cache removes.
+The middle row is the surprising one and it is not a bug. Cargo
+auto-discovers `tests/*.rs` as targets, and `cargo-chef` bakes the resolved
+manifest — auto-discovered targets included — into `recipe.json`. So adding
+one test file changes the recipe and rebuilds every dependency, with no
+dependency having changed. Measured on deploy 2 (ADV-GATEWAY-016): 1986s of
+`cook` for a single new test file.
+
+Expect it rather than debug it. A deploy that adds a test file is a long
+deploy.
 
 **If a source-only deploy still takes ten minutes, the cache has silently
 stopped working.** The usual cause is the Dockerfile's `cargo chef cook` and

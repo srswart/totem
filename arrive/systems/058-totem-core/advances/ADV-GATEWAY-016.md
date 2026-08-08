@@ -5,21 +5,21 @@ advance:
   system: "058-totem-core"
   primary_component: "gateway"
   components: ["gateway", "store", "core"]
-  started_at: ~
-  implementation_completed_at: ~
+  started_at: "2026-08-08T09:30:00Z"
+  implementation_completed_at: "2026-08-08T10:15:00Z"
   review_time_estimate_minutes: 20
   review_time_actual_minutes: ~
   pr_links: []
   external_refs: []
-  reviewability_score: 0
+  reviewability_score: 50
   risk_flags: []
-  evidence: []
+  evidence: ["tests:unit", "deployment:executed"]
   model_usage: []
   schema_version: 2
   mode: implementation
   facets: [software]
   work_products: [production_code]
-  status: planned
+  status: complete
 ---
 
 ## Objective
@@ -98,14 +98,91 @@ the naming should not collide confusingly.
 
 ## Evidence
 
-- [ ] tests:unit — the explanation matches the ordering it claims to explain.
-- [ ] tests:unit — a gate-excluded record appears in the explanation and not
-      in the results.
-- [ ] deployment:executed — **re-run `scripts/golden-queries.sh` against the
-      deployment with explanations**, and settle ADV-CORE-008's open
-      question: is the unrelated `instructions` record winning on relevance
-      (an embedding or corpus problem) or on something else (a ranking
-      problem that survived CORE-008)? Record the distances.
+- [x] tests:unit — the explanation matches the ordering it claims to explain.
+- [x] tests:unit — a gate-excluded record appears in the explanation and not
+      in the results. Needed a hand-negated embedding: prose does not reach
+      orthogonality, which turned out to be the finding above in miniature.
+- [x] deployment:executed — re-ran against version 12, non-mutating.
+      **Settled: it is a ranking problem.** The nearest record loses in 4 of
+      6 queries, always to the same `instructions` memory, on
+      `category_weight` alone. See "What it found".
+
+## What it found, on first use
+
+Run against the deployment 2026-08-08 (version 12), non-mutating,
+`RECALL=0 scripts/golden-queries.sh` — `evidence/golden-queries-explained.txt`.
+
+**ADV-CORE-008's open question is answered, and the answer is the opposite of
+what was expected.** That advance guessed the residue was an embedding or
+corpus problem, on the grounds that the surviving structural advantage was
+only 1.13x. It is a **ranking** problem, and 1.13x was plenty.
+
+| query | nearest record | winner | inverted |
+|---|---|---|---|
+| gateway owns the store | DEP-001 | DEP-001 | — |
+| Cursor remote-MCP | MCP write path | `arrive plan check` | **yes** |
+| which process opens the engine | DEP-001 | `arrive plan check` | **yes** |
+| what we still don't know | Overnight experiment | `arrive plan check` | **yes** |
+| worth saving to memory | `arrive plan check` | `arrive plan check` | — |
+| Docker build failure | MCP write path | `arrive plan check` | **yes** |
+
+**In 4 of 6 queries the nearest record loses to a record further away**, and
+in every case to the same one — the `instructions` memory whose
+`category_weight` is 1.0.
+
+Worked, for "which process is allowed to open the SurrealDB engine?":
+
+```text
+DEP-001              dist 0.374  rel 0.728  cat 0.885  ->  0.644
+arrive plan check    dist 0.427  rel 0.701  cat 1.000  ->  0.701
+```
+
+**The embedder gets it right.** DEP-001 is genuinely closer to the question
+than the unrelated instruction is. Category weight then overturns it.
+
+### The design error, stated precisely
+
+ADV-CORE-008 derived every non-relevance bound from relevance's **theoretical**
+range: the gate sits at orthogonality, so relevance spans `1 + gate` = 2x
+among competing records, and each of the three other factors was given a
+geometric third of that.
+
+**Relevance's *realised* range on real text is 1.21x.** Every distance in the
+whole run falls between 0.306 and 0.583 — a narrow band nowhere near the
+gate. So:
+
+- the **gate never fires**. Nothing approaches 1.0; it is dead code against
+  real queries, which is why ADV-CORE-008's gate produced no visible
+  improvement on five of six queries.
+- the non-relevance budget of 2x is **larger than the spread it was meant to
+  be smaller than**. Category weight alone (1.13x) is nearly the whole of
+  relevance's actual range (1.21x), so it decides orderings routinely.
+
+The error was reasoning from what cosine distance *can* be to what it *is*.
+Both embedders tested agree: unrelated prose lands around 0.3-0.8, not near
+2.0. A bound derived from the arithmetic bottom of the metric will always be
+too loose for the part of it real text occupies.
+
+### Handed on, not fixed here
+
+This advance's scope forbids changing a single score, and that boundary is
+worth keeping — the measurement is only trustworthy because the thing it
+measured was not adjusted to suit it. The fix belongs to a follow-on, which
+must decide between at least:
+
+1. **Derive the budget from the observed spread**, not the theoretical one.
+   Requires the spread to be measured per-corpus, which makes it a
+   calibration question (ADV-STORE-009, ADV-INFRA-007).
+2. **Rescale relevance within the result set** — normalise distances against
+   the candidates actually returned, so relevance uses its full range on
+   every query rather than a twentieth of it.
+3. **Move the gate to where the distances are.** A gate at orthogonality is
+   inert; one set from the observed distribution would exclude something.
+
+(2) is the most likely right answer and the most invasive, since it makes a
+record's score depend on its competitors. None of them should be chosen
+without the calibration corpus, because all three are tuning against a
+7-record estate otherwise.
 
 ## Check for Understanding
 

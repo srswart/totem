@@ -76,6 +76,7 @@ pub use state::AppState;
 fn routes(state: AppState) -> Router {
     Router::new()
         .route("/recall", post(handlers::recall))
+        .route("/recall/explain", post(handlers::explain_ranking))
         .route("/save", post(handlers::save))
         .route("/feedback", post(handlers::feedback))
         .route("/contest", post(handlers::contest))
