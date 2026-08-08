@@ -304,6 +304,62 @@ evaluation and its dispositions (ADV-CORE-005).
 - [ ] golden-queries: executed on the deployed instance. This is the claim
       ADV-STORE-008 could not make, and the reason this advance exists.
 
+### Measured result: half the behavioural claim is met, and half is not
+
+Taken 2026-08-08, `scripts/golden-queries.sh`, six questions,
+`evidence/golden-queries-{before,after}.txt`. Same seven records, same
+embedder (`fastembed-bge-small-en-v1.5`, uniform), ranking the only variable.
+
+**What the fix did:**
+
+- **The near-verbatim query is fixed.** "The gateway owns the embedded store
+  exclusively…" returned DEP-001 — the exact answer — at position **3**
+  before and position **1** after.
+- **The gate fires.** Every query returned 7 of 7 records before and 6 after:
+  one record now fails the gate and is excluded rather than ranked. Recall
+  finally declines to answer with something, which it had never done.
+
+**What the fix did not do:**
+
+- **Five of six queries still return the same `instructions` record first** —
+  "Always run arrive plan check before pushing plan edits" — including
+  "Which process is allowed to open the SurrealDB engine?", whose ordering is
+  **completely unchanged**. That query is the flagship failure this advance
+  was opened for, and it still fails.
+
+**So the weights are probably no longer the cause.** With `value_score` at
+1.0 everywhere and currency uniform (see below), the entire surviving
+structural advantage of `Instructions` over `Knowledge` is `category_weight`:
+
+```text
+Instructions 1.0000 / Knowledge 0.8854 = 1.13x, against relevance's 2x
+```
+
+A 1.13x edge can only decide the ordering if relevance itself puts the two
+records within 13% of each other — that is, if the embedder genuinely
+considers a note about `arrive plan check` nearly as close to "which process
+may open the engine?" as DEP-001 is. That is an **embedding or corpus**
+question, not a ranking-weights one, and it is not what this advance set out
+to fix.
+
+**It cannot be confirmed from outside, and that is its own finding.** The
+recall response carries no score and no distance, so there is no way to ask
+the deployed system *why* it ordered something the way it did. This is the
+same blind spot as ADV-STORE-008's — where the running embedder could not be
+named until an endpoint was added for it — arriving one layer up. Ranking is
+now the least observable part of the system.
+
+**The before-run neutralized the currency fix before it could be tested.**
+`reinforce_usage` set `currency = 1.0` on all seven records during the before
+capture, so by the after capture every record carried identical currency and
+that term cancelled everywhere. The comparison therefore measures the gate and
+the category compression only. The currency bound is covered by unit tests and
+by the corpus fixture, but it has **not** been exercised against the
+deployment, and this record should not be read as saying it has. The hazard
+was written down in this advance before the measurement was taken, and the
+measurement walked into it anyway — the note was not specific enough to say
+*take the before capture last, or on a copy*.
+
 ### Taking that evidence changes the thing being measured
 
 `recall()` calls `reinforce_usage` on every record it returns
